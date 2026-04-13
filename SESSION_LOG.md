@@ -163,3 +163,6 @@
 - Fixed Playwright chat-mode startup so the chat composer gets a deterministic fallback model even when the real Ollama host is unreachable.
 - Fixed the Playwright stop-stream harness so the retained partial reply is emitted before an immediate stop action can cut it off.
 - Re-ran `cmd /c npm run test:e2e` and confirmed all 11 browser tests pass.
+- Initialized git locally, connected the HTTPS GitHub remote, and published the initial `main` branch.
+- Audited the tracked repository contents for public publication and verified that runtime data, env files, and generated reports remain ignored.
+- Tightened the README top section with a concise GitHub-facing summary, stack snapshot, and validation status.

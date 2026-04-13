@@ -2,7 +2,31 @@
 
 Premium mobile-first control plane for Ollama. The app is structured as a Next.js frontend plus a server-side gateway layer so browser clients never talk directly to the Ollama host.
 
-## Current foundation
+GitHub repo description: Mobile-first Next.js control plane for Ollama with a server-side chat and model gateway, local auth, job operations, and workspace backup tooling.
+
+## Highlights
+
+- Server-side Ollama gateway for chat, model status, pull, and delete flows
+- Mobile-first chat workspace with saved, pinned, archived, and restorable conversations
+- Local user accounts, signed sessions, role management, and optional admin password protection
+- Admin jobs surface with queue reorder, cancel, retry, analytics, ownership filters, and detail timelines
+- Workspace backup export and restore flows for local users, conversations, activity, and job history
+- Deterministic Playwright coverage for auth, chat, jobs, conversation lifecycle, and backup recovery flows
+
+## Stack
+
+- Next.js 16 App Router, React 19, and TypeScript
+- Server routes under `src/app/api/*` with local JSON-backed persistence
+- Playwright end-to-end coverage with isolated `.playwright-data` fixtures
+- Tailwind CSS 4-based styling with a mobile-first control-plane UI
+
+## Validation status
+
+- `cmd /c npm run lint`
+- `cmd /c npm run build`
+- `cmd /c npm run test:e2e`
+
+## Feature inventory
 
 - Next.js 16 with App Router and TypeScript
 - Mobile-first dashboard shell for chat, models, and administration
