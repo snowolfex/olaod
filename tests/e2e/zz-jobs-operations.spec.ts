@@ -246,6 +246,39 @@ test("covers jobs queue reorder, bulk queued cancel, and failed-pull retry flows
         (job) => job.target === failedTarget && job.progressEntries[0]?.message === "Retry queued.",
       );
     }).toBe(true);
+
+    const activityResponse = await request.get("/api/admin/activity", {
+      headers: {
+        cookie: cookieHeader,
+      },
+    });
+    expect(activityResponse.ok()).toBeTruthy();
+    const activityPayload = (await activityResponse.json()) as {
+      events: Array<{
+        type: string;
+        summary: string;
+        details?: string;
+      }>;
+    };
+    expect(activityPayload.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "model.pull_reordered",
+          summary: `Queued pull reprioritized: ${holdTargets[2]}`,
+          details: "Queued pull moved up in the execution order.",
+        }),
+        expect.objectContaining({
+          type: "model.pull_bulk_cancel",
+          summary: "Bulk queued pull cancel: 2 jobs",
+          details: expect.stringContaining("were cancelled from the bulk operator action."),
+        }),
+        expect.objectContaining({
+          type: "model.pull_retried",
+          summary: `Model pull retried: ${failedTarget}`,
+          details: "A failed or cancelled pull job was queued again.",
+        }),
+      ]),
+    );
   } finally {
     if (!page.isClosed()) {
       await waitForBackgroundPull(page, runningPull);
