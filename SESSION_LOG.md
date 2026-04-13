@@ -168,3 +168,4 @@
 - Tightened the README top section with a concise GitHub-facing summary, stack snapshot, and validation status.
 - Diagnosed the live "buttons do not work" report to a Next.js dev-origin block on `127.0.0.1` and the LAN host, not a dead client bundle.
 - Added `allowedDevOrigins` coverage for loopback and common private-network hosts in `next.config.ts`, then restarted the dev server and confirmed HMR reconnects cleanly.
+- Added client-side shared status refresh in `InteractionSurface` so newly available Ollama models become selectable in chat without requiring an operator-side manual refresh first.

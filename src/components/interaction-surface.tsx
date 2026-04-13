@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 
 import { ChatWorkspace } from "@/components/chat-workspace";
 import { ModelOperationsPanel } from "@/components/model-operations-panel";
@@ -27,6 +27,44 @@ export function InteractionSurface({
 }: InteractionSurfaceProps) {
   const [status, setStatus] = useState(initialStatus);
   const [userSession, setUserSession] = useState(initialUserSession);
+
+  const refreshStatus = useEffectEvent(async () => {
+    try {
+      const response = await fetch("/api/ollama/status", { cache: "no-store" });
+
+      if (!response.ok) {
+        return;
+      }
+
+      const nextStatus = (await response.json()) as OllamaStatus;
+      setStatus(nextStatus);
+    } catch {
+      // Keep the last known status in place when the refresh fails.
+    }
+  });
+
+  useEffect(() => {
+    void refreshStatus();
+
+    const intervalId = window.setInterval(() => {
+      void refreshStatus();
+    }, 30_000);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void refreshStatus();
+      }
+    };
+
+    window.addEventListener("focus", handleVisibilityChange);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", handleVisibilityChange);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
 
   return (
     <section className="mt-6 grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
