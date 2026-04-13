@@ -6,15 +6,15 @@ import { expect, test } from "@playwright/test";
 
 type BrowserPage = Parameters<Parameters<typeof test>[1]>[0]["page"];
 
-function createForgedAdminCookie() {
+function createSignedUserCookie(user: {
+  id: string;
+  username: string;
+  displayName: string;
+  role: "viewer" | "operator" | "admin";
+}) {
   const payload = Buffer.from(JSON.stringify({
     exp: Date.now() + 60_000,
-    user: {
-      id: "playwright-forged-admin",
-      username: "playwright-forged-admin",
-      displayName: "Playwright Forged Admin",
-      role: "admin",
-    },
+    user,
   }), "utf8").toString("base64url");
   const signature = createHmac("sha256", "playwright-session-secret")
     .update(payload)
@@ -40,7 +40,7 @@ async function resetPlaywrightData() {
   ]);
 }
 
-test("covers role management refresh, role updates, and session guardrails", async ({ page, request }) => {
+test("covers role management refresh, role updates, deletion, and session guardrails", async ({ page, request }) => {
   test.setTimeout(60_000);
 
   const createUserSubmitButton = page.getByRole("button", { name: "Create user" }).nth(1);
@@ -90,10 +90,35 @@ test("covers role management refresh, role updates, and session guardrails", asy
   const operatorPayload = (await operatorResponse.json()) as {
     user: {
       id: string;
+      username: string;
+      displayName: string;
       role: string;
     };
   };
   expect(operatorPayload.user.role).toBe("operator");
+
+  const operatorCookieHeader = createSignedUserCookie({
+    id: operatorPayload.user.id,
+    username: operatorPayload.user.username,
+    displayName: operatorPayload.user.displayName,
+    role: "operator",
+  });
+  const operatorConversationResponse = await request.post("/api/conversations", {
+    headers: {
+      cookie: operatorCookieHeader,
+      "Content-Type": "application/json",
+    },
+    data: {
+      title: "Playwright delete-me conversation",
+      messages: [
+        {
+          role: "user",
+          content: "Delete this operator and cascade the saved chat.",
+        },
+      ],
+    },
+  });
+  expect(operatorConversationResponse.ok()).toBeTruthy();
 
   await page.getByRole("button", { name: "Refresh users" }).click();
 
@@ -102,6 +127,10 @@ test("covers role management refresh, role updates, and session guardrails", asy
   const viewerRoleButton = operatorCard.getByRole("button", { name: "viewer", exact: true });
   await viewerRoleButton.click();
   await expect(viewerRoleButton).toBeDisabled();
+
+  await operatorCard.getByRole("button", { name: "Delete user" }).click();
+  await operatorCard.getByRole("button", { name: "Confirm delete" }).click();
+  await expect(page.getByText("Playwright Role Operator was deleted. Removed 1 saved conversation.")).toBeVisible();
 
   const updatedUsersResponse = await request.get("/api/users", {
     headers: {
@@ -115,14 +144,23 @@ test("covers role management refresh, role updates, and session guardrails", asy
       role: string;
     }>;
   };
-  expect(updatedUsersPayload.users).toEqual(
+  expect(updatedUsersPayload.users).not.toEqual(
     expect.arrayContaining([
       expect.objectContaining({
         id: operatorPayload.user.id,
-        role: "viewer",
       }),
     ]),
   );
+
+  const deletedOperatorConversationsResponse = await request.get("/api/conversations", {
+    headers: {
+      cookie: operatorCookieHeader,
+    },
+  });
+  expect(deletedOperatorConversationsResponse.ok()).toBeTruthy();
+  await expect.soft(deletedOperatorConversationsResponse.json()).resolves.toMatchObject({
+    conversations: [],
+  });
 
   const selfRoleResponse = await request.patch(`/api/users/${sessionPayload.user.id}/role`, {
     headers: {
@@ -138,7 +176,22 @@ test("covers role management refresh, role updates, and session guardrails", asy
     error: "You cannot change your own role in this panel.",
   });
 
-  const forgedAdminCookieHeader = createForgedAdminCookie();
+  const selfDeleteResponse = await request.delete(`/api/users/${sessionPayload.user.id}`, {
+    headers: {
+      cookie: adminCookieHeader,
+    },
+  });
+  expect(selfDeleteResponse.status()).toBe(400);
+  await expect.soft(selfDeleteResponse.json()).resolves.toMatchObject({
+    error: "You cannot delete your own account in this panel.",
+  });
+
+  const forgedAdminCookieHeader = createSignedUserCookie({
+    id: "playwright-forged-admin",
+    username: "playwright-forged-admin",
+    displayName: "Playwright Forged Admin",
+    role: "admin",
+  });
   const forgedSessionResponse = await request.patch(`/api/users/${sessionPayload.user.id}/role`, {
     headers: {
       cookie: forgedAdminCookieHeader,
