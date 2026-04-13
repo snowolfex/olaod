@@ -296,3 +296,19 @@ export async function bulkRestoreArchivedConversations(
     restoredAt,
   };
 }
+
+export async function deleteConversationsForUser(ownerId: string) {
+  const conversations = await readStore();
+  const nextConversations = conversations.filter(
+    (conversation) => conversation.ownerId !== ownerId,
+  );
+
+  const deletedCount = conversations.length - nextConversations.length;
+
+  if (deletedCount === 0) {
+    return 0;
+  }
+
+  await writeStore(sortByUpdatedAt(nextConversations));
+  return deletedCount;
+}

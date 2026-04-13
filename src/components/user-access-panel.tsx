@@ -76,6 +76,7 @@ export function UserAccessPanel({ onSessionChange, session }: UserAccessPanelPro
   const [backupSummaryTone, setBackupSummaryTone] = useState<"success" | "warning">("success");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
+  const [pendingDeleteUserId, setPendingDeleteUserId] = useState<string | null>(null);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [isExportingBackup, setIsExportingBackup] = useState(false);
   const [isImportingBackup, setIsImportingBackup] = useState(false);
@@ -200,6 +201,7 @@ export function UserAccessPanel({ onSessionChange, session }: UserAccessPanelPro
 
   async function changeRole(userId: string, role: PublicUser["role"]) {
     setBusyUserId(userId);
+    setPendingDeleteUserId((current) => (current === userId ? null : current));
     setError(null);
 
     try {
@@ -224,6 +226,41 @@ export function UserAccessPanel({ onSessionChange, session }: UserAccessPanelPro
         roleError instanceof Error
           ? roleError.message
           : "Unable to update the user role.",
+      );
+    } finally {
+      setBusyUserId(null);
+    }
+  }
+
+  async function removeUser(user: PublicUser) {
+    setBusyUserId(user.id);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/users/${user.id}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+
+      const payload = (await response.json()) as {
+        user: PublicUser;
+        deletedConversationCount: number;
+      };
+
+      setManagedUsers((current) => current.filter((managedUser) => managedUser.id !== user.id));
+      setPendingDeleteUserId(null);
+      setBackupSummary(
+        `${payload.user.displayName} was deleted. Removed ${payload.deletedConversationCount} saved conversation${payload.deletedConversationCount === 1 ? "" : "s"}.`,
+      );
+      setBackupSummaryTone("warning");
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : "Unable to delete the user.",
       );
     } finally {
       setBusyUserId(null);
@@ -531,25 +568,65 @@ export function UserAccessPanel({ onSessionChange, session }: UserAccessPanelPro
                         Your own role is locked in this panel.
                       </p>
                     ) : (
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {(["viewer", "operator", "admin"] as const).map((role) => (
-                          <button
-                            key={role}
-                            className={`rounded-full px-3 py-2 text-xs font-semibold ${
-                              user.role === role
-                                ? "bg-[var(--accent)] text-white"
-                                : "border border-line bg-white text-foreground"
-                            } disabled:cursor-not-allowed disabled:opacity-50`}
-                            disabled={busyUserId === user.id || user.role === role}
-                            type="button"
-                            onClick={() => changeRole(user.id, role)}
-                          >
-                            {busyUserId === user.id && user.role !== role
-                              ? "Updating..."
-                              : role}
-                          </button>
-                        ))}
-                      </div>
+                      <>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {(["viewer", "operator", "admin"] as const).map((role) => (
+                            <button
+                              key={role}
+                              className={`rounded-full px-3 py-2 text-xs font-semibold ${
+                                user.role === role
+                                  ? "bg-[var(--accent)] text-white"
+                                  : "border border-line bg-white text-foreground"
+                              } disabled:cursor-not-allowed disabled:opacity-50`}
+                              disabled={busyUserId === user.id || user.role === role}
+                              type="button"
+                              onClick={() => changeRole(user.id, role)}
+                            >
+                              {busyUserId === user.id && user.role !== role
+                                ? "Updating..."
+                                : role}
+                            </button>
+                          ))}
+                        </div>
+
+                        {pendingDeleteUserId === user.id ? (
+                          <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-950">
+                            <p className="font-semibold">Delete {user.displayName}?</p>
+                            <p className="mt-2 leading-6">
+                              This removes the local account and permanently deletes that user&apos;s saved conversations on this machine.
+                            </p>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <button
+                                className="rounded-full bg-[var(--accent)] px-3 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                                disabled={busyUserId === user.id}
+                                type="button"
+                                onClick={() => removeUser(user)}
+                              >
+                                {busyUserId === user.id ? "Deleting..." : "Confirm delete"}
+                              </button>
+                              <button
+                                className="rounded-full border border-line bg-white px-3 py-2 font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                                disabled={busyUserId === user.id}
+                                type="button"
+                                onClick={() => setPendingDeleteUserId(null)}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="mt-3">
+                            <button
+                              className="rounded-full border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-950 disabled:cursor-not-allowed disabled:opacity-50"
+                              disabled={busyUserId === user.id}
+                              type="button"
+                              onClick={() => setPendingDeleteUserId(user.id)}
+                            >
+                              Delete user
+                            </button>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 ))

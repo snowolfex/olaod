@@ -102,6 +102,19 @@ export async function updateUserRole(id: string, role: StoredUser["role"]) {
   return users[index];
 }
 
+export async function deleteUser(id: string) {
+  const users = await readStore();
+  const index = users.findIndex((user) => user.id === id);
+
+  if (index === -1) {
+    return null;
+  }
+
+  const [deletedUser] = users.splice(index, 1);
+  await writeStore(users);
+  return deletedUser;
+}
+
 export async function createUser(input: {
   username: string;
   displayName: string;
