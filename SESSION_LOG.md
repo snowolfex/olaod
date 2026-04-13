@@ -1,0 +1,165 @@
+# Session Log
+
+## 2026-04-09
+- Initialized the Next.js App Router project in this workspace.
+- Replaced the starter screen with an initial mobile-first control-plane shell for Ollama.
+- Added a server-side Ollama status library and API route foundation.
+- Verified lint and production build successfully.
+- Added project documentation, environment guidance, and a running VS Code dev task.
+- Added a mobile-first streaming chat workspace and a server-side `/api/ollama/chat` proxy route.
+- Added model refresh, pull, and delete controls backed by server-side model operation routes.
+- Added local conversation persistence with saved-chat APIs and resumable conversations.
+- Added optional admin auth with signed-cookie sessions to protect privileged model operations.
+- Added a local activity log and recent-events panel for chat, conversation, auth, and model operations.
+- Added local user accounts, signed user sessions, and per-user conversation scoping.
+- Added job history for model pull operations with a recent-jobs admin panel.
+- Expanded job history to include model deletes plus timing metadata in the admin panel.
+- Added automatic polling for the recent-jobs panel while jobs remain in progress.
+- Moved recent-jobs filtering and limits into the server-side jobs API while keeping summary counts for the panel.
+- Added server-side job-type filtering plus separate pull/delete filter controls in the admin panel.
+- Added per-job progress trails, a job detail API route, and an admin panel drill-down timeline.
+- Added structured pull progress metadata so job detail timelines can show percentages and transfer sizes.
+- Added explicit queued job state so the admin panel and jobs API can distinguish waiting work from active work.
+- Added server-side pull cancellation with admin-panel controls for queued and running pull jobs.
+- Added retry controls for failed and cancelled pull jobs from the selected-job panel.
+- Added single-flight server-side pull scheduling so later pull requests remain queued until the active pull completes.
+- Added a bulk operator action to cancel all queued pull jobs from the jobs panel.
+- Added queued pull reordering controls and server-side queue position syncing.
+- Added queue position badges and inline reorder controls directly in the jobs list.
+- Added a detached server-side pull retry route so failed or cancelled jobs can be re-queued without a client-held stream.
+- Added a bulk retry action for failed or cancelled pull jobs using the detached server-side executor.
+- Grouped the jobs list by lifecycle section and promoted queue position 1 to a clearer next-to-run label.
+- Added two-step confirmation guards for bulk retry and bulk queued-cancel actions.
+- Added collapsible lifecycle sections in the jobs list, with completed and cancelled sections collapsed by default.
+- Persisted jobs-section collapse preferences in browser storage per signed-in user.
+- Added inline summary feedback for single-job cancel, retry, and queue reorder actions.
+- Persisted the selected job in browser storage per signed-in user and clear it if the job no longer exists.
+- Added server-side jobs analytics for average pull wait, retry volume, and terminal failure rate in the jobs header.
+- Added expand-all and collapse-all controls for lifecycle sections in the jobs panel.
+- Scoped jobs-header analytics to the active type filter and clarified the metric labels.
+- Added a pinned selected-job strip above the lifecycle sections so the active selection stays visible across list changes.
+- Scoped the jobs summary cards to the active type filter while keeping bulk-action controls on the full job summary.
+- Added trend cues for average pull wait and failure rate based on recent-versus-prior job history.
+- Added explicit unavailable-metric explanations for analytics cards based on filter scope and available job history.
+- Added a jump-to-row action from the pinned selected-job strip that expands the matching lifecycle section when needed.
+- Added retry-volume trend cues using the same recent-versus-prior analytics model as the other jobs metrics.
+- Added explicit zero-state explanations to the jobs summary cards for the current filter scope.
+- Added a brief highlight pulse on the target job row after using the pinned-strip jump action.
+- Added visible lifecycle count chips to the pinned strip when the selected job is outside the current list.
+- Added a pinned-strip freshness timestamp based on the last successful selected-job detail refresh.
+- Added relative-time labels for the recent-versus-prior analytics trend windows.
+- Added relative refresh age and a fresh, aging, or stale badge to the pinned selected-job strip.
+- Added a direct refresh-detail action to the pinned selected-job strip.
+- Added a jobs-list last-refresh marker with relative age and freshness status.
+- Added a separate last-changed marker for the visible jobs list, distinct from refresh timing.
+- Added a changed-since-manual-refresh indicator in the jobs footer.
+- Added a manual-refresh recommendation when the pinned selected-job detail is stale during active jobs polling.
+- Added a persisted compact hint mode for the jobs header cards.
+- Elevated the pinned refresh control to a stronger Refresh now action when stale-detail guidance is active.
+- Added relative visible-list timing context when the pinned selected job falls outside the current list view.
+- Added a reveal-in-list action for pinned jobs outside the current view, including fallback guidance when they still exceed the 12-row jobs snapshot.
+- Added a persisted jobs snapshot-size control so operators can load 12, 24, or 48 recent jobs in the admin panel.
+- Added an explicit cancelled-only jobs filter and routed pinned cancelled-job reveal actions into it.
+- Added a cancelled summary card to the jobs header so terminal outcomes are easier to scan at a glance.
+- Renamed successful terminal-job labels in the operator UI from Completed to Succeeded for clearer lifecycle wording.
+- Added selected-job detail diff summaries plus New markers for timeline entries added after a refresh.
+- Added status chips and lifecycle-tinted rows to selected-job timeline entries so transitions stand out immediately.
+- Turned the jobs summary cards into quick status pivots so operators can jump in and out of filtered views without using the lower filter row.
+- Added queue-movement cues to queued job timelines and surfaced the latest queue move in the selected-job header.
+- Added a compact terminal-outcome pivot in the jobs header for faster jumps between failed, cancelled, and succeeded views.
+- Added a compact active-only pivot in the jobs header for faster jumps between queued and running views.
+- Added pinned-strip delta chips for duration and latest-update changes after selected-job detail refreshes.
+- Added a quick-pivot family badge plus pinned-strip queue-position delta chips for queued selected jobs.
+- Added a one-tap quick-pivot reset control and pinned-strip status-transition delta chips.
+- Added a job-type scope badge and pinned-strip chips for newly added timeline-entry counts.
+- Added a clear-all-filters control plus pinned-strip progress-percent delta chips for pull refreshes.
+- Added a combined scope-summary readout and pinned-strip byte-transfer delta chips for pull refreshes.
+- Added a unified current-scope badge and pinned-strip total-byte target delta chips for pull refreshes.
+- Added a copy-scope action plus pinned transfer-state chips for completed transfers and revised targets.
+- Added a scope-changed marker for pinned jobs plus idle-transfer detection for pull refresh chips.
+- Added a re-pin-to-current-scope action plus retry-lineage chips for pinned pull jobs.
+- Added pinned ownership chips plus a new-only filter for selected-job timeline entries after refresh.
+- Added a server-backed ownership filter in the jobs header plus all, new, and changed timeline filters in selected-job detail.
+- Scoped bulk retry and queued-cancel actions to the active ownership view and aligned ownership matching to stored job display names.
+- Added a bulk-scope summary line with queued and retryable pull counts for the current ownership view.
+- Added current-scope and bulk-action-state chips to pinned and selected job detail surfaces.
+- Disabled selected-job retry, cancel, and reorder actions when the active scope excludes that job.
+- Added owner-aware count chips to lifecycle section headers in the jobs list.
+- Added compact ownership chips to individual job rows in the jobs list.
+- Added short queue-health summaries to lifecycle section headers.
+- Added owner-aware subcounts to the jobs summary cards.
+- Added saved-chat search plus inline active-conversation title editing in the chat workspace.
+- Added quick-start prompt presets and lightweight saved-chat state chips in the chat workspace.
+- Added an auto-growing chat composer plus Ctrl+Enter or Cmd+Enter send shortcuts.
+- Moved chat prompt presets into a compact toggleable drawer for better mobile composer space.
+- Added a mobile-only toggle to collapse or reopen the chat workspace rail.
+- Persisted the mobile chat rail open or closed state per user in browser storage.
+- Persisted the chat prompt drawer open or closed state per user in browser storage.
+- Added per-user pinned conversations and sorted pinned chats to the top of the saved-chat rail.
+- Added a pinned-only filter and pin count summary to the saved-chat rail.
+- Persisted the pinned-only saved-chat filter state per user in browser storage.
+- Split the saved-chat rail into distinct pinned and recent sections.
+- Added lightweight recency chips to recently updated saved conversations.
+- Grouped recent saved conversations into Today, Yesterday, This week, and Older buckets.
+- Added live-activity badges for saved conversations that are responding or were just updated.
+- Added persisted conversation archiving plus a separate archived section in the saved-chat rail.
+- Added archive-specific activity events plus an archived-state cue in the active chat header.
+- Added archived chat bulk cleanup for empty threads and threads older than 30 days.
+- Added a per-user archived retention preference for cleanup thresholds.
+- Added bulk restore for archived chats in the current archived view.
+- Added persisted archived filters for all, empty, and age-qualified archived chats.
+- Scoped archived bulk cleanup actions to the current filtered archive view.
+- Added persisted archive sort modes for newest archived, oldest archived, and recent activity.
+- Added archive-age and last-activity chips to archived conversation rows.
+- Added archived multi-select so restore and cleanup actions can target a selected subset.
+- Added a plain-language archive summary line for filter, sort, and selection state.
+- Added quick archive selection shortcuts for empty chats and the active retention-age bucket.
+- Added keyboard navigation and selection support to archived conversation rows.
+- Extended archive keyboard support with select-all-visible and clear-selection shortcuts.
+- Added archive subset keyboard shortcuts plus ARIA selection state for archived rows.
+- Added pressed-state and live-region accessibility cues to archive controls and bulk actions.
+- Added pressed-state and live-status accessibility cues to jobs filters, cards, and bulk/timeline controls.
+- Added keyboard navigation for jobs section headers and job rows.
+- Added jobs quick-scope shortcuts plus an accessibility pass over library and pull controls.
+- Added panel-level jobs keyboard shortcuts for refresh, jump, detail refresh, and clear-selection flows.
+- Added model-library search with a filtered visible-count summary.
+- Added persisted model-library filtering and sorting plus runtime and size badges for installed models.
+- Added Playwright-based smoke coverage for the main control-plane shell, persisted model-library controls, and public session/status APIs.
+- Added isolated Playwright data storage plus an authenticated admin-path test covering first-user registration, admin guardrails, and seeded job-history access.
+- Switched Playwright to an isolated production-style test server so the suite no longer conflicts with an already running `next dev` session.
+- Replaced the dynamic test data-path override with a static Playwright test-mode data directory to reduce Turbopack tracing noise during builds.
+- Added seeded Playwright coverage for archived conversation filter, selection, and bulk restore flows.
+- Added seeded Playwright coverage for saved conversation rename, pinning, and archive-from-active-thread flows.
+- Added role-management Playwright coverage for admin refresh, operator role changes, self-role protection, and the last-admin guardrail.
+- Added explicit ownership-aware scope cues to the jobs analytics row.
+- Cleaned up analytics helper wording so personal-scope cards read naturally.
+- Added recent-change activity cues to the jobs analytics row based on visible-list timing.
+- Added per-status summary-card deltas against the last manual jobs refresh for the current scope.
+- Added matching manual-refresh delta chips to lifecycle section headers.
+- Added delta-aware lifecycle section insight text tied to the last manual refresh.
+
+## 2026-04-10
+- Added deterministic Playwright pull scenarios in test mode so server-side queue and retry workflows can be exercised without touching the real Ollama host.
+- Added seeded Playwright coverage for jobs queue reorder, bulk queued-pull cancellation, and failed-pull retry flows.
+- Reworked the jobs Playwright cleanup path so the suite finishes without leaving response-pipe failures behind.
+- Verified `cmd /c npm run test:e2e`, `cmd /c npm run lint`, and `cmd /c npm run build` after the new jobs coverage landed.
+- Added LAN-friendly `dev:lan` and `start:lan` scripts plus a matching VS Code task so the app can be opened from Android devices on the same Wi-Fi network.
+- Documented machine-local desktop and Android testing steps, including the current Wi-Fi URL for this machine.
+- Added deterministic Playwright chat prompts in test mode so browser chat coverage does not depend on a live Ollama text stream.
+- Added signed-in Playwright coverage for chat streaming completion and stop flows, including persisted partial-response behavior after stop.
+- Tightened the chat Playwright spec to poll for saved conversation state and reset `.playwright-data` after completion so later specs stay isolated.
+- Added admin-only workspace backup export and restore APIs plus a matching admin-panel workflow for local machine state.
+- Hardened signed user-session resolution so restoring a snapshot that removes a user clears that stale session on the next request.
+- Added Playwright coverage for workspace backup export, restore rollback, and stale-session invalidation after restore.
+- Moved backup-restore outcome notices to the session panel so they remain visible even when a restore removes admin access.
+- Added browser coverage for restore recovery when a backup downgrades the signed-in user from admin to viewer.
+- Serialized JSON-backed activity and job-history writes through a shared store lock so concurrent pull updates no longer corrupt local store files during browser tests.
+
+## 2026-04-13
+- Cleaned `.github/copilot-instructions.md` into its final checklist state and removed the embedded HTML guidance comments.
+- Re-verified the local Next.js development launch and confirmed the app is serving on `http://localhost:3000`.
+- Updated the documented Wi-Fi testing address to the machine's current IPv4 `10.0.0.90`.
+- Prepared the app for immediate LAN testing by switching the active dev session from local verification to the explicit `dev:lan` bind.
+- Fixed Playwright chat-mode startup so the chat composer gets a deterministic fallback model even when the real Ollama host is unreachable.
+- Fixed the Playwright stop-stream harness so the retained partial reply is emitted before an immediate stop action can cut it off.
+- Re-ran `cmd /c npm run test:e2e` and confirmed all 11 browser tests pass.

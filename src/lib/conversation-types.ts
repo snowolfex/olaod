@@ -1,0 +1,26 @@
+import type { OllamaChatMessage } from "@/lib/ollama";
+
+export type ConversationSettings = {
+  model: string;
+  systemPrompt: string;
+  temperature: number;
+};
+
+export type StoredConversation = {
+  id: string;
+  ownerId: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  archivedAt: string | null;
+  messages: OllamaChatMessage[];
+  settings: ConversationSettings;
+};
+
+export type ConversationSummary = Pick<
+  StoredConversation,
+  "id" | "title" | "createdAt" | "updatedAt" | "archivedAt"
+> & {
+  messageCount: number;
+  lastMessagePreview: string;
+};

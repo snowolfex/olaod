@@ -1,0 +1,29 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "dev server",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"npm run dev"
+			],
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "dev server (LAN)",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"npm run dev:lan"
+			],
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "build"
+		}
+	]
+}

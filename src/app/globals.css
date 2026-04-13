@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f6efe5;
+  --foreground: #1f1f1b;
+  --surface: rgba(255, 251, 245, 0.74);
+  --surface-strong: rgba(255, 251, 245, 0.92);
+  --line: rgba(52, 46, 36, 0.12);
+  --muted: #655b4e;
+  --accent: #bc5f3d;
+  --accent-strong: #8f3d1f;
+  --shadow: 0 24px 80px rgba(83, 53, 31, 0.14);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-strong: var(--surface-strong);
+  --color-line: var(--line);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --font-sans: var(--font-sora);
+  --font-mono: var(--font-ibm-plex-mono);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background:
+    radial-gradient(circle at top left, rgba(188, 95, 61, 0.18), transparent 34%),
+    radial-gradient(circle at top right, rgba(227, 174, 74, 0.16), transparent 28%),
+    linear-gradient(180deg, #fbf5ec 0%, #f3ecdf 52%, #efe7db 100%);
+  color: var(--foreground);
+  font-family: var(--font-sora), sans-serif;
+  text-rendering: optimizeLegibility;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.18) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.18) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.28), transparent 88%);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+::selection {
+  background: rgba(188, 95, 61, 0.24);
+  color: var(--foreground);
+}
+
+.glass-panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(20px);
+}
+
+.section-label {
+  color: var(--accent-strong);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.eyebrow {
+  font-family: var(--font-ibm-plex-mono), monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
