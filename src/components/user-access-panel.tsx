@@ -81,6 +81,7 @@ export function UserAccessPanel({ onSessionChange, session }: UserAccessPanelPro
   const [isImportingBackup, setIsImportingBackup] = useState(false);
   const [pendingBackupFileName, setPendingBackupFileName] = useState<string | null>(null);
   const [pendingBackupSnapshot, setPendingBackupSnapshot] = useState<WorkspaceBackupSnapshot | null>(null);
+  const [backupRestoreConfirmed, setBackupRestoreConfirmed] = useState(false);
   const backupImportInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -234,6 +235,7 @@ export function UserAccessPanel({ onSessionChange, session }: UserAccessPanelPro
     setError(null);
     setBackupSummary(null);
     setBackupSummaryTone("success");
+    setBackupRestoreConfirmed(false);
 
     try {
       const response = await fetch("/api/admin/system/backup", {
@@ -300,6 +302,7 @@ export function UserAccessPanel({ onSessionChange, session }: UserAccessPanelPro
     } catch (backupError) {
       setPendingBackupSnapshot(null);
       setPendingBackupFileName(null);
+      setBackupRestoreConfirmed(false);
       setError(
         backupError instanceof Error
           ? backupError.message
@@ -343,6 +346,7 @@ export function UserAccessPanel({ onSessionChange, session }: UserAccessPanelPro
       onSessionChange(nextSession);
       setPendingBackupSnapshot(null);
       setPendingBackupFileName(null);
+      setBackupRestoreConfirmed(false);
       setManagedUsers([]);
       setUsername("");
       setDisplayName("");
@@ -583,6 +587,26 @@ export function UserAccessPanel({ onSessionChange, session }: UserAccessPanelPro
               Keep exported backups in a trusted location and only restore files from sources you control.
             </p>
 
+            {pendingBackupSnapshot ? (
+              <div className="mt-4 rounded-[24px] border border-amber-200 bg-amber-50/70 px-4 py-4 text-sm text-amber-950">
+                <p className="font-semibold">Restore replaces the current local workspace state.</p>
+                <p className="mt-2 leading-6">
+                  Users, conversations, activity events, and job history on this machine will be overwritten by the selected backup.
+                </p>
+                <label className="mt-4 flex items-start gap-3 text-sm text-foreground">
+                  <input
+                    checked={backupRestoreConfirmed}
+                    className="mt-1 h-4 w-4 rounded border-line"
+                    type="checkbox"
+                    onChange={(event) => setBackupRestoreConfirmed(event.target.checked)}
+                  />
+                  <span>
+                    I understand this restore overwrites the current local workspace data and may sign out or change the access level of the current user.
+                  </span>
+                </label>
+              </div>
+            ) : null}
+
             <div className="mt-4 flex flex-wrap gap-3">
               <input
                 ref={backupImportInputRef}
@@ -601,7 +625,7 @@ export function UserAccessPanel({ onSessionChange, session }: UserAccessPanelPro
               <button
                 aria-label={pendingBackupSnapshot ? "Confirm restore workspace backup" : "Restore workspace backup"}
                 className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={!pendingBackupSnapshot || isImportingBackup}
+                disabled={!pendingBackupSnapshot || !backupRestoreConfirmed || isImportingBackup}
                 type="button"
                 onClick={importWorkspaceBackup}
               >

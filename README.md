@@ -172,7 +172,8 @@ GitHub repo description: Mobile-first Next.js control plane for Ollama with a se
 2. For production-style local verification on this PC, run `cmd /c npm run build` and then `cmd /c npm run start`, then open `http://localhost:3000`.
 3. While signed in as an admin, use the Workspace backup section in the user panel to export or restore the local users, conversations, activity log, and job history for this machine.
 4. Backup files are sensitive: they include local account metadata plus the password hashes and salts required to preserve sign-in access across restore.
-5. Restore flows now surface what happened to the current session, including when a backup signs the current user out or downgrades that user from admin to a lower role.
+5. Restore now requires an explicit in-app acknowledgement before the confirm action is enabled because the selected backup overwrites the current local workspace state.
+6. Restore flows now surface what happened to the current session, including when a backup signs the current user out or downgrades that user from admin to a lower role.
 
 ## Android testing on your local Wi-Fi
 
