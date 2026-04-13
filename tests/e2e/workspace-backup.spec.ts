@@ -89,6 +89,22 @@ test("exports and restores workspace backups, including invalidating stale user 
     await expect(page.getByText("Workspace backup exported.")).toBeVisible();
     expect(download.suggestedFilename()).toContain("oload-backup-");
 
+    const activityAfterExportResponse = await request.get("/api/admin/activity", {
+      headers: {
+        cookie: adminCookieHeader,
+      },
+    });
+    expect(activityAfterExportResponse.ok()).toBeTruthy();
+    await expect.soft(activityAfterExportResponse.json()).resolves.toMatchObject({
+      events: expect.arrayContaining([
+        expect.objectContaining({
+          type: "workspace.backup_exported",
+          summary: "Workspace backup exported",
+          details: expect.stringContaining("Playwright Backup Admin exported a workspace backup snapshot."),
+        }),
+      ]),
+    });
+
     const downloadPath = await download.path();
 
     if (!downloadPath) {
@@ -198,6 +214,29 @@ test("exports and restores workspace backups, including invalidating stale user 
     await expect.soft(restoredConversationsResponse.json()).resolves.toMatchObject({
       conversations: [expect.objectContaining({ title: "Backup Seed Conversation" })],
     });
+
+    const activityAfterRestoreResponse = await request.get("/api/admin/activity", {
+      headers: {
+        cookie: adminCookieHeader,
+      },
+    });
+    expect(activityAfterRestoreResponse.ok()).toBeTruthy();
+    const activityAfterRestorePayload = (await activityAfterRestoreResponse.json()) as {
+      events: Array<{
+        type: string;
+        summary: string;
+        details?: string;
+      }>;
+    };
+    expect(activityAfterRestorePayload.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "workspace.backup_restored",
+          summary: "Workspace backup restored",
+          details: expect.stringContaining("restored a workspace backup snapshot containing 1 users, 1 conversations"),
+        }),
+      ]),
+    );
 
     const signedOutSnapshot: WorkspaceBackupSnapshot = {
       ...originalSnapshot,

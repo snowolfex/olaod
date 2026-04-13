@@ -177,3 +177,4 @@
 - Added a clear-selected-backup action and extended Playwright backup coverage so restore acknowledgement and cancel-before-confirm flows are both exercised.
 - Added saved-conversation impact counts to the admin user list so delete confirmation now shows exactly how many local conversations will be removed before the action is confirmed.
 - Extended the role-management Playwright coverage again to assert that admin role changes and guarded user deletion both appear in the activity log.
+- Extended the workspace-backup Playwright coverage to assert that backup export and restore actions are recorded in the admin activity log.
