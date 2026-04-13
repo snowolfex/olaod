@@ -8,8 +8,7 @@ GitHub repo description: Mobile-first Next.js control plane for Ollama with a se
 
 - Server-side Ollama gateway for chat, model status, pull, and delete flows
 - Mobile-first chat workspace with saved, pinned, archived, and restorable conversations
-- Local user accounts, signed sessions, role management, and optional admin password protection
-- Local user accounts, signed sessions, role management, guarded user deletion, and optional admin password protection
+- Local user accounts, signed sessions, role management, guarded user deletion with conversation-impact preview, and optional admin password protection
 - Admin jobs surface with queue reorder, cancel, retry, analytics, ownership filters, and detail timelines
 - Workspace backup export and restore flows for local users, conversations, activity, and job history
 - Deterministic Playwright coverage for auth, chat, jobs, conversation lifecycle, and backup recovery flows
@@ -39,7 +38,7 @@ GitHub repo description: Mobile-first Next.js control plane for Ollama with a se
 - Optional admin auth routes at `/api/auth/session`, `/api/auth/login`, and `/api/auth/logout`
 - Local activity log via `/api/admin/activity`
 - Local user accounts via `/api/users/session`, `/api/users/register`, `/api/users/login`, and `/api/users/logout`
-- Admin role management and guarded local account deletion via `/api/users`, `/api/users/[id]`, and `/api/users/[id]/role`
+- Admin role management and guarded local account deletion with per-user conversation counts via `/api/users`, `/api/users/[id]`, and `/api/users/[id]/role`
 - Local job history via `/api/admin/jobs`
 - Admin-only workspace backup export and restore via `/api/admin/system/backup`
 - Model delete operations are also recorded in local job history with duration metadata

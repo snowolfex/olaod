@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import type { PublicUser, SessionUser, UserSessionStatus } from "@/lib/user-types";
+import type { ManagedUser, PublicUser, SessionUser, UserSessionStatus } from "@/lib/user-types";
 
 type WorkspaceBackupSnapshot = {
   version: number;
@@ -67,7 +67,7 @@ async function readErrorMessage(response: Response) {
 export function UserAccessPanel({ onSessionChange, session }: UserAccessPanelProps) {
   const currentUserId = session.user?.id ?? null;
   const [mode, setMode] = useState<"login" | "register">("login");
-  const [managedUsers, setManagedUsers] = useState<PublicUser[]>([]);
+  const [managedUsers, setManagedUsers] = useState<ManagedUser[]>([]);
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
@@ -111,7 +111,7 @@ export function UserAccessPanel({ onSessionChange, session }: UserAccessPanelPro
         throw new Error(await readErrorMessage(response));
       }
 
-      const payload = (await response.json()) as { users: PublicUser[] };
+      const payload = (await response.json()) as { users: ManagedUser[] };
       setManagedUsers(payload.users);
     } catch (refreshError) {
       setError(
@@ -166,7 +166,7 @@ export function UserAccessPanel({ onSessionChange, session }: UserAccessPanelPro
         userCount: Math.max(1, session.userCount + (mode === "register" ? 1 : 0)),
       });
       if (mode === "register") {
-        setManagedUsers((current) => [...current, payload.user]);
+        setManagedUsers((current) => [...current, { ...payload.user, savedConversationCount: 0 }]);
       }
       setUsername("");
       setDisplayName("");
@@ -226,7 +226,7 @@ export function UserAccessPanel({ onSessionChange, session }: UserAccessPanelPro
 
       const payload = (await response.json()) as { user: PublicUser };
       setManagedUsers((current) =>
-        current.map((user) => (user.id === userId ? payload.user : user)),
+        current.map((user) => (user.id === userId ? { ...user, ...payload.user } : user)),
       );
     } catch (roleError) {
       setError(
@@ -239,7 +239,7 @@ export function UserAccessPanel({ onSessionChange, session }: UserAccessPanelPro
     }
   }
 
-  async function removeUser(user: PublicUser) {
+  async function removeUser(user: ManagedUser) {
     setBusyUserId(user.id);
     setError(null);
 
@@ -596,7 +596,7 @@ export function UserAccessPanel({ onSessionChange, session }: UserAccessPanelPro
                           <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-950">
                             <p className="font-semibold">Delete {user.displayName}?</p>
                             <p className="mt-2 leading-6">
-                              This removes the local account and permanently deletes that user&apos;s saved conversations on this machine.
+                              This removes the local account and permanently deletes {user.savedConversationCount} saved conversation{user.savedConversationCount === 1 ? "" : "s"} for this user on this machine.
                             </p>
                             <div className="mt-3 flex flex-wrap gap-2">
                               <button

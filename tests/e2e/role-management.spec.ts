@@ -129,6 +129,7 @@ test("covers role management refresh, role updates, deletion, and session guardr
   await expect(viewerRoleButton).toBeDisabled();
 
   await operatorCard.getByRole("button", { name: "Delete user" }).click();
+  await expect(operatorCard.getByText("This removes the local account and permanently deletes 1 saved conversation for this user on this machine.")).toBeVisible();
   await operatorCard.getByRole("button", { name: "Confirm delete" }).click();
   await expect(page.getByText("Playwright Role Operator was deleted. Removed 1 saved conversation.")).toBeVisible();
 

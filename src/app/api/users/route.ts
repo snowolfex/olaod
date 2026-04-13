@@ -1,3 +1,4 @@
+import { countConversationsByOwnerIds } from "@/lib/conversations";
 import { getCurrentUser } from "@/lib/auth";
 import { listUsers } from "@/lib/users";
 
@@ -11,5 +12,12 @@ export async function GET(request: Request) {
   }
 
   const users = await listUsers();
-  return Response.json({ users });
+  const conversationCounts = await countConversationsByOwnerIds(users.map((user) => user.id));
+
+  return Response.json({
+    users: users.map((user) => ({
+      ...user,
+      savedConversationCount: conversationCounts[user.id] ?? 0,
+    })),
+  });
 }

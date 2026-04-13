@@ -312,3 +312,22 @@ export async function deleteConversationsForUser(ownerId: string) {
   await writeStore(sortByUpdatedAt(nextConversations));
   return deletedCount;
 }
+
+export async function countConversationsByOwnerIds(ownerIds: string[]) {
+  const counts = Object.fromEntries(ownerIds.map((ownerId) => [ownerId, 0])) as Record<string, number>;
+
+  if (ownerIds.length === 0) {
+    return counts;
+  }
+
+  const requestedOwnerIds = new Set(ownerIds);
+  const conversations = await readStore();
+
+  for (const conversation of conversations) {
+    if (requestedOwnerIds.has(conversation.ownerId)) {
+      counts[conversation.ownerId] = (counts[conversation.ownerId] ?? 0) + 1;
+    }
+  }
+
+  return counts;
+}

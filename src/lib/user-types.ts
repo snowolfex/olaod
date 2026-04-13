@@ -12,6 +12,10 @@ export type StoredUser = {
 
 export type PublicUser = Omit<StoredUser, "passwordHash" | "passwordSalt">;
 
+export type ManagedUser = PublicUser & {
+  savedConversationCount: number;
+};
+
 export type SessionUser = Pick<PublicUser, "id" | "username" | "displayName" | "role">;
 
 export type UserSessionStatus = {
