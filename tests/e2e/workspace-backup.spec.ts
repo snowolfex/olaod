@@ -164,6 +164,18 @@ test("exports and restores workspace backups, including invalidating stale user 
       buffer: Buffer.from(JSON.stringify(originalSnapshot, null, 2)),
     });
     await expect(page.getByText(/Loaded backup .* with 1 users, 1 conversations,/)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Confirm restore workspace backup" })).toBeDisabled();
+    await page.getByRole("button", { name: "Clear selected backup" }).click();
+    await expect(page.getByText(/Loaded backup .* with 1 users, 1 conversations,/)).toHaveCount(0);
+
+    await page.locator('input[type="file"]').setInputFiles({
+      name: download.suggestedFilename(),
+      mimeType: "application/json",
+      buffer: Buffer.from(JSON.stringify(originalSnapshot, null, 2)),
+    });
+    await expect(page.getByText(/Loaded backup .* with 1 users, 1 conversations,/)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Confirm restore workspace backup" })).toBeDisabled();
+    await page.getByRole("checkbox", { name: /i understand this restore overwrites/i }).check();
     await page.getByRole("button", { name: "Confirm restore workspace backup" }).click();
     await expect(page.getByText("Workspace backup restored.")).toBeVisible();
 
@@ -201,6 +213,8 @@ test("exports and restores workspace backups, including invalidating stale user 
       buffer: Buffer.from(JSON.stringify(signedOutSnapshot, null, 2)),
     });
     await expect(page.getByText(/Loaded backup oload-backup-empty\.json with 0 users, 0 conversations,/)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Confirm restore workspace backup" })).toBeDisabled();
+    await page.getByRole("checkbox", { name: /i understand this restore overwrites/i }).check();
     await page.getByRole("button", { name: "Confirm restore workspace backup" }).click();
     await expect(page.getByText("Workspace backup restored. Your previous session was cleared because the restored workspace no longer includes any local users.")).toBeVisible();
     await expect(page.getByRole("button", { name: "Create user" }).first()).toBeVisible();
@@ -282,6 +296,8 @@ test("recovers cleanly when a restore downgrades the current user's access", asy
       buffer: Buffer.from(JSON.stringify(downgradedSnapshot, null, 2)),
     });
     await expect(page.getByText(/Loaded backup oload-backup-downgraded\.json with 1 users, 1 conversations,/)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Confirm restore workspace backup" })).toBeDisabled();
+    await page.getByRole("checkbox", { name: /i understand this restore overwrites/i }).check();
     await page.getByRole("button", { name: "Confirm restore workspace backup" }).click();
 
     await expect(page.getByText("Workspace backup restored. Your access changed from admin to viewer.")).toBeVisible();

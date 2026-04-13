@@ -85,6 +85,13 @@ export function UserAccessPanel({ onSessionChange, session }: UserAccessPanelPro
   const [backupRestoreConfirmed, setBackupRestoreConfirmed] = useState(false);
   const backupImportInputRef = useRef<HTMLInputElement | null>(null);
 
+  function clearPendingBackupSelection() {
+    setPendingBackupSnapshot(null);
+    setPendingBackupFileName(null);
+    setBackupRestoreConfirmed(false);
+    setBackupSummary(null);
+  }
+
   useEffect(() => {
     if (session.user?.role === "admin") {
       void refreshUsers();
@@ -337,9 +344,7 @@ export function UserAccessPanel({ onSessionChange, session }: UserAccessPanelPro
       );
       setBackupSummaryTone("success");
     } catch (backupError) {
-      setPendingBackupSnapshot(null);
-      setPendingBackupFileName(null);
-      setBackupRestoreConfirmed(false);
+      clearPendingBackupSelection();
       setError(
         backupError instanceof Error
           ? backupError.message
@@ -381,9 +386,7 @@ export function UserAccessPanel({ onSessionChange, session }: UserAccessPanelPro
       const nextSession = (await sessionResponse.json()) as UserSessionStatus;
       const restoreOutcome = describeRestoreOutcome(previousUser, nextSession);
       onSessionChange(nextSession);
-      setPendingBackupSnapshot(null);
-      setPendingBackupFileName(null);
-      setBackupRestoreConfirmed(false);
+      clearPendingBackupSelection();
       setManagedUsers([]);
       setUsername("");
       setDisplayName("");
@@ -699,6 +702,15 @@ export function UserAccessPanel({ onSessionChange, session }: UserAccessPanelPro
               >
                 Choose backup file
               </button>
+              {pendingBackupSnapshot ? (
+                <button
+                  className="rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-foreground"
+                  type="button"
+                  onClick={clearPendingBackupSelection}
+                >
+                  Clear selected backup
+                </button>
+              ) : null}
               <button
                 aria-label={pendingBackupSnapshot ? "Confirm restore workspace backup" : "Restore workspace backup"}
                 className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"

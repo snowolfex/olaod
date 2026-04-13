@@ -174,7 +174,7 @@ GitHub repo description: Mobile-first Next.js control plane for Ollama with a se
 2. For production-style local verification on this PC, run `cmd /c npm run build` and then `cmd /c npm run start`, then open `http://localhost:3000`.
 3. While signed in as an admin, use the Workspace backup section in the user panel to export or restore the local users, conversations, activity log, and job history for this machine.
 4. Backup files are sensitive: they include local account metadata plus the password hashes and salts required to preserve sign-in access across restore.
-5. Restore now requires an explicit in-app acknowledgement before the confirm action is enabled because the selected backup overwrites the current local workspace state.
+5. Restore now requires an explicit in-app acknowledgement before the confirm action is enabled because the selected backup overwrites the current local workspace state, and the selected file can be cleared before confirm.
 6. Restore flows now surface what happened to the current session, including when a backup signs the current user out or downgrades that user from admin to a lower role.
 
 ## Android testing on your local Wi-Fi
@@ -193,7 +193,7 @@ GitHub repo description: Mobile-first Next.js control plane for Ollama with a se
 3. The Playwright config builds once, starts an isolated server on `http://127.0.0.1:3101`, and automatically switches the app to `.playwright-data` so test runs do not touch the normal local `data/` files.
 4. Playwright test mode also uses deterministic pull scenarios for `playwright:*` model names so queue and retry workflows can be exercised without mutating the real Ollama host.
 5. Playwright test mode also uses deterministic streamed chat prompts for `playwright:reply` and `playwright:stop` so browser chat tests do not depend on a live Ollama text stream.
-6. Current browser coverage includes the main shell, model-library controls, signed-in chat streaming completion and stop flows, first-user admin auth, seeded jobs access, jobs queue reorder plus bulk queued-cancel and failed-pull retry flows, saved conversation rename and pin/archive lifecycle flows, archived conversation filter/selection/restore flows, admin role-management updates plus self-role and guarded user-deletion flows with saved-conversation cleanup coverage, workspace backup export plus restore rollback coverage, and restore recovery when a backup clears or downgrades the current session.
+6. Current browser coverage includes the main shell, model-library controls, signed-in chat streaming completion and stop flows, first-user admin auth, seeded jobs access, jobs queue reorder plus bulk queued-cancel and failed-pull retry flows, saved conversation rename and pin/archive lifecycle flows, archived conversation filter/selection/restore flows, admin role-management updates plus self-role and guarded user-deletion flows with saved-conversation cleanup coverage, workspace backup export plus selected-backup clear and restore-acknowledgement coverage, and restore recovery when a backup clears or downgrades the current session.
 
 Saved conversations are stored locally in `data/conversations.json`.
 Audit-style activity events are stored locally in `data/activity-log.json`.

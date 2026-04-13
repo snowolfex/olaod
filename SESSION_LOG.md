@@ -174,3 +174,4 @@
 - Added an explicit restore acknowledgement gate in the admin backup UI so the confirm action stays disabled until the operator acknowledges that restore overwrites the current local workspace state.
 - Added guarded admin-side local user deletion with self-delete and last-admin protections, plus automatic cleanup of the deleted user&apos;s saved conversations.
 - Extended the Playwright role-management coverage to exercise guarded user deletion, deny self-delete, and verify saved conversations are removed with the deleted account.
+- Added a clear-selected-backup action and extended Playwright backup coverage so restore acknowledgement and cancel-before-confirm flows are both exercised.
