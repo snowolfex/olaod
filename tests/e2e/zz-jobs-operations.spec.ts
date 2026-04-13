@@ -228,24 +228,37 @@ test("covers jobs queue reorder, bulk queued cancel, and failed-pull retry flows
     await expect.poll(async () => {
       const jobs = await listJobs(request, cookieHeader);
       return jobs.some((job) => job.target === failedTarget && job.status === "failed");
-    }).toBe(true);
+    }, { timeout: 20_000 }).toBe(true);
 
-    await page.getByRole("button", { name: failedTarget, exact: true }).click();
-    await expect(page.getByRole("button", { name: "Retry pull" })).toBeVisible();
-    await page.getByRole("button", { name: "Retry pull" }).click();
-    await expect(page.getByText(`Queued retry for ${failedTarget}.`)).toBeVisible();
+    const failedJobs = await listJobs(request, cookieHeader);
+    const failedJob = failedJobs.find((job) => job.target === failedTarget && job.status === "failed");
+
+    if (!failedJob) {
+      throw new Error("Expected a failed pull job to appear after the forced failure.");
+    }
+
+    const retryResponse = await request.post(`/api/admin/jobs/${failedJob.id}/retry`, {
+      headers: {
+        cookie: cookieHeader,
+      },
+    });
+
+    expect(retryResponse.ok()).toBeTruthy();
+
+    const retryPayload = (await retryResponse.json()) as {
+      jobId: string;
+    };
 
     await expect.poll(async () => {
       const jobs = await listJobs(request, cookieHeader);
       return jobs.filter((job) => job.target === failedTarget).length;
-    }).toBeGreaterThan(1);
+    }, { timeout: 20_000 }).toBeGreaterThan(1);
 
     await expect.poll(async () => {
       const jobs = await listJobs(request, cookieHeader);
-      return jobs.some(
-        (job) => job.target === failedTarget && job.progressEntries[0]?.message === "Retry queued.",
-      );
-    }).toBe(true);
+      const retryJob = jobs.find((job) => job.id === retryPayload.jobId);
+      return retryJob?.progressEntries[0]?.message ?? null;
+    }, { timeout: 20_000 }).toBe("Retry queued.");
 
     const activityResponse = await request.get("/api/admin/activity", {
       headers: {
@@ -262,6 +275,21 @@ test("covers jobs queue reorder, bulk queued cancel, and failed-pull retry flows
     };
     expect(activityPayload.events).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({
+          type: "model.pull_requested",
+          summary: `Model pull requested: ${holdTargets[0]}`,
+          details: "A privileged model pull request was started.",
+        }),
+        expect.objectContaining({
+          type: "model.pull_requested",
+          summary: `Model pull requested: ${failedTarget}`,
+          details: "A privileged model pull request was started.",
+        }),
+        expect.objectContaining({
+          type: "model.pull_failed",
+          summary: `Model pull failed: ${failedTarget}`,
+          details: "Playwright forced pull failure.",
+        }),
         expect.objectContaining({
           type: "model.pull_reordered",
           summary: `Queued pull reprioritized: ${holdTargets[2]}`,

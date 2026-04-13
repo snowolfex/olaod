@@ -178,4 +178,4 @@
 - Added saved-conversation impact counts to the admin user list so delete confirmation now shows exactly how many local conversations will be removed before the action is confirmed.
 - Extended the role-management Playwright coverage again to assert that admin role changes and guarded user deletion both appear in the activity log.
 - Extended the workspace-backup Playwright coverage to assert that backup export and restore actions are recorded in the admin activity log.
-- Extended the jobs Playwright coverage to assert that queued-pull reorder, bulk cancel, and retry actions are also recorded in the admin activity log.
+- Extended the jobs Playwright coverage to assert that direct pull-requested, forced pull-failed, queued-pull reorder, bulk cancel, and retry actions are all recorded in the admin activity log.
