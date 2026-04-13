@@ -169,3 +169,4 @@
 - Diagnosed the live "buttons do not work" report to a Next.js dev-origin block on `127.0.0.1` and the LAN host, not a dead client bundle.
 - Added `allowedDevOrigins` coverage for loopback and common private-network hosts in `next.config.ts`, then restarted the dev server and confirmed HMR reconnects cleanly.
 - Added client-side shared status refresh in `InteractionSurface` so newly available Ollama models become selectable in chat without requiring an operator-side manual refresh first.
+- Clarified the model-operations status copy so signed-in local admins now see `Local admin active` instead of the misleading `Auth disabled` state while privileged controls are available.

@@ -2522,6 +2522,13 @@ export function ModelOperationsPanel({
     : userCount > 0
       ? true
       : auth.authEnabled && !auth.authenticated;
+  const adminStatusLabel = auth.authEnabled
+    ? auth.authenticated
+      ? "Admin session active"
+      : "Admin locked"
+    : currentUser?.role === "admin"
+      ? "Local admin active"
+      : "Auth disabled";
   const analyticsScopeText = getAnalyticsScopeText(jobTypeFilter, jobOwnershipFilter);
   const averagePullWaitHelpText = getAveragePullWaitHelpText({
     typeFilter: jobTypeFilter,
@@ -2923,7 +2930,7 @@ export function ModelOperationsPanel({
               )
             ) : (
               <div className="rounded-full bg-emerald-100 px-4 py-2 text-sm font-semibold text-emerald-900">
-                Auth disabled
+                {adminStatusLabel}
               </div>
             )}
           </div>
@@ -3137,7 +3144,9 @@ export function ModelOperationsPanel({
               : auth.authenticated
               ? "Admin session active. Privileged model operations are unlocked."
               : "Admin auth is enabled. Unlock the panel to run pull and delete operations."
-            : "Admin auth is currently disabled. Configure environment secrets to require sign-in."}
+            : currentUser?.role === "admin"
+              ? "Local admin account active. Privileged model operations are unlocked without the fallback environment password flow."
+              : "Admin auth is currently disabled. Configure environment secrets to require sign-in."}
         </p>
         <div aria-busy={isPulling} aria-label="Streaming pull job log" aria-live="polite" role="log" className="mt-5 max-h-72 overflow-y-auto rounded-[24px] bg-[#201812] px-4 py-4 font-mono text-xs leading-6 text-[#f3eadf]">
           {pullLog.length > 0 ? pullLog.join("\n") : "No pull job has been started yet."}
