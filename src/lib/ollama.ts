@@ -60,6 +60,32 @@ const PLAYWRIGHT_FALLBACK_MODEL: OllamaModel = {
   size: 0,
 };
 
+function getPlaywrightDeleteResponse(name: string) {
+  if (!isPlaywrightTestMode() || !name.startsWith("playwright:")) {
+    return null;
+  }
+
+  if (name.startsWith("playwright:delete-success")) {
+    return new Response(JSON.stringify({ status: "success" }), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+  }
+
+  if (name.startsWith("playwright:delete-fail")) {
+    return new Response("Playwright forced delete failure.", {
+      status: 404,
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+      },
+    });
+  }
+
+  return null;
+}
+
 function isPlaywrightTestMode() {
   return process.env.PLAYWRIGHT_TEST === "1";
 }
@@ -210,6 +236,12 @@ export async function requestOllamaChatStream(
 }
 
 export async function deleteOllamaModel(name: string) {
+  const playwrightResponse = getPlaywrightDeleteResponse(name);
+
+  if (playwrightResponse) {
+    return playwrightResponse;
+  }
+
   const response = await fetch(`${getBaseUrl()}/api/delete`, {
     method: "DELETE",
     headers: {

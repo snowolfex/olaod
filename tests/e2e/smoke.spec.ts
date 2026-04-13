@@ -1,10 +1,29 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+
 import { expect, test } from "@playwright/test";
 
 type BrowserPage = Parameters<Parameters<typeof test>[1]>[0]["page"];
 
+function getPlaywrightDataDir() {
+  return path.join(process.cwd(), ".playwright-data");
+}
+
 async function getCookieHeader(page: BrowserPage) {
   const cookies = await page.context().cookies();
   return cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join("; ");
+}
+
+async function resetPlaywrightData() {
+  const dataDir = getPlaywrightDataDir();
+
+  await mkdir(dataDir, { recursive: true });
+  await Promise.all([
+    writeFile(path.join(dataDir, "users.json"), "[]\n", "utf8"),
+    writeFile(path.join(dataDir, "conversations.json"), "[]\n", "utf8"),
+    writeFile(path.join(dataDir, "activity-log.json"), "[]\n", "utf8"),
+    writeFile(path.join(dataDir, "job-history.json"), "[]\n", "utf8"),
+  ]);
 }
 
 test.describe("oload smoke coverage", () => {
@@ -70,8 +89,9 @@ test.describe("oload smoke coverage", () => {
 
   test("records failed direct model deletion attempts in jobs and activity", async ({ page, request }) => {
     const createUserSubmitButton = page.getByRole("button", { name: "Create user" }).nth(1);
-    const missingModelName = "playwright-delete-missing";
+    const missingModelName = "playwright:delete-fail-missing";
 
+    await resetPlaywrightData();
     await page.goto("/");
     await page.getByRole("button", { name: "Create user" }).first().click();
     await page.getByPlaceholder("Username").fill("playwright-delete-admin");
@@ -135,6 +155,81 @@ test.describe("oload smoke coverage", () => {
         expect.objectContaining({
           type: "model.delete_failed",
           summary: `Model delete failed: ${missingModelName}`,
+          details: "Playwright forced delete failure.",
+        }),
+      ]),
+    );
+  });
+
+  test("records successful direct model deletion attempts in jobs and activity", async ({ page, request }) => {
+    const createUserSubmitButton = page.getByRole("button", { name: "Create user" }).nth(1);
+    const deletedModelName = "playwright:delete-success-demo";
+
+    await resetPlaywrightData();
+    await page.goto("/");
+    await page.getByRole("button", { name: "Create user" }).first().click();
+    await page.getByPlaceholder("Username").fill("playwright-delete-success-admin");
+    await page.getByPlaceholder("Display name").fill("Playwright Delete Success Admin");
+    await page.getByPlaceholder("Password").fill("playwright-pass");
+    await createUserSubmitButton.click();
+
+    await expect(page.getByRole("button", { name: "Sign out user" })).toBeVisible();
+
+    const cookieHeader = await getCookieHeader(page);
+    const deleteResponse = await request.delete("/api/ollama/models", {
+      headers: {
+        cookie: cookieHeader,
+        "Content-Type": "application/json",
+      },
+      data: {
+        name: deletedModelName,
+      },
+    });
+
+    expect(deleteResponse.ok()).toBeTruthy();
+
+    await expect.poll(async () => {
+      const jobsResponse = await request.get("/api/admin/jobs?limit=24&type=model.delete", {
+        headers: {
+          cookie: cookieHeader,
+        },
+      });
+
+      expect(jobsResponse.ok()).toBeTruthy();
+
+      const jobsPayload = (await jobsResponse.json()) as {
+        jobs: Array<{
+          target: string;
+          status: string;
+        }>;
+      };
+
+      return jobsPayload.jobs.some(
+        (job) => job.target === deletedModelName && job.status === "succeeded",
+      );
+    }, { timeout: 20_000 }).toBe(true);
+
+    const activityResponse = await request.get("/api/admin/activity", {
+      headers: {
+        cookie: cookieHeader,
+      },
+    });
+    expect(activityResponse.ok()).toBeTruthy();
+
+    const activityPayload = (await activityResponse.json()) as {
+      events: Array<{
+        type: string;
+        summary: string;
+        details?: string;
+      }>;
+    };
+
+    expect(activityPayload.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "model.deleted",
+          summary: `Model deleted: ${deletedModelName}`,
+          details: "A privileged model deletion request completed.",
         }),
       ]),
     );
