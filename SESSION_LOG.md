@@ -179,3 +179,4 @@
 - Extended the role-management Playwright coverage again to assert that admin role changes and guarded user deletion both appear in the activity log.
 - Extended the workspace-backup Playwright coverage to assert that backup export and restore actions are recorded in the admin activity log.
 - Extended the jobs Playwright coverage to assert that direct pull-requested, forced pull-failed, queued-pull reorder, bulk cancel, and retry actions are all recorded in the admin activity log.
+- Added safe Playwright coverage for direct model-delete failure so failed delete attempts are now asserted through both the jobs API and admin activity log without mutating real installed models.
