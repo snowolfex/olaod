@@ -575,6 +575,14 @@ export function UserAccessPanel({ onSessionChange, session }: UserAccessPanelPro
               </button>
             </div>
 
+            <div className="mt-4 rounded-[24px] bg-amber-50 px-4 py-4 text-sm text-amber-950">
+              Backup files are sensitive. They include local account metadata and the credential hashes required to restore sign-in access on this machine.
+            </div>
+
+            <p className="mt-3 text-sm text-muted">
+              Keep exported backups in a trusted location and only restore files from sources you control.
+            </p>
+
             <div className="mt-4 flex flex-wrap gap-3">
               <input
                 ref={backupImportInputRef}

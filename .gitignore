@@ -19,6 +19,7 @@
 /jobs-spec-report.json
 /jobs-spec-report.txt
 /playwright-*-report.json
+/tmp-live-*
 
 # next.js
 /.next/

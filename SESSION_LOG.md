@@ -170,3 +170,4 @@
 - Added `allowedDevOrigins` coverage for loopback and common private-network hosts in `next.config.ts`, then restarted the dev server and confirmed HMR reconnects cleanly.
 - Added client-side shared status refresh in `InteractionSurface` so newly available Ollama models become selectable in chat without requiring an operator-side manual refresh first.
 - Clarified the model-operations status copy so signed-in local admins now see `Local admin active` instead of the misleading `Auth disabled` state while privileged controls are available.
+- Added explicit sensitivity warnings to the admin backup UI and README because workspace backup exports intentionally include the credential hashes needed to preserve local account access on restore.
