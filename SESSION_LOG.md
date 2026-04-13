@@ -176,3 +176,4 @@
 - Extended the Playwright role-management coverage to exercise guarded user deletion, deny self-delete, and verify saved conversations are removed with the deleted account.
 - Added a clear-selected-backup action and extended Playwright backup coverage so restore acknowledgement and cancel-before-confirm flows are both exercised.
 - Added saved-conversation impact counts to the admin user list so delete confirmation now shows exactly how many local conversations will be removed before the action is confirmed.
+- Extended the role-management Playwright coverage again to assert that admin role changes and guarded user deletion both appear in the activity log.

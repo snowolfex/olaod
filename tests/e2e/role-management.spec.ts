@@ -163,6 +163,33 @@ test("covers role management refresh, role updates, deletion, and session guardr
     conversations: [],
   });
 
+  const activityResponse = await request.get("/api/admin/activity", {
+    headers: {
+      cookie: adminCookieHeader,
+    },
+  });
+  expect(activityResponse.ok()).toBeTruthy();
+  const activityPayload = (await activityResponse.json()) as {
+    events: Array<{
+      type: string;
+      summary: string;
+      details?: string;
+    }>;
+  };
+  expect(activityPayload.events).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        type: "user.role_updated",
+        summary: "User role updated: Playwright Role Operator",
+      }),
+      expect.objectContaining({
+        type: "user.deleted",
+        summary: "User deleted: Playwright Role Operator",
+        details: expect.stringContaining("removed 1 saved conversation"),
+      }),
+    ]),
+  );
+
   const selfRoleResponse = await request.patch(`/api/users/${sessionPayload.user.id}/role`, {
     headers: {
       cookie: adminCookieHeader,
