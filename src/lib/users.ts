@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { getDataStorePath } from "@/lib/data-store";
-import type { PublicUser, SessionUser, StoredUser } from "@/lib/user-types";
+import type { AuthProvider, PublicUser, SessionUser, StoredUser } from "@/lib/user-types";
 
 const STORE_PATH = getDataStorePath("users.json");
 
@@ -21,19 +21,50 @@ async function ensureStore() {
   }
 }
 
+function normalizeUsername(username: string) {
+  return username.trim().toLowerCase();
+}
+
+function normalizeDisplayName(displayName: string, fallback: string) {
+  const trimmed = displayName.trim();
+  return trimmed || fallback;
+}
+
+function normalizeOptionalString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function isAuthProvider(value: unknown): value is AuthProvider {
+  return value === "local" || value === "google";
+}
+
+function normalizeStoredUser(user: StoredUser): StoredUser {
+  const username = normalizeUsername(user.username);
+
+  return {
+    id: user.id,
+    username,
+    displayName: normalizeDisplayName(user.displayName, username),
+    role: user.role,
+    authProvider: isAuthProvider(user.authProvider) ? user.authProvider : "local",
+    email: normalizeOptionalString(user.email),
+    providerSubject: normalizeOptionalString(user.providerSubject),
+    avatarUrl: normalizeOptionalString(user.avatarUrl),
+    passwordHash: typeof user.passwordHash === "string" ? user.passwordHash : undefined,
+    passwordSalt: typeof user.passwordSalt === "string" ? user.passwordSalt : undefined,
+    createdAt: user.createdAt,
+  };
+}
+
 async function readStore() {
   await ensureStore();
   const raw = await readFile(STORE_PATH, "utf8");
-  return JSON.parse(raw) as StoredUser[];
+  return (JSON.parse(raw) as StoredUser[]).map(normalizeStoredUser);
 }
 
 async function writeStore(users: StoredUser[]) {
   await ensureStore();
   await writeFile(STORE_PATH, `${JSON.stringify(users, null, 2)}\n`, "utf8");
-}
-
-function normalizeUsername(username: string) {
-  return username.trim().toLowerCase();
 }
 
 function hashPassword(password: string, salt: string) {
@@ -46,6 +77,10 @@ export function toPublicUser(user: StoredUser): PublicUser {
     username: user.username,
     displayName: user.displayName,
     role: user.role,
+    authProvider: user.authProvider,
+    email: user.email,
+    providerSubject: user.providerSubject,
+    avatarUrl: user.avatarUrl,
     createdAt: user.createdAt,
   };
 }
@@ -56,6 +91,7 @@ export function toSessionUser(user: StoredUser): SessionUser {
     username: user.username,
     displayName: user.displayName,
     role: user.role,
+    authProvider: user.authProvider,
   };
 }
 
@@ -135,8 +171,9 @@ export async function createUser(input: {
   const user: StoredUser = {
     id: createId(),
     username,
-    displayName: input.displayName.trim() || username,
+    displayName: normalizeDisplayName(input.displayName, username),
     role: users.length === 0 ? "admin" : "operator",
+    authProvider: "local",
     passwordHash: hashPassword(input.password, salt),
     passwordSalt: salt,
     createdAt: new Date().toISOString(),
@@ -147,7 +184,90 @@ export async function createUser(input: {
   return user;
 }
 
+export async function upsertGoogleUser(input: {
+  email: string;
+  providerSubject: string;
+  displayName: string;
+  avatarUrl?: string;
+}) {
+  const users = await readStore();
+  const email = normalizeUsername(input.email);
+  const providerSubject = input.providerSubject.trim();
+
+  if (!email) {
+    throw new Error("Google account email is required.");
+  }
+
+  if (!providerSubject) {
+    throw new Error("Google account subject is required.");
+  }
+
+  const matchingGoogleUser = users.find(
+    (user) => user.authProvider === "google" && user.providerSubject === providerSubject,
+  );
+
+  if (matchingGoogleUser) {
+    const updatedUser: StoredUser = {
+      ...matchingGoogleUser,
+      username: email,
+      email,
+      displayName: normalizeDisplayName(input.displayName, email),
+      avatarUrl: normalizeOptionalString(input.avatarUrl),
+      providerSubject,
+    };
+
+    const index = users.findIndex((user) => user.id === matchingGoogleUser.id);
+    users[index] = updatedUser;
+    await writeStore(users);
+    return { user: updatedUser, created: false };
+  }
+
+  const conflictingUser = users.find(
+    (user) => user.username === email || user.email === email,
+  );
+
+  if (conflictingUser) {
+    if (conflictingUser.authProvider !== "google") {
+      throw new Error("That email is already attached to a local account. Sign in locally or use a different Google account.");
+    }
+
+    const updatedUser: StoredUser = {
+      ...conflictingUser,
+      username: email,
+      email,
+      displayName: normalizeDisplayName(input.displayName, email),
+      avatarUrl: normalizeOptionalString(input.avatarUrl),
+      providerSubject,
+    };
+
+    const index = users.findIndex((user) => user.id === conflictingUser.id);
+    users[index] = updatedUser;
+    await writeStore(users);
+    return { user: updatedUser, created: false };
+  }
+
+  const user: StoredUser = {
+    id: createId(),
+    username: email,
+    displayName: normalizeDisplayName(input.displayName, email),
+    role: users.length === 0 ? "admin" : "operator",
+    authProvider: "google",
+    email,
+    providerSubject,
+    avatarUrl: normalizeOptionalString(input.avatarUrl),
+    createdAt: new Date().toISOString(),
+  };
+
+  users.push(user);
+  await writeStore(users);
+  return { user, created: true };
+}
+
 export function verifyUserPassword(user: StoredUser, password: string) {
+  if (user.authProvider !== "local" || !user.passwordHash || !user.passwordSalt) {
+    return false;
+  }
+
   const expected = Buffer.from(user.passwordHash, "hex");
   const actual = Buffer.from(hashPassword(password, user.passwordSalt), "hex");
 

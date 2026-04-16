@@ -1,20 +1,84 @@
 # Session Log
 
+## 2026-04-16
+- Checked the active local development ports and confirmed nothing stale was still bound on 3000, 3101, 4010, or 11434 before restart.
+- Confirmed broker auth is not configured in the current environment, so no broker process was started for today’s local development session.
+- Started the local Ollama server and verified it is listening on `127.0.0.1:11434` with the API responding successfully.
+- Started the Next.js development server and verified the app is ready on `http://localhost:3000`.
+- Re-checked live port bindings and confirmed both the app and Ollama returned HTTP 200 for a clean development baseline.
+- Reduced local chat refresh noise by stopping chat-side Ollama model catalog fetches when the local provider is selected, slowing offline status polling to once per minute, and gating background provider refresh work to the visible chat workspace.
+- Added provider-aware chat send guidance so offline local-model requests point operators to start Ollama or pick a downloaded model, while hosted-provider failures now steer users toward missing API keys or upstream connectivity issues.
+- Added a shared operator help manual, contextual hover or long-press help overlay infrastructure, section deep-linking from help cards into the manual, and PDF manual export support.
+- Tagged the main navigation, command deck, chat, access, provider, and model controls with contextual help IDs, plus section-aware fallback help for untagged buttons inside chat and access panels.
+- Added a persisted quick-help preference in the command deck so contextual help cards can be disabled entirely, and set the quick-help overlay to auto-dismiss after five seconds when enabled.
+- Changed quick help to a one-shot browser-session behavior: after a card dismisses once, it stays suppressed until the app is opened in a fresh session.
+- Tightened quick-help copy and styling, added explicit help IDs for chat settings plus jobs and activity edge controls, and verified the desktop hover branch with a forced desktop media-query override because the integrated browser remained below the true desktop breakpoint.
+- Finished a mobile-focused UX pass: narrow layouts now default to a transcript-first posture with the command deck hidden and chat controls collapsed on first load, mobile conversation actions collapse the control rail automatically, the chat status pills now behave like a compact horizontal rail, and the mobile tab strip stays sticky on long screens.
+- Compressed the remaining mobile-dense admin and archive surfaces: admin section tabs now stay sticky while scrolling, jobs action and filter rows now collapse into horizontal mobile chip rails, and archived conversation retention, filter, sort, selection, and bulk-action controls now render as grouped touch-friendly blocks with stacked bulk actions.
+- Re-ran `npm run lint` and live-validated the narrow-layout jobs and archived-chat flows in the browser after the final mobile compaction pass.
+- Polished the remaining access-lane mobile surfaces by making admin refresh, save, export, and destructive actions full-width where needed on narrow screens, converting dense role and knowledge chip clusters into horizontal mobile rails, and tightening the provider, knowledge, and backup action layouts for touch use.
+- Completed a structured narrow-layout QA sweep across chat, admin, and help. No blocking mobile regressions were found; the remaining concern is only that the shared-knowledge editor and debugger remain naturally tall due to scope, not due to broken layout or compressed controls.
+- Changed contextual help gesture selection from viewport-width gating to real pointer capability detection, so narrow desktop-like browsers with hover and fine pointers now get hover help while touch-first devices continue using long-press help.
+- Re-verified the live embedded browser: at 958px wide with hover-capable input, hovering the Admin tab now opens the quick-help card as expected.
+- Reworked quick-help session suppression from a single session-wide stop flag to per-control session tracking, so each contextual popup now shows once per control per session while other unseen controls remain eligible until they are also shown.
+- Live-verified the new quick-help behavior in the embedded browser: Admin showed once and was marked seen, Help still showed afterward as an unseen control, and re-hovering Admin no longer reopened its popup in the same session.
+- Replaced the temporary once-per-session desktop quick-help behavior with a desktop-specific sticky hover model: hover popups now stay visible for at least three seconds, redisplay on later hovers unless explicitly muted with a per-control "Do not show this again" checkbox, and continue honoring the global quick-help preference.
+- Live-verified the desktop quick-help flow in the embedded browser: the Admin popup stayed visible after an immediate pointer move-off, redisplayed on a later hover when left unmuted, then stopped reappearing only after its own checkbox was checked while Help still remained available.
+- Changed the first quick-help popup in each browser session into an acknowledged intro card: it now stays visible on both desktop and mobile until the operator explicitly dismisses it or turns quick help off, while later desktop hover cards still fall back to the three-second sticky behavior.
+- Live-verified the updated intro behavior on both paths: on desktop the first Admin popup stayed visible beyond the old five-second timeout until dismissed, later desktop help still timed out normally, and disabling quick help suppressed all hover popovers; on a forced no-hover page, the first mobile long-press popup also stayed visible past the timeout window and disappeared immediately when quick help was turned off.
+- Tightened desktop hover-card interaction so once the pointer enters a non-intro popup, that card becomes interaction-pinned: its auto-dismiss timer stops and it no longer disappears while the operator is moving to Dismiss or the per-control mute checkbox.
+- Live-verified the prompt-preset hover case on desktop: the popup stayed visible while hovered beyond the normal timeout window and dismissed cleanly only after clicking Dismiss.
+- Increased the shared desktop hover-help transfer tolerance for all existing hover popups by shortening the popup gap and giving pointer travel a longer grace window, while also suspending the auto-dismiss timer during that transfer so controls remain reachable after the initial three-second window.
+- Re-verified the harder desktop prompt-preset path after the grace-window change: even after waiting past the three-second minimum, the popup remained visible through the move into the card and the real Dismiss button stayed in-viewport and clickable.
+- Hardened several remaining hover-help targets by moving their help IDs from tiny or disabled native controls onto larger visible wrappers, including the command-deck quick-help toggle and theme select, the chat shared-knowledge toggle, temperature card, system-prompt card, pinned-only filter, save-title action, and the send/stop disabled-action wrappers.
+- Re-checked the small-control path after widening those targets: the command-deck quick-help toggle and theme-select hover help now surface reliably in isolated desktop checks, and the disabled-action wrappers for save title, send, and stop also surfaced their help popups without requiring direct hover on the native disabled control itself.
+- Constrained desktop hover popovers to the visible viewport height and made them internally scrollable, while updating placement math to use a realistic tall-card estimate so action rows no longer render off-screen on short desktop windows.
+- Live-verified the short-viewport case in the embedded browser: the popup now opens pinned at the top margin with an internal scrollbar, Dismiss stays reachable and clickable, and after scrolling inside the popup the Open manual section button also moved into view and could be clicked without the popup collapsing first.
+- Restored the desktop popup action order so Open manual section appears before Dismiss again, and tightened the desktop transfer pin so a hover popup stays alive throughout the move into its action row instead of waiting for a full popup enter before pinning.
+- Re-verified the embedded-browser short-window case after the final fix: both action buttons remained on the same row, Dismiss clicked cleanly after the transfer into the popup, and Open manual section was also clickable without the popup disappearing first.
+- Reverted the failed internal-scroll popup experiment and instead compacted the desktop popup vertically so the action row fits fully inside short desktop viewports without a scroller, while keeping desktop popups persistent while open.
+- Re-verified the embedded-browser geometry after the compaction pass: the popup no longer scrolls internally, both action buttons remain side by side, and the full button row now stays inside the visible viewport height.
+- Fixed the actual desktop button-hover regression at the source by making the shared hover and focus listeners ignore events that originate inside the popup itself. Previously the popup's own action buttons were being mistaken for new generic help targets, which caused the overlay to dismiss as soon as the pointer moved onto them.
+- Re-verified the embedded-browser button path after the listener fix: the popup now stays visible with the pointer directly over both Open manual section and Dismiss, and it only closes when Dismiss is actually clicked.
+- Adjusted the desktop hover lifecycle so the popup stays pinned while the pointer is on the target or inside the popup, but once the pointer leaves without clicking anything it starts a fresh three-second dismissal countdown instead of remaining pinned indefinitely.
+- Re-verified the embedded-browser sequence after that lifecycle change: the popup stayed visible while the pointer was over Open manual section, remained visible one second after moving away, and then dismissed after roughly three seconds out of range.
+- Reduced the shared desktop quick-help leave timer from three seconds to two seconds and removed the non-intro timing/status line from the popup so desktop and mobile cards no longer show the "stays pinned" or similar guidance text.
+- Re-verified the embedded-browser popup after the timing reduction: the non-intro card no longer renders the timing line, remained visible one second after pointer exit, and had dismissed by a little over two seconds out of range.
+- Reworked the chat workspace for desktop-first use: the conversation stage now flexes to fill the available height, saved chats and provider controls render as obvious disclosure modules, and a persistent top-right layout toggle flips those modules above or below the chat area while remembering the chosen desktop arrangement.
+- Re-validated the new layout logic in the embedded browser: the swap control persisted and correctly flipped the controls block ordering relative to the composer, but the integrated pane remained below the true desktop media-query width during verification so the full side-by-side wide-screen presentation was confirmed in code and responsive classes rather than in that narrow live pane.
+- Tuned the second desktop-layout pass by tightening the disclosure panel bodies with viewport-aware max heights, upgrading the saved-chat and provider headers into stronger interactive launch surfaces with explicit expand or collapse cues, and widening the centered desktop chat stage so it stays visually dominant on broader monitors.
+- Re-checked the live render after that polish pass: the new disclosure cues and summary copy rendered correctly, lint remained clean, and the remaining verification caveat stayed the same because the integrated browser pane still reports below-desktop width even during chat-shell checks.
+- Added a third desktop refinement pass: the transcript area now has its own premium stage header and framed message lane, the composer sits inside a dedicated control tray, collapsed saved chats now show a compact quick-open preview instead of a full rail, and the desktop layout swap control was redesigned into a more custom "Layout flow" launcher treatment.
+- Fixed a transient JSX parse regression introduced during that pass, reran lint successfully, and re-verified the rendered app text in the browser. The transcript-stage additions were visible live; the custom layout-flow launcher remains desktop-only and therefore hidden in the embedded pane while it continues to report below the desktop breakpoint.
+- Restored src/components/chat-workspace.tsx to the clean committed baseline after a later desktop-layout patch sequence corrupted JSX in multiple regions, then rebuilt the desktop-first shell cleanly on top of that baseline instead of continuing incremental repair.
+- Reapplied the stable desktop workspace structure for the current local-only chat implementation: the transcript now occupies a premium center stage, saved chats and AI controls live in reversible lower disclosure modules, the arrangement persists per user, collapsed saved chats keep a compact quick-open preview, and the desktop-only Layout flow launcher returns without reintroducing the earlier parser breakage.
+- Revalidated the rebuilt shell with lint and a live browser snapshot. The rebuilt saved-chat and AI-control disclosures plus the transcript-stage framing were visible in the app; the desktop-only layout launcher still stays hidden in the embedded verification pane because that pane remains below the desktop breakpoint.
+- Moved the desktop help lane out of the shared chat shell and into a POST-backed desktop page mode. The command deck now exposes Chat, Admin, and Help as full-page desktop destinations, and the selected surface persists through a server cookie instead of the old right-side lane tabs.
+- Refined the new desktop Admin and Help destinations so they read as proper pages instead of reused side panels: Admin now carries its own operations header and summary cards, Help now identifies itself as a page with a stronger reference hero and jump row, and mobile behavior remains unchanged while the embedded browser still cannot fully live-render the desktop breakpoint.
+- Promoted the command-deck desktop page selector into a clearer control-center module with a current-destination summary plus stronger Chat, Admin, and Help launch cards, so the new standalone desktop pages are surfaced as the primary routing action rather than a small secondary settings row.
+- Moved desktop page-routing state into a shared client workspace shell so the command deck and main surface switch Chat, Admin, and Help immediately on click while still persisting the selection through the POST-backed cookie flow and a follow-up router refresh.
+- Added a lightweight desktop page entrance animation to the shared shell so Chat, Admin, and Help swaps read as deliberate routed transitions instead of abrupt content replacement, while still respecting reduced-motion preferences.
+- Redesigned the desktop Admin page shell so it now carries a stronger operational briefing, richer section metadata, and larger desktop navigation cards for Users, Models, Jobs, and Activity around the existing admin tools instead of feeling like a transplanted side panel.
+- Redesigned the desktop Help page shell into a true reference destination with a stronger focus hero, richer manual stats, a sticky navigator rail for focus sections and the full manual atlas, and a cleaner reading column around the existing guide content.
+- Added a page-mode access shell inside the standalone Admin surface so identity, providers, shared knowledge, and backup workflows now inherit stronger desktop framing and summary cards instead of dropping back into the older embedded access panel presentation.
+- Extended that standalone Admin treatment into Models, Jobs, and Activity by making the shared operations panel page-aware and adding stronger desktop framing plus section-level summary cards for model operations, queue control, pinned job inspection, and activity review.
+- Tightened the page-mode Models and Jobs surfaces again so the desktop Admin page uses wide layouts more efficiently, including a denser model workspace split layout and extra operator-focused jobs summary cards above the queue controls.
+- Investigated the remaining Turbopack/NFT warnings in the Ollama admin route chain and reduced some broad dynamic path scanning, but warnings tied to the `next.config.ts` trace still remain; desktop-width verification of the signed-in Admin surface is also still limited by the integrated browser width cap and the inability to transfer the live server-side auth session into a fresh headless check.
+- Finished the Ollama helper split by moving normal status and catalog reads into a lighter server-only module and leaving process-control logic isolated behind the admin control module plus route-local dynamic imports, which removed the remaining `next.config.ts` Turbopack/NFT warning path and restored a clean production build.
+- Fixed the latest theme regression by moving the new desktop Admin, Help, command-deck, and page-shell surfaces off hard-coded light gradients onto shared theme-aware surface tokens, and fixed a mobile/desktop shell leak so mobile Admin and Help never inherit the persisted desktop `page` surface from the desktop routing cookie.
+- Completed a full tech-theme sweep across chat, admin operations, help, access, auth, and command-deck surfaces by replacing the remaining high-traffic light-only shells with shared theme-aware surface classes and broadening the dark or tech white-opacity overrides for older utility-based cards.
+- Fixed theme bootstrap at the source so the stored site theme now applies on reload and in-browser validation reflects the real selected theme instead of falling back to light during startup.
+- Fixed the remaining startup and hydration theme regressions by moving the theme bootstrap script into the correct layout position and making the responsive shell initialize from SSR-stable state before syncing to the real viewport.
+- Completed a focused tech-theme visual cleanup by replacing the warm shared page atmosphere with theme-aware variants, broadening cold surface styling, flattening tech-primary controls, and toning down the command deck and beacon shadows so the shell no longer reads orange or overly floating in-browser.
+- Re-validated the final theme pass with repeated live browser screenshots in tech mode plus a clean `cmd /c npm run build`.
+- Ran a follow-up live sweep in the embedded browser for the current narrow-layout shell across chat, admin, and command-deck states. No new blocking mobile or narrow-layout regressions were found, but true full-desktop visual verification remains limited by the integrated browser width cap.
+- Retuned the shared light-theme tokens and default control styling to reduce caramel or orange dominance, flatten default button lift, soften the active accent treatment, and tone down the command-deck beacon so light mode matches the cleaner visual direction established for tech.
+- Re-validated the light-theme pass in the browser with live screenshots and another clean `cmd /c npm run build`.
+- Fixed the remaining compact-browser quick-help regression by letting the intro hover card retarget across controls instead of locking to the first hovered button, and by docking hover cards above or below targets with a capped height in short panes so they no longer cover adjacent controls.
+- Fixed the floating command deck for short browser viewports by turning it into a bounded scroll container instead of a clipped fixed panel, and removed one last hard-coded warm command-deck icon shadow so light stays aligned with the shared theme tokens.
+- Re-validated the final behavior live: the nav-button quick-help card now switches correctly between visible targets in both tech and dark, the command deck reports `overflow-y: auto` with scrollable content in the embedded browser, and `cmd /c npm run build` remains clean.
+
 ## 2026-04-09
-- Initialized the Next.js App Router project in this workspace.
-- Replaced the starter screen with an initial mobile-first control-plane shell for Ollama.
-- Added a server-side Ollama status library and API route foundation.
-- Verified lint and production build successfully.
-- Added project documentation, environment guidance, and a running VS Code dev task.
-- Added a mobile-first streaming chat workspace and a server-side `/api/ollama/chat` proxy route.
-- Added model refresh, pull, and delete controls backed by server-side model operation routes.
-- Added local conversation persistence with saved-chat APIs and resumable conversations.
-- Added optional admin auth with signed-cookie sessions to protect privileged model operations.
-- Added a local activity log and recent-events panel for chat, conversation, auth, and model operations.
-- Added local user accounts, signed user sessions, and per-user conversation scoping.
-- Added job history for model pull operations with a recent-jobs admin panel.
-- Expanded job history to include model deletes plus timing metadata in the admin panel.
-- Added automatic polling for the recent-jobs panel while jobs remain in progress.
 - Moved recent-jobs filtering and limits into the server-side jobs API while keeping summary counts for the panel.
 - Added server-side job-type filtering plus separate pull/delete filter controls in the admin panel.
 - Added per-job progress trails, a job detail API route, and an admin panel drill-down timeline.
@@ -128,6 +192,15 @@
 - Added isolated Playwright data storage plus an authenticated admin-path test covering first-user registration, admin guardrails, and seeded job-history access.
 - Switched Playwright to an isolated production-style test server so the suite no longer conflicts with an already running `next dev` session.
 - Replaced the dynamic test data-path override with a static Playwright test-mode data directory to reduce Turbopack tracing noise during builds.
+
+## 2026-04-13
+- Upgraded the model operations panel to merge the remote catalog with local installed and running state, including pull, start, stop, and delete actions from one library view.
+- Verified `cmd /c npm run lint` and `cmd /c npm run build` successfully after the Ollama administration changes.
+- Fixed Ollama CLI version parsing so the admin status shows the actual version string instead of the intermediate `is` token.
+- Fixed the runtime stop route to wait for Ollama to report the settled post-stop state before returning status to the UI.
+- Live-verified the local `/api/ollama/status`, `/api/ollama/catalog`, `/api/ollama/server`, and `/api/ollama/runtime` flows against the installed Ollama instance, including a real start and stop cycle for `deepseek-r1:1.5b`.
+- Replaced the sprawling available-model list with a searchable combo-style picker plus a single selected-model detail surface for status and actions.
+- Reset the local admin user Keith to a new requested password and verified the live `/api/users/login` route accepts the updated credential.
 - Added seeded Playwright coverage for archived conversation filter, selection, and bulk restore flows.
 - Added seeded Playwright coverage for saved conversation rename, pinning, and archive-from-active-thread flows.
 - Added role-management Playwright coverage for admin refresh, operator role changes, self-role protection, and the last-admin guardrail.
@@ -181,3 +254,85 @@
 - Extended the jobs Playwright coverage to assert that direct pull-requested, forced pull-failed, queued-pull reorder, bulk cancel, and retry actions are all recorded in the admin activity log.
 - Added safe Playwright coverage for direct model-delete failure so failed delete attempts are now asserted through both the jobs API and admin activity log without mutating real installed models.
 - Added deterministic Playwright delete shims plus direct model-delete success coverage so both delete failure and delete success audit events are exercised without touching the real Ollama host.
+- Added a shared tactile button system with hover lift, press animation, stronger focus rings, and reduced-motion fallbacks in the global stylesheet.
+- Introduced semantic glossy button variants for primary, secondary, success, danger, chip, and icon controls and applied them across chat, model operations, account, role-management, and backup surfaces.
+- Re-ran `npm run lint` and `npm run build` successfully after the UI button refactor.
+- Finished the remaining button consistency sweep so auth mode toggles, model-library filters, destructive model actions, jobs bulk actions, jobs quick filters, and inline queue reorder controls now use the shared semantic button styles as well.
+- Re-ran `npm run lint` and `npm run build` successfully after the full control-surface button cleanup.
+- Added a shared AI provider layer with generic provider, model, chat, and terminology APIs so Ollama can remain first while hosted providers slot into the same gateway.
+- Persisted provider choice with saved conversations, updated the chat workspace to select providers and provider-specific models, and added an operator-facing shared-knowledge toggle for RAG-backed prompts.
+- Added encrypted hosted-provider key storage, an Anthropic adapter foundation, and admin APIs plus UI for provider configuration and shared knowledge management.
+- Re-ran `npm run build` successfully after the provider and RAG foundation changes.
+- Shifted the visible AI language toward simpler standard wording like downloaded, ready, and shared knowledge while keeping the provider architecture intact underneath.
+- Added an AI services summary block to the model operations lane so local and hosted providers are visible from the operations surface instead of only through the users panel.
+- Re-ran `npm run build` successfully after the terminology and provider-surface updates.
+- Configured Anthropic through the encrypted local provider store, updated the hosted model catalog to current Claude 4 IDs, and verified a live shared-gateway chat response through `/api/ai/chat`.
+- Added a client-side provider-config refresh signal so saving provider credentials updates the chat provider list without requiring a full page reload.
+- Made the chat workspace provider-aware in its status copy, latency guidance, placeholder text, and default system prompt handling so hosted providers read as first-class during active conversations.
+- Improved shared-knowledge retrieval with weighted title, tag, and source ranking plus chunked content selection so prompt augmentation uses the most relevant section of an entry instead of a full raw blob.
+- Re-verified the knowledge create, search, and delete flow plus `npm run build` successfully after the retrieval update.
+- Implemented the OpenAI provider path end to end with hosted-model listing, streaming chat routing, encrypted key storage UI, and shared-gateway request support.
+- Live-tested the OpenAI route against two provided keys and confirmed the adapter works, but both credentials are rejected by the upstream OpenAI API as invalid keys.
+- Converted saved-chat and archived-conversation row actions from plain text links into compact semantic chip buttons and added clearer action-row separation inside conversation cards.
+- Converted the remaining jobs-detail and jobs-filter utility controls to the shared chip button styling so lightweight filters and dismiss actions no longer fall back to the older flat treatment.
+- Re-ran `npm run lint` and `npm run build` successfully after the follow-up layout and action polish pass.
+- Added shared `ui-pill` and `ui-control-band` utilities in the global stylesheet to improve hierarchy for dense read-only badges and compressed control rows.
+- Applied the new density treatment to the jobs scope and filter stack plus archived conversation selection/header badges so crowded clusters read as grouped layers instead of a flat run of chips.
+- Re-ran `npm run lint` and `npm run build` successfully after the density and hierarchy polish pass.
+- Added duplicate and overlap warnings to the shared-knowledge form so admins can spot near-duplicate entries before saving and avoid muddying retrieval.
+- Added duplicate-aware retrieval reranking so near-identical knowledge notes do not crowd out more diverse context in preview, chat grounding, or the admin debugger.
+- Added focused Playwright coverage for shared-knowledge duplicate-aware ranking so overlap penalties and diversified preview ordering are regression-tested.
+- Added citation deduplication in the chat path so overlapping knowledge hits no longer produce repeated source cards or redundant `Sources:` footer entries.
+- Added Playwright chat coverage for citation deduplication so grounded replies keep a single source header/footer entry even when overlapping notes match.
+- Added an edit-existing-note action to overlap warning cards so operators can jump straight into revising the stored note instead of hunting for it in the list.
+- Added Playwright coverage for the overlap warning edit jump so the shared-knowledge editor opens the matched note directly from the warning card.
+- End-of-session checkpoint: shared-knowledge overlap warnings, duplicate-aware retrieval reranking, citation deduplication, chat and retrieval Playwright coverage, and direct edit-from-warning UX are all implemented and validated; workspace left in a clean state for the next session.
+- Added color-aware `ui-pill` variants for accent, success, warning, and neutral metadata so repeated status badges no longer rely on scattered one-off utility strings.
+- Applied the badge hierarchy pass across chat header metadata, saved-chat counts, local-user role labels, and jobs analytics scope labels for more consistent typography and scanability.
+- Re-ran `npm run lint` and `npm run build` successfully after the typography and color hierarchy pass.
+
+## 2026-04-14
+- Switched Next production builds to standalone output so the app can be copied into installer-friendly bundles without shipping the source workspace.
+- Added a bundle generator that assembles clean Windows and Linux installer payloads under `dist/installers` from the current production build output.
+- Added Windows and Linux bootstrap installers that prompt for runtime settings, install or reuse Node, install or reuse Ollama, write runtime env configuration, and start the packaged app.
+- Documented the installer-bundle workflow in the README and added installer-specific bundle notes for future packaging work.
+- Added a native-installer packaging step that emits a Linux self-extracting `.run` archive and a Windows Inno Setup definition, with automatic `Setup.exe` generation when Inno Setup is present on the build machine.
+- Extended the Windows bootstrap installer so a GUI wrapper can pass install settings non-interactively instead of relying on terminal prompts.
+- Documented the machine-local Inno Setup install path and the exact Windows release-build command needed to regenerate `dist/native/OloadSetup.exe`.
+- Added provider-aware local user storage so password-based accounts and Google-backed accounts can coexist in the same workspace and backups remain restorable.
+- Added a server-side Google OAuth flow that creates or updates local app users, then reuses the existing signed session cookie for desktop and mobile browser login.
+- Simplified the auth wording by removing the redundant compact login header and renaming the admin access tab to clearer user/account language.
+- Normalized remaining auth copy to prefer account and users terminology across the login panel, help copy, and admin guidance text.
+- Shortened the login and users/help guidance copy so the auth screen and admin help lane scan faster on mobile.
+- Hardened the auth form so sign-in and account creation submit from real form values instead of relying on button-enable state that can fall out of sync with browser-filled inputs.
+- Hardened auth success handling again by verifying the cookie-backed server session after sign-in, account creation, Google auth, and logout so silent handoff failures surface a real error instead of clearing the form.
+- Extended Next dev origin allowlisting to cover the current forwarded public IP plus configurable extra external hosts so the app can be exercised through router-forwarded access during development.
+- Added a first-pass shared AI provider foundation with normalized provider and model types, generic `/api/ai/*` routes, an Ollama-backed provider adapter, and terminology guidance that distinguishes pull, load, inference, and training.
+- Updated the access panel to surface Google sign-in, provider badges, and OAuth-return error messaging, and documented the required Google environment variables and callback setup.
+- Added a Google Identity Services sign-in button backed by server-side Google ID-token verification so release builds can ship a publisher-configured Gmail sign-in without per-downloader Google setup.
+- Added broker-mode Google auth support in the app plus a separate `broker/` service scaffold so downloadable installs can use a hosted auth broker with one Google OAuth registration instead of per-instance Google setup.
+- Hid the Google sign-in controls behind a temporary `NEXT_PUBLIC_ENABLE_GOOGLE_AUTH_UI` flag so the current auth work stays in the codebase without being exposed in the UI.
+- Reworked the main UI into a compact full-screen command-deck shell, removed the lower landing-page sections, added Chat/Admin/Help lanes, and moved overflow into internal panel scroll regions instead of the whole page.
+- Tightened the chat lane for mobile with denser spacing, a more compact live-control band, and a viewport-locked workspace container.
+- Split the Admin lane into sub-tabs so access and backup tooling no longer stack directly on top of model and jobs operations.
+- Expanded the Help lane with actionable operator guidance, quick actions, and a seeded FAQ structure for future onboarding content.
+- Added shared admin-focus state so the Help lane can follow the current chat, access, models, jobs, or activity context instead of staying generic.
+- Split the admin ops surface further into dedicated Models, Jobs, and Activity views while keeping the existing underlying operational logic intact.
+- Applied a final mobile shell polish pass with denser lane buttons and tighter panel spacing on smaller screens.
+- Converted the static command-deck header into a floating hideable HUD, removed the lanes summary block, and added a draggable collapsed icon so the shell chrome can get out of the way completely.
+- Gated the entire app behind authenticated user access, added an explicit per-device stay-logged-in option for local sign-in, moved sign-out into the floating HUD, and hid admin-only shell surfaces from non-admin users.
+- Extended the stay-logged-in behavior to the Google auth routes, replaced non-admin chat starter copy with non-operator presets, and added a compact account surface in Help for regular users.
+- Added a reusable app theme registry, a command-deck theme dropdown, and a full dark theme token set with persisted device-local theme selection so more themes can be added later.
+- Added and validated a third Tech theme with cyan-forward control-surface styling, and confirmed the final runtime issue was resolved by clearing stale Next.js build output so the fresh CSS bundle included the new theme selectors.
+
+## 2026-04-15
+- Stored a replacement OpenAI project key through the admin provider UI and confirmed the chat lane now exposes OpenAI as a selectable live provider.
+- Re-verified `/api/ai/providers` and `/api/ai/models?providerId=openai` successfully after the key update.
+- Live-tested `/api/ai/chat` with the new key and confirmed the credential is no longer rejected as invalid; the upstream OpenAI response is now `429 insufficient_quota`, so the remaining blocker is account quota or billing rather than app integration.
+- Made the shared-knowledge flow more inspectable by previewing likely RAG matches in the composer and attaching retrieved knowledge sources to assistant messages after generation.
+- Added a compact `Sources:` footer to knowledge-backed replies so copied answers keep their grounding trail even outside the UI source cards.
+- Added provider-scoped shared knowledge entries, provider-aware preview and retrieval filtering, and an exact-tag boost so Ollama, Anthropic, and OpenAI can each pull tighter context from the same shared store.
+- Added an admin-only retrieval debugger that runs scored shared-knowledge searches with provider scoping and exposes the exact phrase, tag, field, and matched-token breakdown behind each ranked result.
+- Added exact model-name scope on top of provider scope so entries can target specific models like `claude-haiku-4-5` or `claude-sonnet-4-6`, and verified that model-scoped retrieval and chat augmentation now return only the active model's context.
+- Added live model-catalog suggestion chips to the shared knowledge form and retrieval debugger so exact model scoping can be applied from the current provider catalogs instead of manual typing.
+- Added in-place editing for shared knowledge entries so scoped notes can be revised from the existing admin form without delete-and-recreate churn.

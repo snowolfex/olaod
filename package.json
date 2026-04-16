@@ -5,7 +5,11 @@
   "scripts": {
     "dev": "next dev",
     "dev:lan": "next dev --hostname 0.0.0.0 --port 3000",
+    "broker:dev": "npm --prefix broker run dev",
+    "broker:start": "npm --prefix broker run start",
     "build": "next build",
+    "bundle:installers": "npm run build && node scripts/prepare-installer-bundles.mjs",
+    "package:installers": "npm run bundle:installers && node scripts/build-native-installers.mjs",
     "start": "next start",
     "start:lan": "next start --hostname 0.0.0.0 --port 3000",
     "lint": "eslint",
@@ -13,7 +17,9 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "google-auth-library": "^10.6.2",
     "next": "16.2.3",
+    "pdf-lib": "^1.17.1",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },

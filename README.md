@@ -7,8 +7,9 @@ GitHub repo description: Mobile-first Next.js control plane for Ollama with a se
 ## Highlights
 
 - Server-side Ollama gateway for chat, model status, pull, and delete flows
+- Local Ollama administration with CLI detection, process status, server start, runtime start and stop controls, and remote catalog browsing
 - Mobile-first chat workspace with saved, pinned, archived, and restorable conversations
-- Local user accounts, signed sessions, role management, guarded user deletion with conversation-impact preview, and optional admin password protection
+- Local user accounts, publisher-configured Google sign-in, signed sessions, role management, guarded user deletion with conversation-impact preview, and optional admin password protection
 - Admin jobs surface with queue reorder, cancel, retry, analytics, ownership filters, and detail timelines
 - Workspace backup export and restore flows for local users, conversations, activity, and job history
 - Deterministic Playwright coverage for auth, chat, jobs, conversation lifecycle, and backup recovery flows
@@ -34,10 +35,13 @@ GitHub repo description: Mobile-first Next.js control plane for Ollama with a se
 - API route at `/api/ollama/status`
 - Streaming chat route at `/api/ollama/chat`
 - Model library routes at `/api/ollama/models` and `/api/ollama/models/pull`
+- Local Ollama admin routes at `/api/ollama/catalog`, `/api/ollama/server`, and `/api/ollama/runtime`
+- Combined model library controls that show available, installed, and currently running models with pull, start, stop, and delete actions
 - Local conversation persistence via `/api/conversations`
 - Optional admin auth routes at `/api/auth/session`, `/api/auth/login`, and `/api/auth/logout`
 - Local activity log via `/api/admin/activity`
 - Local user accounts via `/api/users/session`, `/api/users/register`, `/api/users/login`, and `/api/users/logout`
+- Google sign-in via `/api/users/google/token`, with legacy redirect routes at `/api/users/google/start` and `/api/users/google/callback`
 - Admin role management and guarded local account deletion with per-user conversation counts via `/api/users`, `/api/users/[id]`, and `/api/users/[id]/role`
 - Local job history via `/api/admin/jobs`
 - Admin-only workspace backup export and restore via `/api/admin/system/backup`
@@ -163,9 +167,31 @@ GitHub repo description: Mobile-first Next.js control plane for Ollama with a se
 ## Local development
 
 1. Copy `.env.example` to `.env.local` if you need a non-default Ollama host.
-2. Start Ollama locally or make sure the configured host is reachable.
-3. Run `npm run dev` or use the `dev server` VS Code task.
-4. Open `http://localhost:3000`.
+2. For a hosted auth-broker release, set `AUTH_BROKER_BASE_URL` to your broker domain so the app uses the brokered Google flow.
+3. For a publisher-owned zero-config Google sign-in release without a broker, build the app with `NEXT_PUBLIC_GOOGLE_CLIENT_ID` set so the official Google button is active for every downloader.
+4. If you still need the older redirect-based Google OAuth flow for a custom deployment, also set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and optionally `GOOGLE_REDIRECT_URI`.
+5. The current UI keeps Google sign-in hidden unless `NEXT_PUBLIC_ENABLE_GOOGLE_AUTH_UI=1` is set; the implementation remains in place behind that flag.
+6. Start Ollama locally or make sure the configured host is reachable.
+7. Run `npm run dev` or use the `dev server` VS Code task.
+8. Open `http://localhost:3000`.
+
+## Google sign-in setup
+
+1. For the strongest downloadable-app story, use the broker scaffold under [broker/README.md](broker/README.md) and host it on a stable domain such as `https://auth.example.com`.
+2. Set `AUTH_BROKER_BASE_URL=https://auth.example.com` in the app so broker mode takes priority over direct Google sign-in.
+3. In Google Cloud, register one OAuth web app for the broker and add `https://auth.example.com/api/google/callback` as the authorized redirect URI.
+4. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in the broker service, not on every downloader machine.
+5. For the non-broker direct mode, add the browser origin you plan to ship, such as `http://localhost:3000`, to Authorized JavaScript origins and build the app with `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
+6. The first Google account to sign into an empty workspace becomes the admin account. Later Google users are created as operators.
+7. If a local username or email already matches a Google account address, the app blocks automatic linking to avoid taking over an existing local account.
+8. Broker mode is the better fit for downloadable installs because the app no longer needs to own the Google callback URL itself.
+
+## Auth broker
+
+1. The app-side broker routes live under `/api/users/google/broker/*` and proxy to the hosted broker configured by `AUTH_BROKER_BASE_URL`.
+2. A runnable broker scaffold is included under [broker/README.md](broker/README.md).
+3. Start it locally with `cmd /c npm run broker:dev` after configuring the broker env.
+4. The included broker uses an in-memory request store for short-lived login requests; production should replace that with Redis or another shared store.
 
 ## Local test access on this machine
 
@@ -204,12 +230,45 @@ Job entries track operation type, operator, timing, and terminal status for rece
 On Windows, this workspace is set up to work cleanly with `cmd /c npm ...` for task and terminal execution.
 For Android or other LAN devices, prefer `cmd /c npm run dev:lan` so Next.js binds to `0.0.0.0` instead of only `localhost`.
 
+## Installer bundles
+
+1. Build fresh installer bundles with `cmd /c npm run bundle:installers`.
+2. The generated outputs land in `dist/installers/windows` and `dist/installers/linux`.
+3. Each bundle includes a standalone production app payload plus an OS-specific installer that checks Node, installs a current Node runtime when needed, checks Ollama, installs Ollama when needed, prompts for runtime settings, and starts the app.
+4. The Windows entry point is `dist/installers/windows/install-oload.ps1`.
+5. The Linux entry point is `dist/installers/linux/install-oload.sh`.
+6. The bundle intentionally ships with clean empty data files, so no local users, chats, activity, or job history from this workspace are carried into new installs.
+7. The first user created in a fresh installed app becomes the admin user.
+8. On Linux, the Ollama install step uses the official installer script and may prompt for `sudo`.
+
+## Native installer outputs
+
+1. Build native-style outputs with `cmd /c npm run package:installers`.
+2. The Linux deliverable is a self-extracting `dist/native/OloadInstaller-linux-x64.run`.
+3. The Windows deliverable is `dist/native/OloadSetup.exe` when Inno Setup 6 is available on the build machine.
+4. If Inno Setup is not installed, the packaging step still emits `dist/native/oload.iss`, which is the ready-to-compile Windows installer definition.
+5. The Windows setup wrapper captures the install folder, port, Ollama URL, optional bootstrap admin password, optional session secret, LAN binding choice, and start-now choice in the normal setup flow, then passes them into the packaged PowerShell bootstrap.
+
+## Windows release build
+
+1. Install Inno Setup 6 with `winget install --id JRSoftware.InnoSetup --exact --accept-source-agreements --accept-package-agreements`.
+2. On this machine, the compiler was installed at `C:\Users\snowo\AppData\Local\Programs\Inno Setup 6\ISCC.exe`.
+3. Run `cmd /c npm run package:installers` from the repo root.
+4. That command rebuilds the standalone app, refreshes `dist/installers`, generates the Linux `.run`, and compiles `dist/native/OloadSetup.exe` when `ISCC.exe` is available.
+5. If Windows packaging ever falls back again, the compile-ready installer definition remains at `dist/native/oload.iss` and can be compiled manually with `"C:\Users\snowo\AppData\Local\Programs\Inno Setup 6\ISCC.exe" installer\windows\oload.iss`.
+
 ## Environment
 
 ```env
 OLLAMA_BASE_URL=http://127.0.0.1:11434
 OLOAD_ADMIN_PASSWORD=
 OLOAD_SESSION_SECRET=
+AUTH_BROKER_BASE_URL=
+NEXT_PUBLIC_ENABLE_GOOGLE_AUTH_UI=
+NEXT_PUBLIC_GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_REDIRECT_URI=
 ```
 
 ## Next build targets

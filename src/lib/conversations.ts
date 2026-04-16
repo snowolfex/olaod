@@ -20,8 +20,9 @@ const STORE_PATH = getDataStorePath("conversations.json");
 
 const DEFAULT_SETTINGS: ConversationSettings = {
   model: "",
+  providerId: "ollama",
   systemPrompt:
-    "You are a concise, high-signal local assistant running through Ollama.",
+    "You are a concise, high-signal AI assistant.",
   temperature: 0.7,
 };
 

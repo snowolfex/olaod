@@ -46,6 +46,7 @@ export async function PATCH(
       messages?: Array<{ role: "system" | "user" | "assistant"; content: string }>;
       settings?: {
         model?: string;
+        providerId?: "ollama" | "anthropic" | "openai";
         systemPrompt?: string;
         temperature?: number;
       };

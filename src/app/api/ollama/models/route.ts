@@ -1,7 +1,8 @@
 import { recordActivity } from "@/lib/activity";
 import { getCurrentUser, requireAdminSession } from "@/lib/auth";
 import { createJobRecord, updateJobRecord } from "@/lib/job-history";
-import { deleteOllamaModel, getOllamaStatus } from "@/lib/ollama";
+import { getOllamaStatus } from "@/lib/ollama-status";
+import { deleteOllamaModel } from "@/lib/ollama";
 
 export const dynamic = "force-dynamic";
 

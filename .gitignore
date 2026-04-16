@@ -27,14 +27,19 @@
 
 # production
 /build
+/dist
 
 # misc
 .DS_Store
 *.pem
 /data/conversations.json
 /data/activity-log.json
+/data/ai-provider-secrets.json
 /data/users.json
 /data/job-history.json
+/shared-knowledge-spec-report.txt
+/tmp-chatworkspace-layout-search.txt
+/tmp-transcript-matches.txt
 
 # debug
 npm-debug.log*

@@ -12,6 +12,7 @@ export async function POST(request: Request) {
       username?: string;
       displayName?: string;
       password?: string;
+      rememberSession?: boolean;
     };
 
     if (!payload.username?.trim() || !payload.password?.trim()) {
@@ -26,7 +27,9 @@ export async function POST(request: Request) {
       displayName: payload.displayName ?? payload.username,
       password: payload.password,
     });
-    const cookie = createUserSessionCookie(toSessionUser(user));
+    const cookie = createUserSessionCookie(toSessionUser(user), {
+      persistent: payload.rememberSession === true,
+    });
     const response = NextResponse.json({ user: toPublicUser(user) });
 
     await recordActivity({
@@ -40,7 +43,7 @@ export async function POST(request: Request) {
       name: cookie.name,
       value: cookie.value,
       httpOnly: true,
-      maxAge: cookie.maxAge,
+      ...(typeof cookie.maxAge === "number" ? { maxAge: cookie.maxAge } : {}),
       path: "/",
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",

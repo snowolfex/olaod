@@ -26,6 +26,7 @@ export async function POST(request: Request) {
       messages?: Array<{ role: "system" | "user" | "assistant"; content: string }>;
       settings?: {
         model?: string;
+        providerId?: "ollama" | "anthropic" | "openai";
         systemPrompt?: string;
         temperature?: number;
       };

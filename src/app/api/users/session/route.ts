@@ -11,6 +11,8 @@ export async function GET(request: Request) {
 
   return Response.json({
     authAvailable: baseStatus.authAvailable,
+    googleAuthEnabled: baseStatus.googleAuthEnabled,
+    googleAuthMode: baseStatus.googleAuthMode,
     user,
     userCount,
   });

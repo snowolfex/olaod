@@ -1,4 +1,4 @@
-import { getOllamaStatus } from "@/lib/ollama";
+import { getOllamaStatus } from "@/lib/ollama-status";
 
 export const dynamic = "force-dynamic";
 

@@ -44,6 +44,7 @@ const PROMPT_PRESETS = [
 ] as const;
 
 const CHAT_WORKSPACE_SIDEBAR_STORAGE_KEY = "oload:chat:workspace-sidebar";
+const CHAT_DESKTOP_LAYOUT_STORAGE_KEY = "oload:chat:desktop-layout";
 const CHAT_PROMPT_PRESETS_STORAGE_KEY = "oload:chat:prompt-presets";
 const CHAT_PINNED_CONVERSATIONS_STORAGE_KEY = "oload:chat:pinned-conversations";
 const CHAT_PINNED_ONLY_FILTER_STORAGE_KEY = "oload:chat:pinned-only-filter";
@@ -55,9 +56,14 @@ const ARCHIVED_RETENTION_DAYS = 30;
 const ARCHIVED_RETENTION_OPTIONS = [7, 14, 30, 90] as const;
 type ArchivedConversationFilter = "all" | "empty" | "old";
 type ArchivedConversationSort = "archived-newest" | "archived-oldest" | "recent-activity";
+type DesktopChatLayoutMode = "chat-first" | "controls-first";
 
 function getWorkspaceSidebarStorageKey(userId?: string) {
   return `${CHAT_WORKSPACE_SIDEBAR_STORAGE_KEY}:${userId ?? "guest"}`;
+}
+
+function getDesktopLayoutStorageKey(userId?: string) {
+  return `${CHAT_DESKTOP_LAYOUT_STORAGE_KEY}:${userId ?? "guest"}`;
 }
 
 function getPromptPresetsStorageKey(userId?: string) {
@@ -94,6 +100,10 @@ function parseWorkspaceSidebarPreference(value: string | null) {
   }
 
   return value === "true";
+}
+
+function parseDesktopLayoutPreference(value: string | null): DesktopChatLayoutMode {
+  return value === "controls-first" ? "controls-first" : "chat-first";
 }
 
 function parsePromptPresetsPreference(value: string | null, fallback: boolean) {
@@ -391,6 +401,52 @@ async function readErrorMessage(response: Response) {
   }
 }
 
+function DisclosureChevronIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={`h-4 w-4 shrink-0 transition-transform duration-200 ${open ? "rotate-180" : "rotate-0"}`}
+      viewBox="0 0 16 16"
+      fill="none"
+    >
+      <path
+        d="M3.5 6.25L8 10.75L12.5 6.25"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.5"
+      />
+    </svg>
+  );
+}
+
+function DesktopLayoutSwapIcon({ reversed }: { reversed: boolean }) {
+  return (
+    <svg aria-hidden="true" className="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="none">
+      <rect x="2.5" y={reversed ? "11.5" : "2.5"} width="15" height="4" rx="2" stroke="currentColor" strokeWidth="1.4" />
+      <rect x="5" y={reversed ? "4.5" : "13.5"} width="10" height="2.8" rx="1.4" stroke="currentColor" strokeWidth="1.4" />
+      <path
+        d={reversed ? "M16 8.25H7.75M7.75 8.25L10.25 10.75M7.75 8.25L10.25 5.75" : "M4 11.75H12.25M12.25 11.75L9.75 14.25M12.25 11.75L9.75 9.25"}
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.4"
+      />
+    </svg>
+  );
+}
+
+function SparkGridIcon() {
+  return (
+    <svg aria-hidden="true" className="h-4 w-4 shrink-0" viewBox="0 0 16 16" fill="none">
+      <rect x="2" y="2" width="5" height="5" rx="1.4" stroke="currentColor" strokeWidth="1.2" />
+      <rect x="9" y="2" width="5" height="3" rx="1.4" stroke="currentColor" strokeWidth="1.2" />
+      <rect x="9" y="7" width="5" height="7" rx="1.4" stroke="currentColor" strokeWidth="1.2" />
+      <rect x="2" y="9" width="5" height="5" rx="1.4" stroke="currentColor" strokeWidth="1.2" />
+    </svg>
+  );
+}
+
 export function ChatWorkspace({
   currentUser,
   isReachable,
@@ -399,6 +455,7 @@ export function ChatWorkspace({
   models,
 }: ChatWorkspaceProps) {
   const workspaceSidebarStorageKey = getWorkspaceSidebarStorageKey(currentUser?.id);
+  const desktopLayoutStorageKey = getDesktopLayoutStorageKey(currentUser?.id);
   const promptPresetsStorageKey = getPromptPresetsStorageKey(currentUser?.id);
   const pinnedConversationsStorageKey = getPinnedConversationsStorageKey(currentUser?.id);
   const pinnedOnlyFilterStorageKey = getPinnedOnlyFilterStorageKey(currentUser?.id);
@@ -429,6 +486,10 @@ export function ChatWorkspace({
   const [selectedArchivedConversationIds, setSelectedArchivedConversationIds] = useState<string[]>([]);
   const [showWorkspaceSidebar, setShowWorkspaceSidebar] = useState(true);
   const [loadedWorkspaceSidebarKey, setLoadedWorkspaceSidebarKey] = useState<string | null>(null);
+  const [desktopLayoutMode, setDesktopLayoutMode] = useState<DesktopChatLayoutMode>("chat-first");
+  const [loadedDesktopLayoutKey, setLoadedDesktopLayoutKey] = useState<string | null>(null);
+  const [showSavedChatsPanel, setShowSavedChatsPanel] = useState(true);
+  const [showModelControlsPanel, setShowModelControlsPanel] = useState(true);
   const [showPromptPresets, setShowPromptPresets] = useState(
     (initialConversation?.messages?.length ?? 0) === 0,
   );
@@ -502,6 +563,17 @@ export function ChatWorkspace({
   }, [workspaceSidebarStorageKey]);
 
   useEffect(() => {
+    try {
+      const storedValue = window.localStorage.getItem(desktopLayoutStorageKey);
+      setDesktopLayoutMode(parseDesktopLayoutPreference(storedValue));
+    } catch {
+      setDesktopLayoutMode("chat-first");
+    } finally {
+      setLoadedDesktopLayoutKey(desktopLayoutStorageKey);
+    }
+  }, [desktopLayoutStorageKey]);
+
+  useEffect(() => {
     if (loadedWorkspaceSidebarKey !== workspaceSidebarStorageKey) {
       return;
     }
@@ -512,6 +584,18 @@ export function ChatWorkspace({
       // Ignore storage failures and keep the in-memory rail state.
     }
   }, [loadedWorkspaceSidebarKey, showWorkspaceSidebar, workspaceSidebarStorageKey]);
+
+  useEffect(() => {
+    if (loadedDesktopLayoutKey !== desktopLayoutStorageKey) {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(desktopLayoutStorageKey, desktopLayoutMode);
+    } catch {
+      // Ignore storage failures and keep the in-memory layout state.
+    }
+  }, [desktopLayoutMode, desktopLayoutStorageKey, loadedDesktopLayoutKey]);
 
   useEffect(() => {
     try {
@@ -1471,6 +1555,23 @@ export function ChatWorkspace({
       ),
     }))
     .filter((group) => group.conversations.length > 0);
+  const controlsFirst = desktopLayoutMode === "controls-first";
+  const savedChatsSummary = currentUser
+    ? `${visibleConversations.length} in view / ${pinnedConversationIds.length} pinned`
+    : "Sign in to save and reopen chats";
+  const modelControlsSummary = `${selectedModel || "No model"} / temp ${temperature.toFixed(1)}`;
+  const collapsedSavedChatPreview = visibleConversations.slice(0, 3);
+  const transcriptSummary = messages.length > 0
+    ? `${messages.length} message${messages.length === 1 ? "" : "s"} in this thread`
+    : "Fresh thread ready for the first prompt";
+  const systemPromptPreview = systemPrompt.trim()
+    ? `${systemPrompt.trim().slice(0, 120)}${systemPrompt.trim().length > 120 ? "..." : ""}`
+    : "Using the current system prompt defaults.";
+  const desktopControlBodyMaxHeightClass = controlsFirst
+    ? "lg:max-h-[min(26dvh,18rem)] xl:max-h-[min(28dvh,20rem)] 2xl:max-h-[min(30dvh,22rem)]"
+    : "lg:max-h-[min(36dvh,26rem)] xl:max-h-[min(38dvh,29rem)] 2xl:max-h-[min(40dvh,31rem)]";
+  const disclosureHeaderBaseClass = "group relative flex w-full items-start justify-between gap-4 overflow-hidden rounded-[24px] border px-4 py-4 text-left shadow-[0_18px_44px_rgba(83,53,31,0.1)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_24px_56px_rgba(83,53,31,0.14)]";
+  const disclosureIndicatorClass = "theme-surface-chip inline-flex h-10 w-10 items-center justify-center rounded-full text-foreground";
 
   useEffect(() => {
     const nextVisibleConversationIdSet = new Set(
@@ -1581,745 +1682,790 @@ export function ChatWorkspace({
     }
   }
 
-  return (
-    <section className="glass-panel rounded-[36px] p-4 sm:p-6 lg:p-8">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="section-label text-xs font-semibold">Live chat</p>
-          <h2 className="mt-3 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-            Conversation cockpit
-          </h2>
-          <p className="mt-3 max-w-2xl text-sm leading-7 text-muted sm:text-base">
-            Chats now persist locally. You can resume recent sessions, keep model
-            settings per conversation, and continue through the server gateway.
-          </p>
-          {activeConversationIsArchived ? (
-            <p className="mt-2 max-w-2xl text-xs leading-6 text-muted sm:text-sm">
-              This active conversation is archived and stays out of the main saved-chat flow until restored.
-            </p>
-          ) : null}
-        </div>
+  const savedChatsPanel = (
+    <div className="theme-surface-soft overflow-hidden rounded-[28px] p-3 sm:p-4">
+      <button
+        aria-controls="saved-chats-panel-body"
+        aria-expanded={showSavedChatsPanel}
+        className={`${disclosureHeaderBaseClass} theme-surface-feature`}
+        type="button"
+        onClick={() => setShowSavedChatsPanel((current) => !current)}
+      >
+        <span className="min-w-0">
+          <span className="eyebrow text-muted">Saved chats</span>
+          <span className="mt-2 block text-base font-semibold text-foreground sm:text-lg">
+            Recent threads and archived history
+          </span>
+          <span className="mt-2 block text-[11px] font-semibold uppercase tracking-[0.2em] text-[color:color-mix(in_srgb,var(--accent-strong)_72%,white_28%)]">
+            Expand to browse and act
+          </span>
+          <span className="theme-surface-chip mt-3 inline-flex max-w-full rounded-full px-3 py-1 text-xs font-medium text-muted">
+            {savedChatsSummary}
+          </span>
+        </span>
+        <span className="mt-1 hidden flex-col items-end gap-2 sm:inline-flex">
+          <span className="theme-surface-chip rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">
+            {showSavedChatsPanel ? "Collapse" : "Expand"}
+          </span>
+          <span className={disclosureIndicatorClass}>
+            <DisclosureChevronIcon open={showSavedChatsPanel} />
+          </span>
+        </span>
+        <span className={`${disclosureIndicatorClass} mt-1 sm:hidden`}>
+          <DisclosureChevronIcon open={showSavedChatsPanel} />
+        </span>
+      </button>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            className="rounded-full border border-line bg-white/60 px-4 py-2 text-sm font-medium text-foreground lg:hidden"
-            type="button"
-            onClick={() => setShowWorkspaceSidebar((current) => !current)}
-          >
-            {showWorkspaceSidebar ? "Hide controls" : "Show controls"}
-          </button>
-          <div className="rounded-full border border-line bg-white/60 px-4 py-2 text-sm font-medium text-foreground">
-            {conversationTitle}
-          </div>
-          <div className="rounded-full border border-line bg-white/60 px-4 py-2 text-sm font-medium text-foreground">
-            {selectedModel || "No model available"}
-          </div>
-          {activeConversationIsArchived ? (
-            <div className="rounded-full bg-stone-200 px-4 py-2 text-sm font-semibold text-stone-900">
-              Archived thread
+      {showSavedChatsPanel ? (
+        <div id="saved-chats-panel-body" className={`mt-3 space-y-4 overflow-y-auto pr-1 ${desktopControlBodyMaxHeightClass}`}>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs text-muted sm:text-sm">
+                {currentUser
+                  ? `Saved for ${currentUser.displayName}.`
+                  : "Sign in to enable per-user saved conversations."}
+              </p>
             </div>
-          ) : null}
-          <div
-            className={`rounded-full px-4 py-2 text-sm font-semibold ${
-              isReachable
-                ? "bg-emerald-100 text-emerald-900"
-                : "bg-amber-100 text-amber-900"
-            }`}
-          >
-            {isReachable ? "Gateway online" : "Gateway offline"}
+            <button
+              className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white"
+              type="button"
+              onClick={startNewConversation}
+            >
+              New chat
+            </button>
           </div>
-        </div>
-      </div>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-[0.92fr_1.3fr]">
-        <div className={`${showWorkspaceSidebar ? "space-y-4" : "hidden"} lg:block lg:space-y-4`}>
-          <div className="rounded-[28px] border border-line/80 bg-white/55 p-4 sm:p-5">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="eyebrow text-muted">Saved chats</p>
-                <p className="mt-2 text-sm text-muted">
-                  {currentUser
-                    ? `Saved for ${currentUser.displayName}.`
-                    : "Sign in to enable per-user saved conversations."}
-                </p>
-              </div>
-              <button
-                className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-white"
-                type="button"
-                onClick={startNewConversation}
-              >
-                New chat
-              </button>
-            </div>
-
-            {currentUser ? (
-              <div className="mt-4 space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
-                    <span className="font-semibold">Pins</span>
-                    <span className="rounded-full bg-white px-3 py-1 font-semibold text-foreground">
-                      {pinnedConversationIds.length} pinned
-                    </span>
-                    <span className="rounded-full bg-white px-3 py-1 font-semibold text-foreground">
-                      {archivedConversationCount} archived
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                        showPinnedOnly
-                          ? "bg-[var(--accent)] text-white"
-                          : "border border-line bg-white text-foreground"
-                      }`}
-                      disabled={pinnedConversationIds.length === 0}
-                      type="button"
-                      onClick={() => setShowPinnedOnly((current) => !current)}
-                    >
-                      {showPinnedOnly ? "Show all chats" : "Pinned only"}
-                    </button>
-                    <button
-                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                        showArchivedConversations
-                          ? "bg-[var(--accent)] text-white"
-                          : "border border-line bg-white text-foreground"
-                      }`}
-                      disabled={archivedConversationCount === 0 && !showArchivedConversations}
-                      type="button"
-                      onClick={() => setShowArchivedConversations((current) => !current)}
-                    >
-                      {showArchivedConversations ? "Hide archived" : "Show archived"}
-                    </button>
-                  </div>
+          {currentUser ? (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                  <span className="font-semibold">Pins</span>
+                  <span className="rounded-full bg-white px-3 py-1 font-semibold text-foreground">
+                    {pinnedConversationIds.length} pinned
+                  </span>
+                  <span className="rounded-full bg-white px-3 py-1 font-semibold text-foreground">
+                    {archivedConversationCount} archived
+                  </span>
                 </div>
-                <input
-                  className="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
-                  placeholder="Search saved chats"
-                  value={conversationSearch}
-                  onChange={(event) => setConversationSearch(event.target.value)}
-                />
-                {activeConversationId ? (
-                  <div className="rounded-[22px] border border-line/80 bg-white/70 p-3">
-                    <p className="eyebrow text-muted">Active title</p>
-                    <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-                      <input
-                        className="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
-                        placeholder="Conversation title"
-                        value={conversationTitleDraft}
-                        onChange={(event) => setConversationTitleDraft(event.target.value)}
-                      />
-                      <button
-                        className="rounded-full border border-line bg-white px-4 py-3 text-sm font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                        disabled={
-                          isSavingConversation
-                          || !conversationTitleDraft.trim()
-                          || conversationTitleDraft.trim() === conversationTitle
-                        }
-                        type="button"
-                        onClick={() => {
-                          void renameActiveConversationTitle();
-                        }}
-                      >
-                        {isSavingConversation ? "Saving..." : "Save title"}
-                      </button>
-                      <button
-                        className="rounded-full border border-line bg-white px-4 py-3 text-sm font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                        disabled={isSavingConversation}
-                        type="button"
-                        onClick={() => {
-                          void setConversationArchived(activeConversationId, !activeConversationIsArchived);
-                        }}
-                      >
-                        {activeConversationIsArchived ? "Restore chat" : "Archive chat"}
-                      </button>
-                    </div>
-                    {activeConversationIsArchived ? (
-                      <p className="mt-2 text-xs leading-6 text-muted">
-                        This conversation is archived and stays out of the main rail until restored.
-                      </p>
-                    ) : null}
-                  </div>
-                ) : null}
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                      showPinnedOnly
+                        ? "bg-[var(--accent)] text-white"
+                        : "border border-line bg-white text-foreground"
+                    }`}
+                    disabled={pinnedConversationIds.length === 0}
+                    type="button"
+                    onClick={() => setShowPinnedOnly((current) => !current)}
+                  >
+                    {showPinnedOnly ? "Show all chats" : "Pinned only"}
+                  </button>
+                  <button
+                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                      showArchivedConversations
+                        ? "bg-[var(--accent)] text-white"
+                        : "border border-line bg-white text-foreground"
+                    }`}
+                    disabled={archivedConversationCount === 0 && !showArchivedConversations}
+                    type="button"
+                    onClick={() => setShowArchivedConversations((current) => !current)}
+                  >
+                    {showArchivedConversations ? "Hide archived" : "Show archived"}
+                  </button>
+                </div>
               </div>
-            ) : null}
+              <input
+                className="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
+                placeholder="Search saved chats"
+                value={conversationSearch}
+                onChange={(event) => setConversationSearch(event.target.value)}
+              />
+              {activeConversationId ? (
+                <div className="theme-surface-strong rounded-[22px] p-3">
+                  <p className="eyebrow text-muted">Active title</p>
+                  <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                    <input
+                      className="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
+                      placeholder="Conversation title"
+                      value={conversationTitleDraft}
+                      onChange={(event) => setConversationTitleDraft(event.target.value)}
+                    />
+                    <button
+                      className="rounded-full border border-line bg-white px-4 py-3 text-sm font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={
+                        isSavingConversation
+                        || !conversationTitleDraft.trim()
+                        || conversationTitleDraft.trim() === conversationTitle
+                      }
+                      type="button"
+                      onClick={() => {
+                        void renameActiveConversationTitle();
+                      }}
+                    >
+                      {isSavingConversation ? "Saving..." : "Save title"}
+                    </button>
+                    <button
+                      className="rounded-full border border-line bg-white px-4 py-3 text-sm font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={isSavingConversation}
+                      type="button"
+                      onClick={() => {
+                        void setConversationArchived(activeConversationId, !activeConversationIsArchived);
+                      }}
+                    >
+                      {activeConversationIsArchived ? "Restore chat" : "Archive chat"}
+                    </button>
+                  </div>
+                  {activeConversationIsArchived ? (
+                    <p className="mt-2 text-xs leading-6 text-muted">
+                      This conversation is archived and stays out of the main rail until restored.
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
 
-            <div className="mt-4 max-h-64 space-y-3 overflow-y-auto pr-1">
-              {currentUser ? (
-                visibleConversations.length > 0 ? (
-                  <div className="space-y-4">
-                    {pinnedVisibleConversations.length > 0 ? (
-                      <div className="space-y-3">
-                        {!showPinnedOnly ? (
-                          <div className="flex items-center gap-2 px-1">
-                            <p className="section-label text-xs font-semibold">Pinned</p>
-                            <span className="text-xs text-muted">{pinnedVisibleConversations.length}</span>
-                          </div>
-                        ) : null}
-                        {pinnedVisibleConversations.map((conversation) => {
-                          const isActive = conversation.id === activeConversationId;
-                          const recencyBadge = getConversationRecencyBadge(conversation.updatedAt);
-                          const activityBadge = getConversationActivityBadge({
-                            conversationId: conversation.id,
-                            isActive,
-                            isStreaming,
-                            recentlyUpdatedConversationId,
-                          });
-
-                          return (
-                            <div
-                              key={conversation.id}
-                              className={`rounded-[24px] border px-4 py-4 ${
-                                isActive
-                                  ? "border-[var(--accent)] bg-white"
-                                  : "border-line bg-white/55"
-                              }`}
-                            >
-                              <button
-                                className="w-full text-left"
-                                disabled={isLoadingConversation}
-                                type="button"
-                                onClick={() => openConversation(conversation.id)}
-                              >
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-900">
-                                    Pinned
-                                  </span>
-                                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                                    isActive
-                                      ? "bg-[var(--accent)] text-white"
-                                      : conversation.messageCount === 0
-                                        ? "bg-stone-200 text-stone-900"
-                                        : "bg-white text-foreground"
-                                  }`}>
-                                    {isActive
-                                      ? "Active"
-                                      : conversation.messageCount === 0
-                                        ? "Empty"
-                                        : "Saved"}
-                                  </span>
-                                  {recencyBadge ? (
-                                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${recencyBadge.classes}`}>
-                                      {recencyBadge.label}
-                                    </span>
-                                  ) : null}
-                                  {activityBadge ? (
-                                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${activityBadge.classes}`}>
-                                      {activityBadge.label}
-                                    </span>
-                                  ) : null}
-                                </div>
-                                <p className="text-sm font-semibold text-foreground">
-                                  {conversation.title}
-                                </p>
-                                <p className="mt-2 text-xs leading-6 text-muted">
-                                  {conversation.lastMessagePreview || "No messages yet."}
-                                </p>
-                                <p className="mt-2 text-xs text-muted">
-                                  {conversation.messageCount} messages · {formatTimestamp(conversation.updatedAt)}
-                                </p>
-                              </button>
-                              <div className="mt-3 flex flex-wrap items-center gap-3">
-                                <button
-                                  className="text-xs font-semibold text-[var(--accent-strong)]"
-                                  type="button"
-                                  onClick={() => togglePinnedConversation(conversation.id)}
-                                >
-                                  Unpin
-                                </button>
-                                <button
-                                  className="text-xs font-semibold text-[var(--accent-strong)]"
-                                  type="button"
-                                  onClick={() => {
-                                    void setConversationArchived(conversation.id, true);
-                                  }}
-                                >
-                                  Archive
-                                </button>
-                                <button
-                                  className="text-xs font-semibold text-[var(--accent-strong)]"
-                                  type="button"
-                                  onClick={() => deleteConversationRecord(conversation.id)}
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : null}
-                    {recentVisibleConversations.length > 0 ? (
-                      <div className="space-y-3">
-                        {!showPinnedOnly ? (
-                          <div className="flex items-center gap-2 px-1">
-                            <p className="section-label text-xs font-semibold">Recent</p>
-                            <span className="text-xs text-muted">{recentVisibleConversations.length}</span>
-                          </div>
-                        ) : null}
-                        {recentConversationGroups.map((group) => (
-                          <div key={group.label} className="space-y-3">
-                            <div className="flex items-center gap-2 px-1">
-                              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
-                                {group.label}
-                              </p>
-                              <span className="text-xs text-muted">{group.conversations.length}</span>
-                            </div>
-                            {group.conversations.map((conversation) => {
-                              const isActive = conversation.id === activeConversationId;
-                              const recencyBadge = getConversationRecencyBadge(conversation.updatedAt);
-                              const activityBadge = getConversationActivityBadge({
-                                conversationId: conversation.id,
-                                isActive,
-                                isStreaming,
-                                recentlyUpdatedConversationId,
-                              });
-
-                              return (
-                                <div
-                                  key={conversation.id}
-                                  className={`rounded-[24px] border px-4 py-4 ${
-                                    isActive
-                                      ? "border-[var(--accent)] bg-white"
-                                      : "border-line bg-white/55"
-                                  }`}
-                                >
-                                  <button
-                                    className="w-full text-left"
-                                    disabled={isLoadingConversation}
-                                    type="button"
-                                    onClick={() => openConversation(conversation.id)}
-                                  >
-                                    <div className="flex flex-wrap items-center gap-2">
-                                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                                        isActive
-                                          ? "bg-[var(--accent)] text-white"
-                                          : conversation.messageCount === 0
-                                            ? "bg-stone-200 text-stone-900"
-                                            : "bg-white text-foreground"
-                                      }`}>
-                                        {isActive
-                                          ? "Active"
-                                          : conversation.messageCount === 0
-                                            ? "Empty"
-                                            : "Saved"}
-                                      </span>
-                                      {recencyBadge ? (
-                                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${recencyBadge.classes}`}>
-                                          {recencyBadge.label}
-                                        </span>
-                                      ) : null}
-                                      {activityBadge ? (
-                                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${activityBadge.classes}`}>
-                                          {activityBadge.label}
-                                        </span>
-                                      ) : null}
-                                    </div>
-                                    <p className="text-sm font-semibold text-foreground">
-                                      {conversation.title}
-                                    </p>
-                                    <p className="mt-2 text-xs leading-6 text-muted">
-                                      {conversation.lastMessagePreview || "No messages yet."}
-                                    </p>
-                                    <p className="mt-2 text-xs text-muted">
-                                      {conversation.messageCount} messages · {formatTimestamp(conversation.updatedAt)}
-                                    </p>
-                                  </button>
-                                  <div className="mt-3 flex flex-wrap items-center gap-3">
-                                    <button
-                                      className="text-xs font-semibold text-[var(--accent-strong)]"
-                                      type="button"
-                                      onClick={() => togglePinnedConversation(conversation.id)}
-                                    >
-                                      Pin
-                                    </button>
-                                    <button
-                                      className="text-xs font-semibold text-[var(--accent-strong)]"
-                                      type="button"
-                                      onClick={() => {
-                                        void setConversationArchived(conversation.id, true);
-                                      }}
-                                    >
-                                      Archive
-                                    </button>
-                                    <button
-                                      className="text-xs font-semibold text-[var(--accent-strong)]"
-                                      type="button"
-                                      onClick={() => deleteConversationRecord(conversation.id)}
-                                    >
-                                      Delete
-                                    </button>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-                    {showArchivedConversations && archivedConversationCount > 0 ? (
-                      <div className="space-y-3">
-                        <div className="space-y-2 px-1">
-                          <div className="flex items-center gap-2">
-                            <p className="section-label text-xs font-semibold">Archived</p>
-                            <span className="text-xs text-muted">{archivedConversationCount}</span>
-                            <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-foreground">
-                              Empty {archivedEmptyConversationCount}
-                            </span>
-                            <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-foreground">
-                              {archivedRetentionDays}d+ {archivedOlderConversationCount}
-                            </span>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
-                            <span className="font-semibold">Retention</span>
-                            {ARCHIVED_RETENTION_OPTIONS.map((value) => (
-                              <button
-                                key={value}
-                                aria-label={`Set archived retention filter to ${value} days`}
-                                aria-pressed={archivedRetentionDays === value}
-                                className={`rounded-full px-3 py-1 font-semibold ${
-                                  archivedRetentionDays === value
-                                    ? "bg-[var(--accent)] text-white"
-                                    : "border border-line bg-white text-foreground"
-                                }`}
-                                disabled={isRunningArchivedCleanup}
-                                type="button"
-                                onClick={() => setArchivedRetentionDays(value)}
-                              >
-                                {value} days
-                              </button>
-                            ))}
-                          </div>
-                          <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
-                            <span className="font-semibold">Filter</span>
-                            {([
-                              ["all", `All ${archivedConversationCount}`],
-                              ["empty", `Empty ${archivedEmptyConversationCount}`],
-                              ["old", `${archivedRetentionDays}d+ ${archivedOlderConversationCount}`],
-                            ] as const).map(([value, label]) => (
-                              <button
-                                key={value}
-                                aria-label={`Show ${label.toLowerCase()} archived chats`}
-                                aria-pressed={archivedConversationFilter === value}
-                                className={`rounded-full px-3 py-1 font-semibold ${
-                                  archivedConversationFilter === value
-                                    ? "bg-[var(--accent)] text-white"
-                                    : "border border-line bg-white text-foreground"
-                                }`}
-                                disabled={isRunningArchivedCleanup}
-                                type="button"
-                                onClick={() => setArchivedConversationFilter(value)}
-                              >
-                                {label}
-                              </button>
-                            ))}
-                          </div>
-                          <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
-                            <span className="font-semibold">Sort</span>
-                            {([
-                              ["archived-newest", "Newest archived"],
-                              ["archived-oldest", "Oldest archived"],
-                              ["recent-activity", "Recent activity"],
-                            ] as const).map(([value, label]) => (
-                              <button
-                                key={value}
-                                aria-label={`Sort archived chats by ${label.toLowerCase()}`}
-                                aria-pressed={archivedConversationSort === value}
-                                className={`rounded-full px-3 py-1 font-semibold ${
-                                  archivedConversationSort === value
-                                    ? "bg-[var(--accent)] text-white"
-                                    : "border border-line bg-white text-foreground"
-                                }`}
-                                disabled={isRunningArchivedCleanup}
-                                type="button"
-                                onClick={() => setArchivedConversationSort(value)}
-                              >
-                                {label}
-                              </button>
-                            ))}
-                          </div>
-                          <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
-                            <span className="font-semibold">Selection</span>
-                            <span className="rounded-full bg-white px-3 py-1 font-semibold text-foreground">
-                              {selectedArchivedVisibleConversationIds.length} selected
-                            </span>
-                            <button
-                              aria-label={selectedArchivedVisibleConversationIds.length === archivedVisibleConversations.length
-                                ? "Clear selection for all visible archived chats"
-                                : "Select all visible archived chats"}
-                              aria-pressed={selectedArchivedVisibleConversationIds.length > 0 && selectedArchivedVisibleConversationIds.length === archivedVisibleConversations.length}
-                              className="rounded-full border border-line bg-white px-3 py-1 font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                              disabled={isRunningArchivedCleanup || archivedVisibleConversations.length === 0}
-                              type="button"
-                              onClick={toggleSelectAllArchivedVisible}
-                            >
-                              {selectedArchivedVisibleConversationIds.length === archivedVisibleConversations.length
-                                ? "Clear visible selection"
-                                : "Select visible"}
-                            </button>
-                            {selectedArchivedVisibleConversationIds.length > 0 ? (
-                              <button
-                                aria-label="Clear the current archived selection"
-                                className="rounded-full border border-line bg-white px-3 py-1 font-semibold text-foreground"
-                                disabled={isRunningArchivedCleanup}
-                                type="button"
-                                onClick={() => setSelectedArchivedConversationIds([])}
-                              >
-                                Clear selection
-                              </button>
-                            ) : null}
-                            <button
-                              aria-label="Select visible archived chats with no messages"
-                              aria-pressed={selectedArchivedVisibleConversationIds.length > 0 && selectedArchivedVisibleConversationIds.length === archivedVisibleEmptyConversationIds.length && archivedVisibleEmptyConversationIds.every((id) => selectedArchivedVisibleConversationIdSet.has(id))}
-                              className="rounded-full border border-line bg-white px-3 py-1 font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                              disabled={isRunningArchivedCleanup || archivedVisibleEmptyConversationIds.length === 0}
-                              type="button"
-                              onClick={() => replaceArchivedSelection(archivedVisibleEmptyConversationIds)}
-                            >
-                              Select empty
-                            </button>
-                            <button
-                              aria-label={`Select visible archived chats at least ${archivedRetentionDays} days old`}
-                              aria-pressed={selectedArchivedVisibleConversationIds.length > 0 && selectedArchivedVisibleConversationIds.length === archivedVisibleOlderConversationIds.length && archivedVisibleOlderConversationIds.every((id) => selectedArchivedVisibleConversationIdSet.has(id))}
-                              className="rounded-full border border-line bg-white px-3 py-1 font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                              disabled={isRunningArchivedCleanup || archivedVisibleOlderConversationIds.length === 0}
-                              type="button"
-                              onClick={() => replaceArchivedSelection(archivedVisibleOlderConversationIds)}
-                            >
-                              Select {archivedRetentionDays}d+
-                            </button>
-                          </div>
-                          <p aria-live="polite" className="text-xs leading-6 text-muted">{archivedSummaryText}</p>
-                          <p className="text-xs leading-6 text-muted">
-                            Keyboard: use Up and Down to move, Space to select, Enter to open, A to toggle all visible, E to select empty, O to select {archivedRetentionDays}d+, and Escape to clear selection.
-                          </p>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <button
-                              aria-label={`${confirmArchivedCleanupAction === "restore-archived-visible" ? "Confirm" : "Restore"} ${selectedArchivedVisibleConversationIds.length > 0 ? "selected" : "visible"} archived chats`}
-                              aria-pressed={confirmArchivedCleanupAction === "restore-archived-visible"}
-                              className={`rounded-full px-3 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
-                                confirmArchivedCleanupAction === "restore-archived-visible"
-                                  ? "border border-emerald-700 bg-emerald-600 text-white"
-                                  : "border border-emerald-300 bg-emerald-50 text-emerald-900"
-                              }`}
-                              disabled={isRunningArchivedCleanup || archivedActionConversations.length === 0}
-                              type="button"
-                              onClick={() => {
-                                if (confirmArchivedCleanupAction !== "restore-archived-visible") {
-                                  setConfirmArchivedCleanupAction("restore-archived-visible");
-                                  return;
-                                }
-
-                                void runArchivedRestore();
-                              }}
-                            >
-                              {confirmArchivedCleanupAction === "restore-archived-visible"
-                                ? `Confirm restore ${selectedArchivedVisibleConversationIds.length > 0 ? "selected" : "visible"} archived`
-                                : isRunningArchivedCleanup
-                                  ? "Working..."
-                                  : `Restore ${selectedArchivedVisibleConversationIds.length > 0 ? "selected" : "visible"} archived`}
-                            </button>
-                            <button
-                              aria-label={`${confirmArchivedCleanupAction === "delete-archived-empty" ? "Confirm deleting" : "Delete"} ${selectedArchivedVisibleConversationIds.length > 0 ? "selected" : "visible"} empty archived chats`}
-                              aria-pressed={confirmArchivedCleanupAction === "delete-archived-empty"}
-                              className={`rounded-full px-3 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
-                                confirmArchivedCleanupAction === "delete-archived-empty"
-                                  ? "border border-amber-700 bg-amber-600 text-white"
-                                  : "border border-amber-300 bg-amber-50 text-amber-900"
-                              }`}
-                              disabled={isRunningArchivedCleanup || archivedActionEmptyConversationCount === 0}
-                              type="button"
-                              onClick={() => {
-                                if (confirmArchivedCleanupAction !== "delete-archived-empty") {
-                                  setConfirmArchivedCleanupAction("delete-archived-empty");
-                                  return;
-                                }
-
-                                void runArchivedCleanup("delete-archived-empty");
-                              }}
-                            >
-                              {confirmArchivedCleanupAction === "delete-archived-empty"
-                                ? `Confirm delete ${selectedArchivedVisibleConversationIds.length > 0 ? "selected" : "visible"} empty archived`
-                                : isRunningArchivedCleanup
-                                  ? "Cleaning..."
-                                  : `Delete ${selectedArchivedVisibleConversationIds.length > 0 ? "selected" : "visible"} empty archived`}
-                            </button>
-                            <button
-                              aria-label={`${confirmArchivedCleanupAction === "delete-archived-older-than" ? "Confirm deleting" : "Delete"} ${selectedArchivedVisibleConversationIds.length > 0 ? "selected" : "visible"} archived chats at least ${archivedRetentionDays} days old`}
-                              aria-pressed={confirmArchivedCleanupAction === "delete-archived-older-than"}
-                              className={`rounded-full px-3 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
-                                confirmArchivedCleanupAction === "delete-archived-older-than"
-                                  ? "border border-amber-700 bg-amber-600 text-white"
-                                  : "border border-amber-300 bg-amber-50 text-amber-900"
-                              }`}
-                              disabled={isRunningArchivedCleanup || archivedActionOlderConversationCount === 0}
-                              type="button"
-                              onClick={() => {
-                                if (confirmArchivedCleanupAction !== "delete-archived-older-than") {
-                                  setConfirmArchivedCleanupAction("delete-archived-older-than");
-                                  return;
-                                }
-
-                                void runArchivedCleanup("delete-archived-older-than");
-                              }}
-                            >
-                              {confirmArchivedCleanupAction === "delete-archived-older-than"
-                                ? `Confirm delete ${selectedArchivedVisibleConversationIds.length > 0 ? "selected" : "visible"} archived ${archivedRetentionDays}d+`
-                                : isRunningArchivedCleanup
-                                  ? "Cleaning..."
-                                  : `Delete ${selectedArchivedVisibleConversationIds.length > 0 ? "selected" : "visible"} archived ${archivedRetentionDays}d+`}
-                            </button>
-                            {confirmArchivedCleanupAction ? (
-                              <button
-                                aria-label="Clear the pending archive bulk action confirmation"
-                                className="rounded-full border border-line bg-white px-3 py-1 text-xs font-semibold text-foreground"
-                                disabled={isRunningArchivedCleanup}
-                                type="button"
-                                onClick={() => setConfirmArchivedCleanupAction(null)}
-                              >
-                                Clear confirm
-                              </button>
-                            ) : null}
-                          </div>
-                          {archivedCleanupSummary ? (
-                            <p aria-live="polite" className="text-xs leading-6 text-muted">{archivedCleanupSummary}</p>
-                          ) : null}
+          <div className="space-y-3 overflow-y-auto pr-1 max-h-52 sm:max-h-64 lg:max-h-none">
+            {currentUser ? (
+              visibleConversations.length > 0 ? (
+                <div className="space-y-4">
+                  {pinnedVisibleConversations.length > 0 ? (
+                    <div className="space-y-3">
+                      {!showPinnedOnly ? (
+                        <div className="flex items-center gap-2 px-1">
+                          <p className="section-label text-xs font-semibold">Pinned</p>
+                          <span className="text-xs text-muted">{pinnedVisibleConversations.length}</span>
                         </div>
-                        {archivedVisibleConversations.length > 0 ? (
-                          <div
-                            aria-label="Archived conversations"
-                            aria-multiselectable="true"
-                            role="listbox"
-                            className="space-y-3"
-                          >
-                            {archivedVisibleConversations.map((conversation) => {
-                          const isActive = conversation.id === activeConversationId;
-                          const recencyBadge = getConversationRecencyBadge(conversation.updatedAt);
-                          const archivedMetaBadges = getArchivedConversationMetaBadges(conversation);
-                          const isSelected = selectedArchivedVisibleConversationIdSet.has(conversation.id);
+                      ) : null}
+                      {pinnedVisibleConversations.map((conversation) => {
+                        const isActive = conversation.id === activeConversationId;
+                        const recencyBadge = getConversationRecencyBadge(conversation.updatedAt);
+                        const activityBadge = getConversationActivityBadge({
+                          conversationId: conversation.id,
+                          isActive,
+                          isStreaming,
+                          recentlyUpdatedConversationId,
+                        });
 
-                          return (
-                            <div
-                              key={conversation.id}
-                              ref={(node) => {
-                                archivedConversationItemRefs.current[conversation.id] = node;
-                              }}
-                              aria-label={`${conversation.title}. ${conversation.messageCount} messages.`}
-                              aria-selected={isSelected}
-                              className={`rounded-[24px] border px-4 py-4 ${
-                                isSelected
-                                  ? "border-sky-400 bg-sky-50/70"
-                                  : isActive
-                                  ? "border-[var(--accent)] bg-white"
-                                  : "border-line bg-white/45"
-                              } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]`}
-                              role="option"
-                              tabIndex={0}
-                              onKeyDown={(event) => handleArchivedConversationKeyDown(event, conversation.id)}
+                        return (
+                          <div
+                            key={conversation.id}
+                            className={`rounded-[24px] border px-4 py-4 ${
+                              isActive
+                                ? "border-[var(--accent)] bg-white"
+                                : "border-line bg-white/55"
+                            }`}
+                          >
+                            <button
+                              className="w-full text-left"
+                              disabled={isLoadingConversation}
+                              type="button"
+                              onClick={() => openConversation(conversation.id)}
                             >
-                              <div className="mb-3 flex items-center justify-between gap-3">
-                                <button
-                                  aria-pressed={isSelected}
-                                  aria-label={`${isSelected ? "Deselect" : "Select"} archived conversation ${conversation.title}`}
-                                  className={`rounded-full px-3 py-1 text-[11px] font-semibold ${
-                                    isSelected
-                                      ? "bg-sky-600 text-white"
-                                      : "border border-line bg-white text-foreground"
-                                  }`}
-                                  disabled={isRunningArchivedCleanup}
-                                  type="button"
-                                  onClick={() => toggleArchivedConversationSelection(conversation.id)}
-                                >
-                                  {isSelected ? "Selected" : "Select"}
-                                </button>
-                                {isActive ? (
-                                  <span className="rounded-full bg-[var(--accent)] px-3 py-1 text-[11px] font-semibold text-white">
-                                    Active
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-900">
+                                  Pinned
+                                </span>
+                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                  isActive
+                                    ? "bg-[var(--accent)] text-white"
+                                    : conversation.messageCount === 0
+                                      ? "bg-stone-200 text-stone-900"
+                                      : "bg-white text-foreground"
+                                }`}>
+                                  {isActive
+                                    ? "Active"
+                                    : conversation.messageCount === 0
+                                      ? "Empty"
+                                      : "Saved"}
+                                </span>
+                                {recencyBadge ? (
+                                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${recencyBadge.classes}`}>
+                                    {recencyBadge.label}
+                                  </span>
+                                ) : null}
+                                {activityBadge ? (
+                                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${activityBadge.classes}`}>
+                                    {activityBadge.label}
                                   </span>
                                 ) : null}
                               </div>
+                              <p className="text-sm font-semibold text-foreground">
+                                {conversation.title}
+                              </p>
+                              <p className="mt-2 text-xs leading-6 text-muted">
+                                {conversation.lastMessagePreview || "No messages yet."}
+                              </p>
+                              <p className="mt-2 text-xs text-muted">
+                                {conversation.messageCount} messages · {formatTimestamp(conversation.updatedAt)}
+                              </p>
+                            </button>
+                            <div className="mt-3 flex flex-wrap items-center gap-3">
                               <button
-                                className="w-full text-left"
-                                disabled={isLoadingConversation}
+                                className="text-xs font-semibold text-[var(--accent-strong)]"
                                 type="button"
-                                onClick={() => openConversation(conversation.id)}
+                                onClick={() => togglePinnedConversation(conversation.id)}
                               >
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-semibold text-stone-900">
-                                    Archived
-                                  </span>
-                                  {archivedMetaBadges.map((badge) => (
-                                    <span
-                                      key={badge.label}
-                                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${badge.classes}`}
-                                    >
-                                      {badge.label}
+                                Unpin
+                              </button>
+                              <button
+                                className="text-xs font-semibold text-[var(--accent-strong)]"
+                                type="button"
+                                onClick={() => {
+                                  void setConversationArchived(conversation.id, true);
+                                }}
+                              >
+                                Archive
+                              </button>
+                              <button
+                                className="text-xs font-semibold text-[var(--accent-strong)]"
+                                type="button"
+                                onClick={() => deleteConversationRecord(conversation.id)}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                  {recentVisibleConversations.length > 0 ? (
+                    <div className="space-y-3">
+                      {!showPinnedOnly ? (
+                        <div className="flex items-center gap-2 px-1">
+                          <p className="section-label text-xs font-semibold">Recent</p>
+                          <span className="text-xs text-muted">{recentVisibleConversations.length}</span>
+                        </div>
+                      ) : null}
+                      {recentConversationGroups.map((group) => (
+                        <div key={group.label} className="space-y-3">
+                          <div className="flex items-center gap-2 px-1">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted">
+                              {group.label}
+                            </p>
+                            <span className="text-xs text-muted">{group.conversations.length}</span>
+                          </div>
+                          {group.conversations.map((conversation) => {
+                            const isActive = conversation.id === activeConversationId;
+                            const recencyBadge = getConversationRecencyBadge(conversation.updatedAt);
+                            const activityBadge = getConversationActivityBadge({
+                              conversationId: conversation.id,
+                              isActive,
+                              isStreaming,
+                              recentlyUpdatedConversationId,
+                            });
+
+                            return (
+                              <div
+                                key={conversation.id}
+                                className={`rounded-[24px] border px-4 py-4 ${
+                                  isActive
+                                    ? "border-[var(--accent)] bg-white"
+                                    : "border-line bg-white/55"
+                                }`}
+                              >
+                                <button
+                                  className="w-full text-left"
+                                  disabled={isLoadingConversation}
+                                  type="button"
+                                  onClick={() => openConversation(conversation.id)}
+                                >
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                                      isActive
+                                        ? "bg-[var(--accent)] text-white"
+                                        : conversation.messageCount === 0
+                                          ? "bg-stone-200 text-stone-900"
+                                          : "bg-white text-foreground"
+                                    }`}>
+                                      {isActive
+                                        ? "Active"
+                                        : conversation.messageCount === 0
+                                          ? "Empty"
+                                          : "Saved"}
                                     </span>
-                                  ))}
-                                  {recencyBadge ? (
-                                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${recencyBadge.classes}`}>
-                                      {recencyBadge.label}
+                                    {recencyBadge ? (
+                                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${recencyBadge.classes}`}>
+                                        {recencyBadge.label}
+                                      </span>
+                                    ) : null}
+                                    {activityBadge ? (
+                                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${activityBadge.classes}`}>
+                                        {activityBadge.label}
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                  <p className="text-sm font-semibold text-foreground">
+                                    {conversation.title}
+                                  </p>
+                                  <p className="mt-2 text-xs leading-6 text-muted">
+                                    {conversation.lastMessagePreview || "No messages yet."}
+                                  </p>
+                                  <p className="mt-2 text-xs text-muted">
+                                    {conversation.messageCount} messages · {formatTimestamp(conversation.updatedAt)}
+                                  </p>
+                                </button>
+                                <div className="mt-3 flex flex-wrap items-center gap-3">
+                                  <button
+                                    className="text-xs font-semibold text-[var(--accent-strong)]"
+                                    type="button"
+                                    onClick={() => togglePinnedConversation(conversation.id)}
+                                  >
+                                    Pin
+                                  </button>
+                                  <button
+                                    className="text-xs font-semibold text-[var(--accent-strong)]"
+                                    type="button"
+                                    onClick={() => {
+                                      void setConversationArchived(conversation.id, true);
+                                    }}
+                                  >
+                                    Archive
+                                  </button>
+                                  <button
+                                    className="text-xs font-semibold text-[var(--accent-strong)]"
+                                    type="button"
+                                    onClick={() => deleteConversationRecord(conversation.id)}
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                  {showArchivedConversations && archivedConversationCount > 0 ? (
+                    <div className="space-y-3">
+                      <div className="space-y-2 px-1">
+                        <div className="flex items-center gap-2">
+                          <p className="section-label text-xs font-semibold">Archived</p>
+                          <span className="text-xs text-muted">{archivedConversationCount}</span>
+                          <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-foreground">
+                            Empty {archivedEmptyConversationCount}
+                          </span>
+                          <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-foreground">
+                            {archivedRetentionDays}d+ {archivedOlderConversationCount}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                          <span className="font-semibold">Retention</span>
+                          {ARCHIVED_RETENTION_OPTIONS.map((value) => (
+                            <button
+                              key={value}
+                              aria-label={`Set archived retention filter to ${value} days`}
+                              aria-pressed={archivedRetentionDays === value}
+                              className={`rounded-full px-3 py-1 font-semibold ${
+                                archivedRetentionDays === value
+                                  ? "bg-[var(--accent)] text-white"
+                                  : "border border-line bg-white text-foreground"
+                              }`}
+                              disabled={isRunningArchivedCleanup}
+                              type="button"
+                              onClick={() => setArchivedRetentionDays(value)}
+                            >
+                              {value} days
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                          <span className="font-semibold">Filter</span>
+                          {([
+                            ["all", `All ${archivedConversationCount}`],
+                            ["empty", `Empty ${archivedEmptyConversationCount}`],
+                            ["old", `${archivedRetentionDays}d+ ${archivedOlderConversationCount}`],
+                          ] as const).map(([value, label]) => (
+                            <button
+                              key={value}
+                              aria-label={`Show ${label.toLowerCase()} archived chats`}
+                              aria-pressed={archivedConversationFilter === value}
+                              className={`rounded-full px-3 py-1 font-semibold ${
+                                archivedConversationFilter === value
+                                  ? "bg-[var(--accent)] text-white"
+                                  : "border border-line bg-white text-foreground"
+                              }`}
+                              disabled={isRunningArchivedCleanup}
+                              type="button"
+                              onClick={() => setArchivedConversationFilter(value)}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                          <span className="font-semibold">Sort</span>
+                          {([
+                            ["archived-newest", "Newest archived"],
+                            ["archived-oldest", "Oldest archived"],
+                            ["recent-activity", "Recent activity"],
+                          ] as const).map(([value, label]) => (
+                            <button
+                              key={value}
+                              aria-label={`Sort archived chats by ${label.toLowerCase()}`}
+                              aria-pressed={archivedConversationSort === value}
+                              className={`rounded-full px-3 py-1 font-semibold ${
+                                archivedConversationSort === value
+                                  ? "bg-[var(--accent)] text-white"
+                                  : "border border-line bg-white text-foreground"
+                              }`}
+                              disabled={isRunningArchivedCleanup}
+                              type="button"
+                              onClick={() => setArchivedConversationSort(value)}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                          <span className="font-semibold">Selection</span>
+                          <span className="rounded-full bg-white px-3 py-1 font-semibold text-foreground">
+                            {selectedArchivedVisibleConversationIds.length} selected
+                          </span>
+                          <button
+                            aria-label={selectedArchivedVisibleConversationIds.length === archivedVisibleConversations.length
+                              ? "Clear selection for all visible archived chats"
+                              : "Select all visible archived chats"}
+                            aria-pressed={selectedArchivedVisibleConversationIds.length > 0 && selectedArchivedVisibleConversationIds.length === archivedVisibleConversations.length}
+                            className="rounded-full border border-line bg-white px-3 py-1 font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={isRunningArchivedCleanup || archivedVisibleConversations.length === 0}
+                            type="button"
+                            onClick={toggleSelectAllArchivedVisible}
+                          >
+                            {selectedArchivedVisibleConversationIds.length === archivedVisibleConversations.length
+                              ? "Clear visible selection"
+                              : "Select visible"}
+                          </button>
+                          {selectedArchivedVisibleConversationIds.length > 0 ? (
+                            <button
+                              aria-label="Clear the current archived selection"
+                              className="rounded-full border border-line bg-white px-3 py-1 font-semibold text-foreground"
+                              disabled={isRunningArchivedCleanup}
+                              type="button"
+                              onClick={() => setSelectedArchivedConversationIds([])}
+                            >
+                              Clear selection
+                            </button>
+                          ) : null}
+                          <button
+                            aria-label="Select visible archived chats with no messages"
+                            aria-pressed={selectedArchivedVisibleConversationIds.length > 0 && selectedArchivedVisibleConversationIds.length === archivedVisibleEmptyConversationIds.length && archivedVisibleEmptyConversationIds.every((id) => selectedArchivedVisibleConversationIdSet.has(id))}
+                            className="rounded-full border border-line bg-white px-3 py-1 font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={isRunningArchivedCleanup || archivedVisibleEmptyConversationIds.length === 0}
+                            type="button"
+                            onClick={() => replaceArchivedSelection(archivedVisibleEmptyConversationIds)}
+                          >
+                            Select empty
+                          </button>
+                          <button
+                            aria-label={`Select visible archived chats at least ${archivedRetentionDays} days old`}
+                            aria-pressed={selectedArchivedVisibleConversationIds.length > 0 && selectedArchivedVisibleConversationIds.length === archivedVisibleOlderConversationIds.length && archivedVisibleOlderConversationIds.every((id) => selectedArchivedVisibleConversationIdSet.has(id))}
+                            className="rounded-full border border-line bg-white px-3 py-1 font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={isRunningArchivedCleanup || archivedVisibleOlderConversationIds.length === 0}
+                            type="button"
+                            onClick={() => replaceArchivedSelection(archivedVisibleOlderConversationIds)}
+                          >
+                            Select {archivedRetentionDays}d+
+                          </button>
+                        </div>
+                        <p aria-live="polite" className="text-xs leading-6 text-muted">{archivedSummaryText}</p>
+                        <p className="text-xs leading-6 text-muted">
+                          Keyboard: use Up and Down to move, Space to select, Enter to open, A to toggle all visible, E to select empty, O to select {archivedRetentionDays}d+, and Escape to clear selection.
+                        </p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            aria-label={`${confirmArchivedCleanupAction === "restore-archived-visible" ? "Confirm" : "Restore"} ${selectedArchivedVisibleConversationIds.length > 0 ? "selected" : "visible"} archived chats`}
+                            aria-pressed={confirmArchivedCleanupAction === "restore-archived-visible"}
+                            className={`rounded-full px-3 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
+                              confirmArchivedCleanupAction === "restore-archived-visible"
+                                ? "border border-emerald-700 bg-emerald-600 text-white"
+                                : "border border-emerald-300 bg-emerald-50 text-emerald-900"
+                            }`}
+                            disabled={isRunningArchivedCleanup || archivedActionConversations.length === 0}
+                            type="button"
+                            onClick={() => {
+                              if (confirmArchivedCleanupAction !== "restore-archived-visible") {
+                                setConfirmArchivedCleanupAction("restore-archived-visible");
+                                return;
+                              }
+
+                              void runArchivedRestore();
+                            }}
+                          >
+                            {confirmArchivedCleanupAction === "restore-archived-visible"
+                              ? `Confirm restore ${selectedArchivedVisibleConversationIds.length > 0 ? "selected" : "visible"} archived`
+                              : isRunningArchivedCleanup
+                                ? "Working..."
+                                : `Restore ${selectedArchivedVisibleConversationIds.length > 0 ? "selected" : "visible"} archived`}
+                          </button>
+                          <button
+                            aria-label={`${confirmArchivedCleanupAction === "delete-archived-empty" ? "Confirm deleting" : "Delete"} ${selectedArchivedVisibleConversationIds.length > 0 ? "selected" : "visible"} empty archived chats`}
+                            aria-pressed={confirmArchivedCleanupAction === "delete-archived-empty"}
+                            className={`rounded-full px-3 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
+                              confirmArchivedCleanupAction === "delete-archived-empty"
+                                ? "border border-amber-700 bg-amber-600 text-white"
+                                : "border border-amber-300 bg-amber-50 text-amber-900"
+                            }`}
+                            disabled={isRunningArchivedCleanup || archivedActionEmptyConversationCount === 0}
+                            type="button"
+                            onClick={() => {
+                              if (confirmArchivedCleanupAction !== "delete-archived-empty") {
+                                setConfirmArchivedCleanupAction("delete-archived-empty");
+                                return;
+                              }
+
+                              void runArchivedCleanup("delete-archived-empty");
+                            }}
+                          >
+                            {confirmArchivedCleanupAction === "delete-archived-empty"
+                              ? `Confirm delete ${selectedArchivedVisibleConversationIds.length > 0 ? "selected" : "visible"} empty archived`
+                              : isRunningArchivedCleanup
+                                ? "Cleaning..."
+                                : `Delete ${selectedArchivedVisibleConversationIds.length > 0 ? "selected" : "visible"} empty archived`}
+                          </button>
+                          <button
+                            aria-label={`${confirmArchivedCleanupAction === "delete-archived-older-than" ? "Confirm deleting" : "Delete"} ${selectedArchivedVisibleConversationIds.length > 0 ? "selected" : "visible"} archived chats at least ${archivedRetentionDays} days old`}
+                            aria-pressed={confirmArchivedCleanupAction === "delete-archived-older-than"}
+                            className={`rounded-full px-3 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
+                              confirmArchivedCleanupAction === "delete-archived-older-than"
+                                ? "border border-amber-700 bg-amber-600 text-white"
+                                : "border border-amber-300 bg-amber-50 text-amber-900"
+                            }`}
+                            disabled={isRunningArchivedCleanup || archivedActionOlderConversationCount === 0}
+                            type="button"
+                            onClick={() => {
+                              if (confirmArchivedCleanupAction !== "delete-archived-older-than") {
+                                setConfirmArchivedCleanupAction("delete-archived-older-than");
+                                return;
+                              }
+
+                              void runArchivedCleanup("delete-archived-older-than");
+                            }}
+                          >
+                            {confirmArchivedCleanupAction === "delete-archived-older-than"
+                              ? `Confirm delete ${selectedArchivedVisibleConversationIds.length > 0 ? "selected" : "visible"} archived ${archivedRetentionDays}d+`
+                              : isRunningArchivedCleanup
+                                ? "Cleaning..."
+                                : `Delete ${selectedArchivedVisibleConversationIds.length > 0 ? "selected" : "visible"} archived ${archivedRetentionDays}d+`}
+                          </button>
+                          {confirmArchivedCleanupAction ? (
+                            <button
+                              aria-label="Clear the pending archive bulk action confirmation"
+                              className="rounded-full border border-line bg-white px-3 py-1 text-xs font-semibold text-foreground"
+                              disabled={isRunningArchivedCleanup}
+                              type="button"
+                              onClick={() => setConfirmArchivedCleanupAction(null)}
+                            >
+                              Clear confirm
+                            </button>
+                          ) : null}
+                        </div>
+                        {archivedCleanupSummary ? (
+                          <p aria-live="polite" className="text-xs leading-6 text-muted">{archivedCleanupSummary}</p>
+                        ) : null}
+                      </div>
+                      {archivedVisibleConversations.length > 0 ? (
+                        <div
+                          aria-label="Archived conversations"
+                          aria-multiselectable="true"
+                          role="listbox"
+                          className="space-y-3"
+                        >
+                          {archivedVisibleConversations.map((conversation) => {
+                            const isActive = conversation.id === activeConversationId;
+                            const recencyBadge = getConversationRecencyBadge(conversation.updatedAt);
+                            const archivedMetaBadges = getArchivedConversationMetaBadges(conversation);
+                            const isSelected = selectedArchivedVisibleConversationIdSet.has(conversation.id);
+
+                            return (
+                              <div
+                                key={conversation.id}
+                                ref={(node) => {
+                                  archivedConversationItemRefs.current[conversation.id] = node;
+                                }}
+                                aria-label={`${conversation.title}. ${conversation.messageCount} messages.`}
+                                aria-selected={isSelected}
+                                className={`rounded-[24px] border px-4 py-4 ${
+                                  isSelected
+                                    ? "border-sky-400 bg-sky-50/70"
+                                    : isActive
+                                      ? "border-[var(--accent)] bg-white"
+                                      : "border-line bg-white/45"
+                                } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]`}
+                                role="option"
+                                tabIndex={0}
+                                onKeyDown={(event) => handleArchivedConversationKeyDown(event, conversation.id)}
+                              >
+                                <div className="mb-3 flex items-center justify-between gap-3">
+                                  <button
+                                    aria-pressed={isSelected}
+                                    aria-label={`${isSelected ? "Deselect" : "Select"} archived conversation ${conversation.title}`}
+                                    className={`rounded-full px-3 py-1 text-[11px] font-semibold ${
+                                      isSelected
+                                        ? "bg-sky-600 text-white"
+                                        : "border border-line bg-white text-foreground"
+                                    }`}
+                                    disabled={isRunningArchivedCleanup}
+                                    type="button"
+                                    onClick={() => toggleArchivedConversationSelection(conversation.id)}
+                                  >
+                                    {isSelected ? "Selected" : "Select"}
+                                  </button>
+                                  {isActive ? (
+                                    <span className="rounded-full bg-[var(--accent)] px-3 py-1 text-[11px] font-semibold text-white">
+                                      Active
                                     </span>
                                   ) : null}
                                 </div>
-                                <p className="text-sm font-semibold text-foreground">
-                                  {conversation.title}
-                                </p>
-                                <p className="mt-2 text-xs leading-6 text-muted">
-                                  {conversation.lastMessagePreview || "No messages yet."}
-                                </p>
-                                <p className="mt-2 text-xs text-muted">
-                                  {conversation.messageCount} messages · {formatTimestamp(conversation.updatedAt)}
-                                </p>
-                              </button>
-                              <div className="mt-3 flex flex-wrap items-center gap-3">
                                 <button
-                                  className="text-xs font-semibold text-[var(--accent-strong)]"
+                                  className="w-full text-left"
+                                  disabled={isLoadingConversation}
                                   type="button"
-                                  onClick={() => {
-                                    void setConversationArchived(conversation.id, false);
-                                  }}
+                                  onClick={() => openConversation(conversation.id)}
                                 >
-                                  Restore
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-semibold text-stone-900">
+                                      Archived
+                                    </span>
+                                    {archivedMetaBadges.map((badge) => (
+                                      <span
+                                        key={badge.label}
+                                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${badge.classes}`}
+                                      >
+                                        {badge.label}
+                                      </span>
+                                    ))}
+                                    {recencyBadge ? (
+                                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${recencyBadge.classes}`}>
+                                        {recencyBadge.label}
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                  <p className="text-sm font-semibold text-foreground">
+                                    {conversation.title}
+                                  </p>
+                                  <p className="mt-2 text-xs leading-6 text-muted">
+                                    {conversation.lastMessagePreview || "No messages yet."}
+                                  </p>
+                                  <p className="mt-2 text-xs text-muted">
+                                    {conversation.messageCount} messages · {formatTimestamp(conversation.updatedAt)}
+                                  </p>
                                 </button>
-                                <button
-                                  className="text-xs font-semibold text-[var(--accent-strong)]"
-                                  type="button"
-                                  onClick={() => deleteConversationRecord(conversation.id)}
-                                >
-                                  Delete
-                                </button>
+                                <div className="mt-3 flex flex-wrap items-center gap-3">
+                                  <button
+                                    className="text-xs font-semibold text-[var(--accent-strong)]"
+                                    type="button"
+                                    onClick={() => {
+                                      void setConversationArchived(conversation.id, false);
+                                    }}
+                                  >
+                                    Restore
+                                  </button>
+                                  <button
+                                    className="text-xs font-semibold text-[var(--accent-strong)]"
+                                    type="button"
+                                    onClick={() => deleteConversationRecord(conversation.id)}
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
                               </div>
-                            </div>
-                          );
-                        })}
-                          </div>
-                        ) : (
-                          <div className="rounded-[20px] border border-dashed border-line bg-white/35 px-4 py-3 text-sm text-muted">
-                            No archived conversations match the current search.
-                          </div>
-                        )}
-                      </div>
-                    ) : null}
-                  </div>
-                ) : (
-                  <div className="rounded-[24px] border border-dashed border-line bg-white/45 px-4 py-4 text-sm text-muted">
-                    {conversations.length > 0 && (normalizedConversationSearch || showPinnedOnly || showArchivedConversations)
-                      ? showPinnedOnly && !normalizedConversationSearch
-                        ? "No pinned conversations are available in the current view."
-                        : normalizedConversationSearch && archivedVisibleConversations.length > 0 && !showArchivedConversations
-                          ? "Matching conversations were found in the archive. Show archived to view them."
-                        : "No saved conversations match the current search."
-                      : "No saved conversations yet."}
-                  </div>
-                )
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="rounded-[20px] border border-dashed border-line bg-white/35 px-4 py-3 text-sm text-muted">
+                          No archived conversations match the current search.
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
               ) : (
                 <div className="rounded-[24px] border border-dashed border-line bg-white/45 px-4 py-4 text-sm text-muted">
-                  Sign in with a local user account to load and save your own conversation history.
+                  {conversations.length > 0 && (normalizedConversationSearch || showPinnedOnly || showArchivedConversations)
+                    ? showPinnedOnly && !normalizedConversationSearch
+                      ? "No pinned conversations are available in the current view."
+                      : normalizedConversationSearch && archivedVisibleConversations.length > 0 && !showArchivedConversations
+                        ? "Matching conversations were found in the archive. Show archived to view them."
+                        : "No saved conversations match the current search."
+                    : "No saved conversations yet."}
                 </div>
+              )
+            ) : (
+              <div className="rounded-[24px] border border-dashed border-line bg-white/45 px-4 py-4 text-sm text-muted">
+                Sign in with a local user account to load and save your own conversation history.
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="theme-surface-panel mt-3 rounded-[24px] px-4 py-3">
+          {currentUser ? (
+            <div className="flex flex-wrap items-center gap-2">
+              {collapsedSavedChatPreview.length > 0 ? (
+                collapsedSavedChatPreview.map((conversation) => (
+                  <button
+                    key={conversation.id}
+                    className="max-w-full rounded-full border border-line bg-white px-3 py-2 text-xs font-semibold text-foreground"
+                    disabled={isLoadingConversation}
+                    type="button"
+                    onClick={() => openConversation(conversation.id)}
+                  >
+                    <span className="block max-w-[15rem] truncate">{conversation.title}</span>
+                  </button>
+                ))
+              ) : (
+                <p className="text-xs text-muted">No saved chats yet.</p>
               )}
             </div>
-          </div>
+          ) : (
+            <p className="text-xs text-muted">Sign in to scan recent saved chats here.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
 
-          <div className="rounded-[28px] border border-line/80 bg-white/55 p-4 sm:p-5">
+  const modelControlsPanel = (
+    <div className="theme-surface-soft overflow-hidden rounded-[28px] p-3 sm:p-4">
+      <button
+        aria-controls="model-controls-panel-body"
+        aria-expanded={showModelControlsPanel}
+        className={`${disclosureHeaderBaseClass} theme-surface-feature-cool`}
+        type="button"
+        onClick={() => setShowModelControlsPanel((current) => !current)}
+      >
+        <span className="min-w-0">
+          <span className="eyebrow text-muted">AI controls</span>
+          <span className="mt-2 block text-base font-semibold text-foreground sm:text-lg">
+            Model, temperature, and prompt setup
+          </span>
+          <span className="mt-2 block text-[11px] font-semibold uppercase tracking-[0.2em] text-[color:color-mix(in_srgb,var(--accent-strong)_56%,#245d7b_44%)]">
+            Expand to tune replies
+          </span>
+          <span className="theme-surface-chip mt-3 inline-flex max-w-full rounded-full px-3 py-1 text-xs font-medium text-muted">
+            {modelControlsSummary}
+          </span>
+        </span>
+        <span className="mt-1 hidden flex-col items-end gap-2 sm:inline-flex">
+          <span className="theme-surface-chip rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">
+            {showModelControlsPanel ? "Collapse" : "Expand"}
+          </span>
+          <span className={disclosureIndicatorClass}>
+            <DisclosureChevronIcon open={showModelControlsPanel} />
+          </span>
+        </span>
+        <span className={`${disclosureIndicatorClass} mt-1 sm:hidden`}>
+          <DisclosureChevronIcon open={showModelControlsPanel} />
+        </span>
+      </button>
+
+      {showModelControlsPanel ? (
+        <div id="model-controls-panel-body" className={`mt-3 space-y-3 overflow-y-auto pr-1 ${desktopControlBodyMaxHeightClass}`}>
+          <div className="theme-surface-soft rounded-[28px] p-4 sm:p-5">
             <label className="eyebrow text-muted" htmlFor="model-select">
               Active model
             </label>
@@ -2341,7 +2487,7 @@ export function ChatWorkspace({
             </select>
           </div>
 
-          <div className="rounded-[28px] border border-line/80 bg-white/55 p-4 sm:p-5">
+          <div className="theme-surface-soft rounded-[28px] p-4 sm:p-5">
             <div className="flex items-center justify-between gap-4">
               <label className="eyebrow text-muted" htmlFor="temperature-range">
                 Temperature
@@ -2361,12 +2507,11 @@ export function ChatWorkspace({
               onChange={(event) => setTemperature(Number(event.target.value))}
             />
             <p className="mt-3 text-sm leading-6 text-muted">
-              Lower values keep replies tighter. Higher values allow more
-              variation.
+              Lower values keep replies tighter. Higher values allow more variation.
             </p>
           </div>
 
-          <div className="rounded-[28px] border border-line/80 bg-white/55 p-4 sm:p-5">
+          <div className="theme-surface-soft rounded-[28px] p-4 sm:p-5">
             <label className="eyebrow text-muted" htmlFor="system-prompt">
               System prompt
             </label>
@@ -2378,7 +2523,7 @@ export function ChatWorkspace({
             />
           </div>
 
-          <div className="rounded-[28px] border border-dashed border-line bg-white/45 p-4 sm:p-5 text-sm leading-7 text-muted">
+          <div className="theme-surface-panel rounded-[28px] border-dashed p-4 text-sm leading-7 text-muted">
             {lastLatency
               ? `Last response streamed in ${lastLatency} ms.`
               : "Run a prompt to measure live response latency through the gateway."}
@@ -2392,147 +2537,282 @@ export function ChatWorkspace({
                   : "Signed-out sessions can chat live, but conversation history is not persisted."}
           </div>
         </div>
-
-        <div className="rounded-[32px] border border-line/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.72),rgba(255,255,255,0.44))] p-4 sm:p-5">
-          <div
-            ref={scrollContainerRef}
-            className="max-h-[34rem] space-y-4 overflow-y-auto pr-1"
-          >
-            {messages.length === 0 ? (
-              <div className="rounded-[28px] border border-dashed border-line bg-white/45 p-5 sm:p-6">
-                <p className="eyebrow text-muted">Ready state</p>
-                <h3 className="mt-3 text-xl font-semibold tracking-tight text-foreground">
-                  Start with a practical prompt.
-                </h3>
-                <p className="mt-3 text-sm leading-7 text-muted">
-                  Ask for model comparisons, code help, drafting, or admin
-                  instructions. The response will stream directly into this pane.
-                </p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {PROMPT_PRESETS.map((preset) => (
-                    <button
-                      key={preset.label}
-                      className="rounded-full border border-line bg-white px-3 py-2 text-xs font-semibold text-foreground"
-                      type="button"
-                      onClick={() => applyPromptPreset(preset.prompt)}
-                    >
-                      {preset.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            {messages.map((message, index) => {
-              const isAssistant = message.role === "assistant";
-
-              return (
-                <article
-                  key={`${message.role}-${index}-${message.content.length}`}
-                  className={`rounded-[28px] px-4 py-4 sm:px-5 ${
-                    isAssistant
-                      ? "bg-white text-foreground"
-                      : "bg-[var(--accent)] text-white"
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-4">
-                    <p
-                      className={`eyebrow ${
-                        isAssistant ? "text-muted" : "text-white/75"
-                      }`}
-                    >
-                      {isAssistant ? "Assistant" : "Operator"}
-                    </p>
-                    {isStreaming && isAssistant && index === messages.length - 1 ? (
-                      <span className="text-xs font-medium text-muted">
-                        Streaming...
-                      </span>
-                    ) : null}
-                  </div>
-                  <p className="mt-3 whitespace-pre-wrap text-sm leading-7 sm:text-[15px]">
-                    {message.content || "Waiting for model output..."}
-                  </p>
-                </article>
-              );
-            })}
+      ) : (
+        <div className="theme-surface-panel mt-3 grid gap-3 rounded-[24px] px-4 py-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] ${
+                isReachable
+                  ? "bg-emerald-100 text-emerald-900"
+                  : "bg-amber-100 text-amber-900"
+              }`}>
+                {isReachable ? "Gateway online" : "Gateway offline"}
+              </span>
+            </div>
+            <p className="text-sm font-semibold text-foreground">
+              {selectedModel || "No model selected"}
+            </p>
+            <p className="text-xs leading-5 text-muted">
+              Choose a model and prompt posture to steer replies.
+            </p>
           </div>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+            <div className="theme-surface-strong rounded-[18px] px-3 py-2">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">Temperature</p>
+              <p className="mt-1 text-sm font-semibold text-foreground">{temperature.toFixed(1)}</p>
+            </div>
+            <div className="theme-surface-strong rounded-[18px] px-3 py-2">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">Latency</p>
+              <p className="mt-1 text-sm font-semibold text-foreground">{lastLatency ? `${lastLatency} ms` : "Pending"}</p>
+            </div>
+          </div>
+          <div className="theme-surface-strong lg:col-span-2 rounded-[18px] px-3 py-2">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">Prompt posture</p>
+            <p className="mt-1 text-xs leading-5 text-muted">{systemPromptPreview}</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 
-          <form ref={composerFormRef} className="mt-4 space-y-3" onSubmit={handleSubmit}>
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
+  const chatStage = (
+    <div className="theme-surface-stage relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[32px] border border-line/80 p-4 sm:p-5 lg:px-6 xl:px-7">
+      <div className="pointer-events-none absolute inset-x-8 top-0 h-24 rounded-b-[40px] bg-[radial-gradient(circle_at_top,rgba(213,122,66,0.12),transparent_70%)]" />
+      <div className="theme-surface-panel relative mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[24px] px-4 py-3">
+        <div>
+          <p className="eyebrow text-muted">Transcript stage</p>
+          <p className="mt-1 text-sm font-semibold text-foreground">{transcriptSummary}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="theme-surface-chip rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground">
+            {selectedModel || "No model"}
+          </span>
+          <span className="theme-surface-chip rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground">
+            {lastLatency ? `${lastLatency} ms` : "Awaiting first reply"}
+          </span>
+        </div>
+      </div>
+      <div
+        ref={scrollContainerRef}
+        className="theme-surface-transcript min-h-0 flex-1 space-y-4 overflow-y-auto rounded-[28px] border border-line/50 px-3 py-3 pr-2 sm:px-4 sm:py-4"
+      >
+        {messages.length === 0 ? (
+          <div className="theme-surface-feature rounded-[28px] border-dashed p-5 sm:p-6">
+            <p className="eyebrow text-muted">Ready state</p>
+            <h3 className="mt-3 text-xl font-semibold tracking-tight text-foreground">
+              Start with a practical prompt.
+            </h3>
+            <p className="mt-3 text-sm leading-7 text-muted">
+              Ask for model comparisons, code help, drafting, or admin instructions. The response will stream directly into this pane.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {PROMPT_PRESETS.map((preset) => (
                 <button
-                  className={`rounded-full px-4 py-2 text-xs font-semibold ${
-                    showPromptPresets
-                      ? "bg-[var(--accent)] text-white"
-                      : "border border-line bg-white text-foreground"
+                  key={preset.label}
+                  className="rounded-full border border-line bg-white px-3 py-2 text-xs font-semibold text-foreground"
+                  type="button"
+                  onClick={() => applyPromptPreset(preset.prompt)}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {messages.map((message, index) => {
+          const isAssistant = message.role === "assistant";
+
+          return (
+            <article
+              key={`${message.role}-${index}-${message.content.length}`}
+              className={`rounded-[28px] border px-4 py-4 shadow-[0_14px_34px_rgba(83,53,31,0.08)] sm:px-5 ${
+                isAssistant
+                  ? "theme-surface-strong border-line/70 text-foreground"
+                  : "border-[color:color-mix(in_srgb,var(--accent-strong)_44%,white_18%)] bg-[linear-gradient(180deg,#d57a42_0%,var(--accent)_55%,var(--accent-strong)_100%)] text-white"
+              }`}
+            >
+              <div className="flex items-center justify-between gap-4">
+                <p
+                  className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${
+                    isAssistant ? "bg-stone-100 text-muted" : "bg-white/14 text-white/80"
                   }`}
-                  type="button"
-                  onClick={() => setShowPromptPresets((current) => !current)}
                 >
-                  {showPromptPresets ? "Hide prompt presets" : "Show prompt presets"}
-                </button>
-                <p className="text-xs text-muted">
-                  Quick starts for mobile and repeat tasks.
+                  {isAssistant ? "Assistant" : "Operator"}
                 </p>
+                {isStreaming && isAssistant && index === messages.length - 1 ? (
+                  <span className={`text-xs font-medium ${isAssistant ? "text-muted" : "text-white/80"}`}>
+                    Streaming...
+                  </span>
+                ) : null}
               </div>
-              {showPromptPresets ? (
-                <div className="flex flex-wrap gap-2">
-                  {PROMPT_PRESETS.map((preset) => (
-                    <button
-                      key={preset.label}
-                      className="rounded-full border border-line bg-white px-3 py-2 text-xs font-semibold text-foreground"
-                      type="button"
-                      onClick={() => applyPromptPreset(preset.prompt)}
-                    >
-                      {preset.label}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-            <textarea
-              ref={draftInputRef}
-              className="min-h-32 w-full rounded-[28px] border border-line bg-white px-4 py-4 text-sm leading-7 text-foreground outline-none"
-              placeholder="Ask Ollama something useful..."
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={handleDraftKeyDown}
-            />
-            {error ? (
-              <div className="rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                {error}
-              </div>
-            ) : null}
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  className="rounded-full bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={!draft.trim() || !selectedModel || isStreaming}
-                  type="submit"
-                >
-                  {isStreaming ? "Streaming..." : "Send prompt"}
-                </button>
-                <button
-                  className="rounded-full border border-line bg-white px-5 py-3 text-sm font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={!isStreaming}
-                  type="button"
-                  onClick={stopStreaming}
-                >
-                  Stop
-                </button>
-                <button
-                  className="rounded-full border border-line bg-white px-5 py-3 text-sm font-semibold text-foreground"
-                  type="button"
-                  onClick={clearConversation}
-                >
-                  Clear
-                </button>
-              </div>
-              <p className="text-xs text-muted">
-                Requests are sent through `/api/ollama/chat`. Press Ctrl+Enter or Cmd+Enter to send.
+              <p className={`mt-3 whitespace-pre-wrap ${
+                isAssistant
+                  ? "text-[15px] leading-8 sm:text-[16px]"
+                  : "text-[14px] font-medium leading-7 sm:text-[15px]"
+              }`}>
+                {message.content || "Waiting for model output..."}
               </p>
+            </article>
+          );
+        })}
+      </div>
+
+      <form ref={composerFormRef} className="theme-surface-panel mt-4 space-y-3 rounded-[28px] px-4 py-4" onSubmit={handleSubmit}>
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <button
+              className={`rounded-full px-4 py-2 text-xs font-semibold ${
+                showPromptPresets
+                  ? "bg-[var(--accent)] text-white"
+                  : "border border-line bg-white text-foreground"
+              }`}
+              type="button"
+              onClick={() => setShowPromptPresets((current) => !current)}
+            >
+              {showPromptPresets ? "Hide prompt presets" : "Show prompt presets"}
+            </button>
+            <p className="text-xs text-muted">
+              Quick starts for mobile and repeat tasks.
+            </p>
+          </div>
+          {showPromptPresets ? (
+            <div className="flex flex-wrap gap-2">
+              {PROMPT_PRESETS.map((preset) => (
+                <button
+                  key={preset.label}
+                  className="rounded-full border border-line bg-white px-3 py-2 text-xs font-semibold text-foreground"
+                  type="button"
+                  onClick={() => applyPromptPreset(preset.prompt)}
+                >
+                  {preset.label}
+                </button>
+              ))}
             </div>
-          </form>
+          ) : null}
+        </div>
+        <textarea
+          ref={draftInputRef}
+          className="min-h-32 w-full rounded-[28px] border border-line bg-white px-4 py-4 text-sm leading-7 text-foreground outline-none"
+          placeholder="Ask Ollama something useful..."
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={handleDraftKeyDown}
+        />
+        {error ? (
+          <div className="rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            {error}
+          </div>
+        ) : null}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              className="rounded-full bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={!draft.trim() || !selectedModel || isStreaming}
+              type="submit"
+            >
+              {isStreaming ? "Streaming..." : "Send prompt"}
+            </button>
+            <button
+              className="rounded-full border border-line bg-white px-5 py-3 text-sm font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={!isStreaming}
+              type="button"
+              onClick={stopStreaming}
+            >
+              Stop
+            </button>
+            <button
+              className="rounded-full border border-line bg-white px-5 py-3 text-sm font-semibold text-foreground"
+              type="button"
+              onClick={clearConversation}
+            >
+              Clear
+            </button>
+          </div>
+          <p className="text-xs text-muted">
+            Requests are sent through `/api/ollama/chat`. Press Ctrl+Enter or Cmd+Enter to send.
+          </p>
+        </div>
+      </form>
+    </div>
+  );
+
+  return (
+    <section className="glass-panel flex h-full min-h-0 flex-col overflow-hidden rounded-[36px] p-3 sm:p-5 lg:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="section-label text-xs font-semibold">Live chat</p>
+          <h2 className="mt-3 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+            Conversation cockpit
+          </h2>
+          <p className="mt-3 max-w-2xl text-sm leading-7 text-muted sm:text-base">
+            Chats now persist locally. You can resume recent sessions, keep model
+            settings per conversation, and continue through the server gateway.
+          </p>
+          {activeConversationIsArchived ? (
+            <p className="mt-2 max-w-2xl text-xs leading-6 text-muted sm:text-sm">
+              This active conversation is archived and stays out of the main saved-chat flow until restored.
+            </p>
+          ) : null}
+        </div>
+
+        <div className="ui-control-band -mx-1 flex items-center gap-2 overflow-x-auto px-1 py-3 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-4 sm:py-4">
+          <button
+            className="theme-surface-chip rounded-full px-4 py-2 text-sm font-medium text-foreground lg:hidden"
+            type="button"
+            onClick={() => setShowWorkspaceSidebar((current) => !current)}
+          >
+            {showWorkspaceSidebar ? "Hide controls" : "Show controls"}
+          </button>
+          <div className="theme-surface-chip rounded-full px-4 py-2 text-sm font-medium text-foreground">
+            {conversationTitle}
+          </div>
+          <div className="theme-surface-chip rounded-full px-4 py-2 text-sm font-medium text-foreground">
+            {selectedModel || "No model available"}
+          </div>
+          {activeConversationIsArchived ? (
+            <div className="rounded-full bg-stone-200 px-4 py-2 text-sm font-semibold text-stone-900">
+              Archived thread
+            </div>
+          ) : null}
+          <div
+            className={`rounded-full px-4 py-2 text-sm font-semibold ${
+              isReachable
+                ? "bg-emerald-100 text-emerald-900"
+                : "bg-amber-100 text-amber-900"
+            }`}
+          >
+            {isReachable ? "Gateway online" : "Gateway offline"}
+          </div>
+          <button
+            className="theme-surface-feature hidden shrink-0 items-center gap-3 rounded-[20px] px-3 py-2 text-left transition duration-200 hover:-translate-y-0.5 lg:inline-flex"
+            type="button"
+            onClick={() => setDesktopLayoutMode((current) => current === "chat-first" ? "controls-first" : "chat-first")}
+          >
+            <span className="theme-surface-chip inline-flex h-10 w-10 items-center justify-center rounded-[14px] text-[color:var(--accent-strong)]">
+              <SparkGridIcon />
+            </span>
+            <span className="flex flex-col">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">Layout flow</span>
+              <span className="mt-1 inline-flex items-center gap-2 text-sm font-semibold text-foreground">
+                <DesktopLayoutSwapIcon reversed={controlsFirst} />
+                {controlsFirst ? "Move controls below" : "Move controls above"}
+              </span>
+            </span>
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4 flex min-h-0 flex-1 flex-col gap-3 lg:items-center">
+        <div className={`${showWorkspaceSidebar ? "block" : "hidden"} order-1 lg:block lg:w-full lg:max-w-[92rem] xl:max-w-[96rem] lg:flex-none ${controlsFirst ? "lg:order-1" : "lg:order-2"}`}>
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)] lg:items-start">
+            {savedChatsPanel}
+            {modelControlsPanel}
+          </div>
+        </div>
+
+        <div className={`order-2 min-h-0 flex-1 lg:w-full lg:max-w-[98rem] xl:max-w-[104rem] ${controlsFirst ? "lg:order-2" : "lg:order-1"}`}>
+          {chatStage}
         </div>
       </div>
     </section>

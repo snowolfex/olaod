@@ -56,12 +56,21 @@ function isStoredUser(value: unknown): value is StoredUser {
     return false;
   }
 
+  const authProvider = value.authProvider;
+  const hasValidProvider = authProvider === undefined || authProvider === "local" || authProvider === "google";
+  const hasValidPasswordShape = value.passwordHash === undefined || typeof value.passwordHash === "string";
+  const hasValidSaltShape = value.passwordSalt === undefined || typeof value.passwordSalt === "string";
+
   return typeof value.id === "string"
     && typeof value.username === "string"
     && typeof value.displayName === "string"
     && (value.role === "viewer" || value.role === "operator" || value.role === "admin")
-    && typeof value.passwordHash === "string"
-    && typeof value.passwordSalt === "string"
+    && hasValidProvider
+    && (value.email === undefined || typeof value.email === "string")
+    && (value.providerSubject === undefined || typeof value.providerSubject === "string")
+    && (value.avatarUrl === undefined || typeof value.avatarUrl === "string")
+    && hasValidPasswordShape
+    && hasValidSaltShape
     && typeof value.createdAt === "string";
 }
 

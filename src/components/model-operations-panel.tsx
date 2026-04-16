@@ -3,17 +3,25 @@
 import { startTransition, useEffect, useEffectEvent, useRef, useState } from "react";
 
 import type { ActivityEvent } from "@/lib/activity-types";
+import type { AiProviderSummary } from "@/lib/ai-types";
 import type { AdminSessionStatus } from "@/lib/auth-types";
 import type { JobHistoryAnalytics, JobHistoryBulkActions } from "@/lib/job-history";
 import type { JobProgressEntry, JobRecord, JobType } from "@/lib/job-history-types";
-import type { OllamaModel, OllamaRuntime, OllamaStatus } from "@/lib/ollama";
+import type {
+  OllamaCatalogModel,
+  OllamaCliStatus,
+  OllamaModel,
+  OllamaRuntime,
+  OllamaServerStatus,
+  OllamaStatus,
+} from "@/lib/ollama";
 import type { SessionUser } from "@/lib/user-types";
 
 type JobFilter = "all" | "queued" | "running" | "failed" | "cancelled" | "completed";
 type JobTypeFilter = "all" | JobType;
 type JobOwnershipFilter = "all" | "mine";
 type JobsQuickScope = "my-queued" | "my-failed-pulls" | "pull-queue-only" | "running-pulls";
-type ModelLibraryFilter = "all" | "running";
+type ModelLibraryFilter = "all" | "installed" | "running";
 type ModelLibrarySort = "recent" | "name" | "size";
 const JOB_SNAPSHOT_LIMIT_OPTIONS = [12, 24, 48] as const;
 type JobSnapshotLimit = (typeof JOB_SNAPSHOT_LIMIT_OPTIONS)[number];
@@ -30,6 +38,29 @@ type JobSummary = {
 type ActionSummary = {
   tone: "info" | "warning";
   message: string;
+};
+
+type LibraryModelEntry = {
+  key: string;
+  displayName: string;
+  slug: string | null;
+  description: string;
+  pullTarget: string;
+  installed: boolean;
+  installedModelNames: string[];
+  running: boolean;
+  runningModelNames: string[];
+  size: number | null;
+  modifiedAt: string | null;
+};
+
+type CatalogResponse = {
+  catalog: OllamaCatalogModel[];
+  fetchedAt: string;
+};
+
+type AiProvidersResponse = {
+  providers: AiProviderSummary[];
 };
 
 type JobDetailRefreshDiff = {
@@ -70,6 +101,8 @@ const JOB_HINTS_STORAGE_KEY = "oload:jobs:compact-hints";
 const JOB_SNAPSHOT_LIMIT_STORAGE_KEY = "oload:jobs:snapshot-limit";
 const MODEL_LIBRARY_FILTER_STORAGE_KEY = "oload:models:library-filter";
 const MODEL_LIBRARY_SORT_STORAGE_KEY = "oload:models:library-sort";
+
+const MODEL_PICKER_VISIBLE_LIMIT = 8;
 
 function getCollapsedSectionsStorageKey(userId?: string) {
   return `${JOB_SECTION_PREFERENCES_STORAGE_KEY}:${userId ?? "guest"}`;
@@ -162,7 +195,11 @@ function parseJobSnapshotLimit(value: string | null): JobSnapshotLimit {
 }
 
 function parseModelLibraryFilter(value: string | null): ModelLibraryFilter {
-  return value === "running" ? "running" : "all";
+  if (value === "installed" || value === "running") {
+    return value;
+  }
+
+  return "all";
 }
 
 function parseModelLibrarySort(value: string | null): ModelLibrarySort {
@@ -171,6 +208,124 @@ function parseModelLibrarySort(value: string | null): ModelLibrarySort {
   }
 
   return "recent";
+}
+
+function normalizeModelName(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function getModelBaseName(value: string) {
+  return normalizeModelName(value).split(":")[0] ?? "";
+}
+
+function sortUniqueModelNames(values: string[]) {
+  return [...new Set(values.filter((value) => value.trim()))].sort((left, right) => left.localeCompare(right));
+}
+
+function matchesCatalogModel(modelName: string, catalogModel: Pick<OllamaCatalogModel, "slug" | "name">) {
+  const normalizedName = normalizeModelName(modelName);
+  const baseName = getModelBaseName(modelName);
+  const candidates = [catalogModel.slug, catalogModel.name]
+    .map((value) => value ? normalizeModelName(value) : "")
+    .filter(Boolean);
+
+  return candidates.some((candidate) => candidate === normalizedName || candidate === baseName);
+}
+
+function buildLibraryEntries({
+  catalog,
+  models,
+  runningModels,
+}: {
+  catalog: OllamaCatalogModel[];
+  models: OllamaModel[];
+  runningModels: OllamaRuntime[];
+}) {
+  const entries: LibraryModelEntry[] = [];
+  const representedInstalledNames = new Set<string>();
+  const representedRuntimeNames = new Set<string>();
+  const runtimeNames = runningModels.flatMap((runtime) => [runtime.model, runtime.name]
+    .filter((value): value is string => Boolean(value)));
+
+  for (const catalogModel of catalog) {
+    const matchingInstalledModels = models.filter((model) => matchesCatalogModel(model.name, catalogModel));
+    const matchingRuntimeNames = runtimeNames.filter((name) => matchesCatalogModel(name, catalogModel));
+    const installedModelNames = sortUniqueModelNames([
+      ...catalogModel.installedModelNames,
+      ...matchingInstalledModels.map((model) => model.name),
+    ]);
+    const runningModelNames = sortUniqueModelNames([
+      ...catalogModel.runningModelNames,
+      ...matchingRuntimeNames,
+    ]);
+    const latestInstalledModel = [...matchingInstalledModels].sort((left, right) => {
+      const leftTime = left.modified_at ? new Date(left.modified_at).getTime() : 0;
+      const rightTime = right.modified_at ? new Date(right.modified_at).getTime() : 0;
+      return rightTime - leftTime;
+    })[0];
+
+    installedModelNames.forEach((name) => representedInstalledNames.add(normalizeModelName(name)));
+    runningModelNames.forEach((name) => representedRuntimeNames.add(normalizeModelName(name)));
+
+    entries.push({
+      key: `catalog:${catalogModel.slug}`,
+      displayName: catalogModel.name,
+      slug: catalogModel.slug,
+      description: catalogModel.description,
+      pullTarget: catalogModel.slug,
+      installed: catalogModel.installed || installedModelNames.length > 0,
+      installedModelNames,
+      running: catalogModel.running || runningModelNames.length > 0,
+      runningModelNames,
+      size: latestInstalledModel?.size ?? null,
+      modifiedAt: latestInstalledModel?.modified_at ?? null,
+    });
+  }
+
+  for (const model of models) {
+    if (representedInstalledNames.has(normalizeModelName(model.name))) {
+      continue;
+    }
+
+    const matchingRuntimeNames = runtimeNames.filter((name) => normalizeModelName(name) === normalizeModelName(model.name));
+    matchingRuntimeNames.forEach((name) => representedRuntimeNames.add(normalizeModelName(name)));
+
+    entries.push({
+      key: `installed:${model.name}`,
+      displayName: model.name,
+      slug: null,
+      description: "Installed locally outside the published Ollama library catalog.",
+      pullTarget: model.name,
+      installed: true,
+      installedModelNames: [model.name],
+      running: matchingRuntimeNames.length > 0,
+      runningModelNames: sortUniqueModelNames(matchingRuntimeNames),
+      size: model.size,
+      modifiedAt: model.modified_at ?? null,
+    });
+  }
+
+  for (const runtimeName of runtimeNames) {
+    if (representedRuntimeNames.has(normalizeModelName(runtimeName))) {
+      continue;
+    }
+
+    entries.push({
+      key: `runtime:${runtimeName}`,
+      displayName: runtimeName,
+      slug: null,
+      description: "Currently loaded in Ollama runtime memory.",
+      pullTarget: runtimeName,
+      installed: true,
+      installedModelNames: [runtimeName],
+      running: true,
+      runningModelNames: [runtimeName],
+      size: null,
+      modifiedAt: null,
+    });
+  }
+
+  return entries;
 }
 
 function getJobRowId(jobId: string) {
@@ -185,7 +340,7 @@ function HintButton({ label, text }: { label: string; text: string }) {
   return (
     <button
       aria-label={label}
-      className="flex h-6 w-6 items-center justify-center rounded-full border border-line bg-white text-xs font-semibold text-foreground"
+      className="ui-button ui-button-icon ui-button-secondary"
       title={text}
       type="button"
     >
@@ -717,7 +872,7 @@ function getTrendClasses(trend: JobHistoryAnalytics["averagePullWaitTrend"]) {
     return "bg-stone-200 text-stone-900";
   }
 
-  return "bg-white text-muted";
+  return "theme-surface-chip text-muted";
 }
 
 function getTrendLabel(trend: JobHistoryAnalytics["averagePullWaitTrend"]) {
@@ -1001,7 +1156,7 @@ function getRefreshStatus(value: string | null, nowMs: number) {
   if (!value) {
     return {
       label: "Unknown",
-      classes: "bg-white text-muted",
+      classes: "theme-surface-chip text-muted",
     };
   }
 
@@ -1010,7 +1165,7 @@ function getRefreshStatus(value: string | null, nowMs: number) {
   if (Number.isNaN(timestamp)) {
     return {
       label: "Unknown",
-      classes: "bg-white text-muted",
+      classes: "theme-surface-chip text-muted",
     };
   }
 
@@ -1188,7 +1343,7 @@ function getProgressEntryRowClasses(statusLabel?: string) {
 function getSummaryCardClasses(isActive: boolean) {
   return isActive
     ? "bg-[color:color-mix(in_srgb,var(--accent)_10%,white)] ring-1 ring-[var(--accent)]"
-    : "bg-white/55";
+    : "theme-surface-soft";
 }
 
 function getSummaryDeltaBadge(label: keyof JobSummary, delta: number) {
@@ -1374,8 +1529,12 @@ type ModelOperationsPanelProps = {
   runningModels: OllamaRuntime[];
   runningCount: number;
   userCount: number;
+  cli: OllamaCliStatus;
+  server: OllamaServerStatus;
   version?: string;
   onStatusChange: (status: OllamaStatus) => void;
+  surface?: "embedded" | "page";
+  view?: "all" | "models" | "jobs" | "activity";
 };
 
 async function readErrorMessage(response: Response) {
@@ -1395,8 +1554,12 @@ export function ModelOperationsPanel({
   runningModels,
   runningCount,
   userCount,
+  cli,
+  server,
   version,
   onStatusChange,
+  surface = "embedded",
+  view = "all",
 }: ModelOperationsPanelProps) {
   const collapsedSectionsStorageKey = getCollapsedSectionsStorageKey(currentUser?.id);
   const selectedJobStorageKey = getSelectedJobStorageKey(currentUser?.id);
@@ -1404,7 +1567,10 @@ export function ModelOperationsPanel({
   const jobSnapshotLimitStorageKey = getJobSnapshotLimitStorageKey(currentUser?.id);
   const modelLibraryFilterStorageKey = getModelLibraryFilterStorageKey(currentUser?.id);
   const modelLibrarySortStorageKey = getModelLibrarySortStorageKey(currentUser?.id);
-  const [pullName, setPullName] = useState("");
+  const showModelsView = view === "all" || view === "models";
+  const showJobsView = view === "all" || view === "jobs";
+  const showActivityView = view === "all" || view === "activity";
+  const isPageSurface = surface === "page" && view !== "all";
   const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
   const [jobs, setJobs] = useState<JobRecord[]>([]);
   const [jobFilter, setJobFilter] = useState<JobFilter>("all");
@@ -1466,6 +1632,17 @@ export function ModelOperationsPanel({
   const [lastManualJobsRefreshAt, setLastManualJobsRefreshAt] = useState<string | null>(null);
   const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
   const [busyModel, setBusyModel] = useState<string | null>(null);
+  const [runtimeBusyModel, setRuntimeBusyModel] = useState<string | null>(null);
+  const [isStartingServer, setIsStartingServer] = useState(false);
+  const [catalogModels, setCatalogModels] = useState<OllamaCatalogModel[]>([]);
+  const [catalogFetchedAt, setCatalogFetchedAt] = useState<string | null>(null);
+  const [isLoadingCatalog, setIsLoadingCatalog] = useState(false);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [aiProviders, setAiProviders] = useState<AiProviderSummary[]>([]);
+  const [isLoadingAiProviders, setIsLoadingAiProviders] = useState(false);
+  const [aiProvidersError, setAiProvidersError] = useState<string | null>(null);
+  const [selectedLibraryModelKey, setSelectedLibraryModelKey] = useState<string | null>(null);
+  const [isModelPickerOpen, setIsModelPickerOpen] = useState(false);
   const [pullLog, setPullLog] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [password, setPassword] = useState("");
@@ -1479,9 +1656,18 @@ export function ModelOperationsPanel({
   const jobsSnapshotRef = useRef<string>(createJobsSnapshot([]));
   const jobSectionHeaderRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const jobRowRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const modelPickerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     void refreshAuth();
+  }, []);
+
+  useEffect(() => {
+    void refreshCatalog();
+  }, []);
+
+  useEffect(() => {
+    void refreshAiProviders();
   }, []);
 
   useEffect(() => {
@@ -1492,6 +1678,23 @@ export function ModelOperationsPanel({
     if (highlightTimeoutRef.current !== null) {
       window.clearTimeout(highlightTimeoutRef.current);
     }
+  }, []);
+
+  useEffect(() => {
+    function handlePointerDown(event: MouseEvent) {
+      if (!modelPickerRef.current) {
+        return;
+      }
+
+      if (event.target instanceof Node && !modelPickerRef.current.contains(event.target)) {
+        setIsModelPickerOpen(false);
+      }
+    }
+
+    window.addEventListener("mousedown", handlePointerDown);
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown);
+    };
   }, []);
 
   useEffect(() => {
@@ -2359,19 +2562,83 @@ export function ModelOperationsPanel({
     try {
       const response = await fetch("/api/ollama/models", { cache: "no-store" });
 
-      if (!response.ok) {
-        throw new Error(await readErrorMessage(response));
+      const status = (await response.json()) as OllamaStatus & { error?: string };
+
+      if (!status.cli || !status.server || !Array.isArray(status.models) || !Array.isArray(status.running)) {
+        throw new Error(status.error ?? `Request failed with ${response.status}.`);
       }
 
-      const status = (await response.json()) as OllamaStatus;
       onStatusChange(status);
+      await refreshCatalog(true);
+      await refreshAiProviders(true);
       await refreshActivity();
+
+      if (!response.ok && status.error) {
+        setError(status.error);
+      }
     } catch (error) {
       setError(
         error instanceof Error ? error.message : "Unable to refresh model status.",
       );
     } finally {
       setIsRefreshing(false);
+    }
+  }
+
+  async function refreshCatalog(silent = false) {
+    if (!silent) {
+      setIsLoadingCatalog(true);
+    }
+
+    try {
+      const response = await fetch("/api/ollama/catalog", { cache: "no-store" });
+
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+
+      const payload = (await response.json()) as CatalogResponse;
+      setCatalogModels(Array.isArray(payload.catalog) ? payload.catalog : []);
+      setCatalogFetchedAt(payload.fetchedAt ?? new Date().toISOString());
+      setCatalogError(null);
+    } catch (catalogLoadError) {
+      setCatalogError(
+        catalogLoadError instanceof Error
+          ? catalogLoadError.message
+          : "Unable to load the Ollama library catalog.",
+      );
+    } finally {
+      if (!silent) {
+        setIsLoadingCatalog(false);
+      }
+    }
+  }
+
+  async function refreshAiProviders(silent = false) {
+    if (!silent) {
+      setIsLoadingAiProviders(true);
+    }
+
+    try {
+      const response = await fetch("/api/ai/providers", { cache: "no-store" });
+
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+
+      const payload = (await response.json()) as AiProvidersResponse;
+      setAiProviders(Array.isArray(payload.providers) ? payload.providers : []);
+      setAiProvidersError(null);
+    } catch (providerLoadError) {
+      setAiProvidersError(
+        providerLoadError instanceof Error
+          ? providerLoadError.message
+          : "Unable to load AI services.",
+      );
+    } finally {
+      if (!silent) {
+        setIsLoadingAiProviders(false);
+      }
     }
   }
 
@@ -2400,6 +2667,11 @@ export function ModelOperationsPanel({
       await refreshActivity();
       await refreshJobs();
       await refreshSelectedJob();
+      await refreshCatalog(true);
+      setActionSummary({
+        tone: "info",
+        message: `${name} was deleted from the local Ollama library.`,
+      });
     } catch (error) {
       setError(
         error instanceof Error ? error.message : "Unable to delete the model.",
@@ -2421,7 +2693,7 @@ export function ModelOperationsPanel({
     abortControllerRef.current = controller;
     setError(null);
     setIsPulling(true);
-    setPullLog([`Starting pull for ${modelName}...`]);
+    setPullLog([`Starting download for ${modelName}...`]);
 
     try {
       const response = await fetch("/api/ollama/models/pull", {
@@ -2488,17 +2760,25 @@ export function ModelOperationsPanel({
       await refreshActivity();
       await refreshJobs();
       await refreshSelectedJob();
-      setPullName("");
+      await refreshCatalog(true);
+      setActionSummary({
+        tone: "info",
+        message: `Download completed for ${modelName}.`,
+      });
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
         startTransition(() => {
-          setPullLog((current) => [...current, "Pull cancelled."]);
+          setPullLog((current) => [...current, "Download cancelled."]);
+        });
+        setActionSummary({
+          tone: "warning",
+          message: `Download cancelled for ${modelName}.`,
         });
         return;
       }
 
       setError(
-        error instanceof Error ? error.message : "Unable to pull the model.",
+        error instanceof Error ? error.message : "Unable to download the model.",
       );
     } finally {
       abortControllerRef.current = null;
@@ -2507,14 +2787,85 @@ export function ModelOperationsPanel({
     }
   }
 
-  async function pullModel(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    await startPull(pullName);
-  }
-
   function cancelPull() {
     abortControllerRef.current?.abort();
+  }
+
+  async function ensureServerRunning() {
+    setError(null);
+    setIsStartingServer(true);
+
+    try {
+      const response = await fetch("/api/ollama/server", {
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          await refreshAuth();
+        }
+
+        throw new Error(await readErrorMessage(response));
+      }
+
+      const status = (await response.json()) as OllamaStatus;
+      onStatusChange(status);
+      await refreshActivity();
+      await refreshCatalog(true);
+      await refreshAiProviders(true);
+      setActionSummary({
+        tone: "info",
+        message: "Ollama is reachable and ready.",
+      });
+    } catch (serverError) {
+      setError(
+        serverError instanceof Error ? serverError.message : "Unable to start the Ollama server.",
+      );
+    } finally {
+      setIsStartingServer(false);
+    }
+  }
+
+  async function changeModelRuntime(name: string, action: "start" | "stop") {
+    setError(null);
+    setRuntimeBusyModel(name);
+
+    try {
+      const response = await fetch("/api/ollama/runtime", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ action, name }),
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          await refreshAuth();
+        }
+
+        throw new Error(await readErrorMessage(response));
+      }
+
+      const status = (await response.json()) as OllamaStatus;
+      onStatusChange(status);
+      await refreshActivity();
+      await refreshCatalog(true);
+      setActionSummary({
+        tone: "info",
+        message: action === "start"
+          ? `${name} is now loaded and ready.`
+          : `${name} was stopped and removed from memory.`,
+      });
+    } catch (runtimeError) {
+      setError(
+        runtimeError instanceof Error
+          ? runtimeError.message
+          : `Unable to ${action} the model runtime.`,
+      );
+    } finally {
+      setRuntimeBusyModel(null);
+    }
   }
 
   const adminLocked = currentUser?.role === "admin"
@@ -2524,11 +2875,18 @@ export function ModelOperationsPanel({
       : auth.authEnabled && !auth.authenticated;
   const adminStatusLabel = auth.authEnabled
     ? auth.authenticated
-      ? "Admin session active"
+      ? "Admin session"
       : "Admin locked"
     : currentUser?.role === "admin"
-      ? "Local admin active"
+      ? "Local admin"
       : "Auth disabled";
+  const adminStatusClasses = auth.authEnabled
+    ? auth.authenticated
+      ? "ui-pill-success"
+      : "ui-pill-warning"
+    : currentUser?.role === "admin"
+      ? "ui-pill-success"
+      : "ui-pill-neutral";
   const analyticsScopeText = getAnalyticsScopeText(jobTypeFilter, jobOwnershipFilter);
   const averagePullWaitHelpText = getAveragePullWaitHelpText({
     typeFilter: jobTypeFilter,
@@ -2654,19 +3012,31 @@ export function ModelOperationsPanel({
   });
   const canRunBulkPullActions = jobTypeFilter !== "model.delete";
   const normalizedModelSearch = modelSearch.trim().toLowerCase();
-  const activeRuntimeModelNames = new Set(
-    runningModels.flatMap((runtime) => [runtime.model, runtime.name]
-      .filter((value): value is string => Boolean(value))
-      .map((value) => value.toLowerCase())),
-  );
-  const runningLibraryModelCount = models.filter((model) => activeRuntimeModelNames.has(model.name.toLowerCase())).length;
-  const visibleModels = models
+  const libraryModels = buildLibraryEntries({
+    catalog: catalogModels,
+    models,
+    runningModels,
+  });
+  const installedLibraryModelCount = libraryModels.filter((model) => model.installed).length;
+  const runningLibraryModelCount = libraryModels.filter((model) => model.running).length;
+  const visibleModels = libraryModels
     .filter((model) => {
-      if (normalizedModelSearch && !model.name.toLowerCase().includes(normalizedModelSearch)) {
+      const searchHaystacks = [
+        model.displayName,
+        model.slug ?? "",
+        model.description,
+        ...model.installedModelNames,
+      ].map((value) => value.toLowerCase());
+
+      if (normalizedModelSearch && !searchHaystacks.some((value) => value.includes(normalizedModelSearch))) {
         return false;
       }
 
-      if (modelLibraryFilter === "running" && !activeRuntimeModelNames.has(model.name.toLowerCase())) {
+      if (modelLibraryFilter === "installed" && !model.installed) {
+        return false;
+      }
+
+      if (modelLibraryFilter === "running" && !model.running) {
         return false;
       }
 
@@ -2674,20 +3044,45 @@ export function ModelOperationsPanel({
     })
     .sort((left, right) => {
       if (modelLibrarySort === "name") {
-        return left.name.localeCompare(right.name);
+        return left.displayName.localeCompare(right.displayName);
       }
 
       if (modelLibrarySort === "size") {
-        return right.size - left.size || left.name.localeCompare(right.name);
+        return (right.size ?? -1) - (left.size ?? -1) || left.displayName.localeCompare(right.displayName);
       }
 
-      const leftTime = left.modified_at ? new Date(left.modified_at).getTime() : 0;
-      const rightTime = right.modified_at ? new Date(right.modified_at).getTime() : 0;
-      return rightTime - leftTime || left.name.localeCompare(right.name);
+      const leftTime = left.modifiedAt ? new Date(left.modifiedAt).getTime() : 0;
+      const rightTime = right.modifiedAt ? new Date(right.modifiedAt).getTime() : 0;
+      return rightTime - leftTime
+        || Number(right.installed) - Number(left.installed)
+        || left.displayName.localeCompare(right.displayName);
     });
-  const modelLibraryScopeLabel = modelLibraryFilter === "running"
-    ? `Showing ${visibleModels.length} running model${visibleModels.length === 1 ? "" : "s"}.`
-    : `Showing ${visibleModels.length} installed model${visibleModels.length === 1 ? "" : "s"}.`;
+  const modelPickerOptions = visibleModels.slice(0, MODEL_PICKER_VISIBLE_LIMIT);
+  const selectedLibraryModel = visibleModels.find((model) => model.key === selectedLibraryModelKey)
+    ?? libraryModels.find((model) => model.key === selectedLibraryModelKey)
+    ?? visibleModels[0]
+    ?? null;
+  const modelPickerInputValue = modelSearch || selectedLibraryModel?.displayName || "";
+  const canStartServer = cli.isInstalled && !server.canReachApi;
+  const serverStatusLabel = server.canReachApi
+    ? "API reachable"
+    : server.isProcessRunning
+      ? "Process running, API not ready"
+      : "Server stopped";
+  const cliStatusLabel = cli.isInstalled ? "CLI installed" : "CLI missing";
+  const visibleModelOverflowCount = Math.max(visibleModels.length - modelPickerOptions.length, 0);
+  const configuredHostedProviderCount = aiProviders.filter((provider) => provider.kind === "hosted" && provider.configured).length;
+  const providerReadyCount = aiProviders.filter((provider) => provider.enabled).length;
+  const activityWarningCount = activityEvents.filter((event) => event.level === "warning").length;
+  const selectedModelActionMessage = adminLocked
+    ? userCount > 0
+      ? "Sign in as an admin user in the users panel to download, prepare, stop, or remove models."
+      : auth.authEnabled && !auth.authenticated
+        ? "Unlock the admin session above to run model actions."
+        : "Admin access is required for model actions."
+    : !server.canReachApi
+      ? "Start Ollama first if you want to download, prepare, or remove models."
+      : "Use the selected model actions here instead of a separate text field.";
   const bulkRetryLabel = jobOwnershipFilter === "mine" ? "Retry my failed pulls" : "Retry failed pulls";
   const bulkCancelLabel = jobOwnershipFilter === "mine" ? "Cancel my queued pulls" : "Cancel queued pulls";
   const bulkScopeSummaryText = !canRunBulkPullActions
@@ -2773,6 +3168,29 @@ export function ModelOperationsPanel({
   const selectedJobViewTiming = selectedJobIsVisibleInList
     ? null
     : getPinnedSelectionViewTiming(selectedJobRefreshedAt, jobsChangedAt, jobsRefreshedAt);
+  const panelShellClassName = isPageSurface
+    ? "glass-panel theme-surface-elevated rounded-[36px] p-5 sm:p-6"
+    : "glass-panel rounded-[36px] p-6 sm:p-8";
+  const modelWorkspaceLayoutClassName = isPageSurface
+    ? "mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.12fr)_minmax(21rem,0.88fr)] xl:items-start"
+    : "mt-6 space-y-3";
+
+  useEffect(() => {
+    if (visibleModels.length === 0) {
+      if (selectedLibraryModelKey !== null) {
+        setSelectedLibraryModelKey(null);
+      }
+      return;
+    }
+
+    const hasSelectedVisibleModel = selectedLibraryModelKey
+      ? visibleModels.some((model) => model.key === selectedLibraryModelKey)
+      : false;
+
+    if (!hasSelectedVisibleModel) {
+      setSelectedLibraryModelKey(visibleModels[0].key);
+    }
+  }, [selectedLibraryModelKey, visibleModels]);
 
   useEffect(() => {
     if (!selectedJobId) {
@@ -2860,14 +3278,20 @@ export function ModelOperationsPanel({
   }, [adminLocked, selectedJobId, selectedJobIsActive]);
 
   return (
-    <section className="grid gap-6">
-      <div className="glass-panel rounded-[36px] p-6 sm:p-8" onKeyDown={handleJobsPanelKeyDown}>
+    <section className="grid gap-4 sm:gap-6">
+      {showModelsView ? (
+      <div className={panelShellClassName} data-help-context="models" onKeyDown={handleJobsPanelKeyDown}>
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="section-label text-xs font-semibold">Model ops</p>
+            <p className="section-label text-xs font-semibold">Model library</p>
             <h2 className="mt-3 text-2xl font-semibold tracking-tight text-foreground">
-              Library control
+              Model library
             </h2>
+            {isPageSurface ? (
+              <p className="mt-3 max-w-3xl text-sm leading-6 text-muted">
+                Local Ollama inventory, hosted AI readiness, runtime controls, and download operations now live as their own Admin destination instead of borrowing space from the chat workspace.
+              </p>
+            ) : null}
           </div>
           <div
             className={`rounded-full px-3 py-1 text-xs font-semibold ${
@@ -2880,19 +3304,129 @@ export function ModelOperationsPanel({
           </div>
         </div>
 
-        <div className="mt-6 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-[24px] bg-white/55 px-4 py-4">
-            <p className="eyebrow text-muted">Installed</p>
-            <p className="mt-2 text-2xl font-semibold text-foreground">{models.length}</p>
+        {isPageSurface ? (
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div className="theme-surface-soft rounded-[24px] px-4 py-4">
+              <p className="eyebrow text-muted">Catalog reach</p>
+              <p className="mt-2 text-base font-semibold text-foreground">{libraryModels.length}</p>
+              <p className="mt-1 text-xs leading-5 text-muted">Models currently visible in the local library and catalog merge.</p>
+            </div>
+            <div className="theme-surface-soft rounded-[24px] px-4 py-4">
+              <p className="eyebrow text-muted">Hosted providers</p>
+              <p className="mt-2 text-base font-semibold text-foreground">{configuredHostedProviderCount}</p>
+              <p className="mt-1 text-xs leading-5 text-muted">Hosted AI services configured behind the shared gateway.</p>
+            </div>
+            <div className="theme-surface-soft rounded-[24px] px-4 py-4">
+              <p className="eyebrow text-muted">Admin posture</p>
+              <p className="mt-2 text-base font-semibold text-foreground">{adminLocked ? "Locked" : "Operational"}</p>
+              <p className="mt-1 text-xs leading-5 text-muted">Download, runtime, and delete actions stay gated behind admin access.</p>
+            </div>
           </div>
-          <div className="rounded-[24px] bg-white/55 px-4 py-4">
-            <p className="eyebrow text-muted">Running</p>
+        ) : null}
+
+        <div className="mt-6 grid gap-3 sm:grid-cols-3">
+          <div className="theme-surface-soft rounded-[24px] px-4 py-4">
+            <p className="eyebrow text-muted">Downloaded</p>
+            <p className="mt-2 text-2xl font-semibold text-foreground">{installedLibraryModelCount}</p>
+          </div>
+          <div className="theme-surface-soft rounded-[24px] px-4 py-4">
+            <p className="eyebrow text-muted">Ready</p>
             <p className="mt-2 text-2xl font-semibold text-foreground">{runningCount}</p>
           </div>
-          <div className="rounded-[24px] bg-white/55 px-4 py-4">
-            <p className="eyebrow text-muted">Version</p>
-            <p className="mt-2 text-sm font-semibold text-foreground">{version ?? "Unknown"}</p>
+          <div className="theme-surface-soft rounded-[24px] px-4 py-4">
+            <p className="eyebrow text-muted">Local service</p>
+            <p className="mt-2 text-sm font-semibold text-foreground">{serverStatusLabel}</p>
           </div>
+        </div>
+
+        <div className="theme-surface-panel mt-4 rounded-[24px] px-4 py-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="eyebrow text-muted">AI services</p>
+              <p className="mt-2 text-sm text-muted">
+                Local and hosted AI services share the same chat gateway. Provider keys and shared knowledge stay in the Users panel.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="ui-pill ui-pill-surface">{providerReadyCount} ready</span>
+              <span className="ui-pill ui-pill-surface">{configuredHostedProviderCount} hosted configured</span>
+              <button
+                className="ui-button ui-button-secondary px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                data-help-id="models.refresh-services"
+                disabled={isLoadingAiProviders}
+                type="button"
+                onClick={() => {
+                  void refreshAiProviders();
+                }}
+              >
+                {isLoadingAiProviders ? "Refreshing..." : "Refresh services"}
+              </button>
+            </div>
+          </div>
+
+          {aiProvidersError ? (
+            <p className="mt-3 text-xs text-amber-900">AI services refresh failed: {aiProvidersError}</p>
+          ) : null}
+
+          {aiProviders.length > 0 ? (
+            <div className={`mt-4 grid gap-3 ${isPageSurface ? "md:grid-cols-2 xl:grid-cols-4" : "md:grid-cols-3"}`}>
+              {aiProviders.map((provider) => (
+                <div key={provider.id} className="theme-surface-strong rounded-[22px] px-4 py-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">{provider.label}</p>
+                      <p className="mt-1 text-xs text-muted">{provider.kind === "local" ? "On this device" : "Hosted service"}</p>
+                    </div>
+                    <span className={`ui-pill ${provider.enabled ? "ui-pill-success" : provider.configured ? "ui-pill-warning" : "ui-pill-neutral"}`}>
+                      {provider.enabled ? "Ready" : provider.configured ? "Set up" : "Needs setup"}
+                    </span>
+                  </div>
+                  <p className="mt-3 text-sm leading-6 text-muted">{provider.description}</p>
+                  <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold">
+                    <span className="rounded-full bg-stone-100 px-2.5 py-1 text-stone-700">
+                      {provider.supportsModelLoading ? "Can keep models ready" : "Provider-managed memory"}
+                    </span>
+                    <span className="rounded-full bg-stone-100 px-2.5 py-1 text-stone-700">
+                      {provider.supportsStreaming ? "Streaming replies" : "Standard replies"}
+                    </span>
+                  </div>
+                  {provider.notes.length > 0 ? (
+                    <p className="mt-3 text-xs leading-5 text-muted">{provider.notes[0]}</p>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="ui-control-band mt-4 flex flex-wrap items-center gap-2 text-xs text-muted">
+          <span className={`ui-pill ${cli.isInstalled ? "ui-pill-success" : "ui-pill-warning"}`}>
+            {cliStatusLabel}
+          </span>
+          <span className={`ui-pill ${server.canReachApi ? "ui-pill-success" : server.isProcessRunning ? "ui-pill-warning" : "ui-pill-neutral"}`}>
+            {serverStatusLabel}
+          </span>
+          <span className={`ui-pill ${adminStatusClasses}`}>
+            {adminStatusLabel}
+          </span>
+          <span className="ui-pill ui-pill-surface">
+            Version {version ?? cli.version ?? "Unknown"}
+          </span>
+          {server.pid ? (
+            <span className="ui-pill ui-pill-surface">
+              PID {server.pid}
+            </span>
+          ) : null}
+          {cli.executablePath ? (
+            <span className="ui-pill ui-pill-surface">
+              {cli.executablePath}
+            </span>
+          ) : null}
+          {catalogFetchedAt ? (
+            <span className="ui-pill ui-pill-surface">
+              Catalog {new Date(catalogFetchedAt).toLocaleTimeString()}
+            </span>
+          ) : null}
         </div>
 
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
@@ -2901,47 +3435,46 @@ export function ModelOperationsPanel({
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <button
+              aria-label="Ensure the Ollama server is running locally"
+              className="ui-button ui-button-primary px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+              data-help-id="models.start-service"
+              disabled={!canStartServer || isStartingServer || adminLocked}
+              type="button"
+              onClick={ensureServerRunning}
+            >
+              {isStartingServer ? "Starting Ollama..." : server.canReachApi ? "Ollama ready" : "Start Ollama"}
+            </button>
+            <button
               aria-label="Refresh the model library and current Ollama status"
-              className="rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={isRefreshing || isPulling}
+              className="ui-button ui-button-secondary px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+              data-help-id="models.refresh"
+              disabled={isRefreshing || isPulling || isLoadingCatalog}
               type="button"
               onClick={refreshStatus}
             >
-              {isRefreshing ? "Refreshing..." : "Refresh library"}
+              {isRefreshing ? "Refreshing..." : "Refresh"}
             </button>
             {auth.authEnabled ? (
-              currentUser?.role === "admin" ? (
-                <div className="rounded-full bg-emerald-100 px-4 py-2 text-sm font-semibold text-emerald-900">
-                  Admin account
-                </div>
-              ) : auth.authenticated ? (
+              currentUser?.role === "admin" ? null : auth.authenticated ? (
                 <button
                   aria-label="Sign out the current admin session"
-                  className="rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-foreground"
+                  className="ui-button ui-button-secondary px-4 py-2 text-sm"
                   type="button"
                   onClick={logout}
                 >
                   Sign out admin
                 </button>
-              ) : (
-                <div className="rounded-full bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-900">
-                  Admin locked
-                </div>
-              )
-            ) : (
-              <div className="rounded-full bg-emerald-100 px-4 py-2 text-sm font-semibold text-emerald-900">
-                {adminStatusLabel}
-              </div>
-            )}
+              ) : null
+            ) : null}
           </div>
         </div>
 
         {userCount === 0 && auth.authEnabled && !auth.authenticated ? (
-          <form className="mt-6 space-y-3 rounded-[28px] border border-dashed border-line bg-white/45 p-4 sm:p-5" onSubmit={login}>
+          <form className="theme-surface-soft mt-6 space-y-3 rounded-[28px] border-dashed p-4 sm:p-5" onSubmit={login}>
             <div>
               <p className="eyebrow text-muted">Admin session</p>
               <p className="mt-2 text-sm leading-6 text-muted">
-                Pull and delete operations require the admin password configured in the environment.
+                Download and remove actions require the admin password configured in the environment.
               </p>
             </div>
             <div className="flex flex-col gap-3 sm:flex-row">
@@ -2959,7 +3492,7 @@ export function ModelOperationsPanel({
               />
               <button
                 aria-label="Unlock admin controls"
-                className="rounded-full bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                className="ui-button ui-button-primary px-5 py-3 text-sm disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={!password.trim() || isAuthenticating}
                 type="submit"
               >
@@ -2969,109 +3502,81 @@ export function ModelOperationsPanel({
           </form>
         ) : null}
 
-        <form className="mt-6 space-y-3" onSubmit={pullModel}>
-          <label className="eyebrow text-muted" htmlFor="pull-model-name">
-            Pull model
-          </label>
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <input
-              id="pull-model-name"
-              aria-label="Model name to pull"
-              className="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
-              placeholder="llama3.2:latest"
-              value={pullName}
-              onChange={(event) => setPullName(event.target.value)}
-            />
-            <button
-              aria-label="Start pulling the requested model"
-              className="rounded-full bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={!pullName.trim() || isPulling || adminLocked}
-              type="submit"
-            >
-              {isPulling ? "Pulling..." : "Pull model"}
-            </button>
-            <button
-              aria-label="Cancel the active model pull"
-              className="rounded-full border border-line bg-white px-5 py-3 text-sm font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={!isPulling}
-              type="button"
-              onClick={cancelPull}
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
-
         {error ? (
           <div aria-live="polite" role="alert" className="mt-4 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-900">
             {error}
           </div>
         ) : null}
 
-        <div className="mt-6 space-y-3">
-          <div className="flex flex-col gap-3 rounded-[24px] bg-white/45 px-4 py-4">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex flex-wrap gap-2">
+        <div className={modelWorkspaceLayoutClassName}>
+          <div className="theme-surface-soft flex flex-col gap-3 rounded-[24px] px-4 py-4">
+            <div className="grid gap-2 sm:grid-cols-2">
                 <button
-                  aria-label="Show all installed models"
+                  aria-label="Show the full Ollama model catalog and refresh the catalog list"
                   aria-pressed={modelLibraryFilter === "all"}
-                  className={`rounded-full px-4 py-2 text-sm font-semibold ${
+                  className={`ui-button min-h-[3.35rem] w-full justify-between px-4 py-3 text-sm ${
                     modelLibraryFilter === "all"
-                      ? "border border-[var(--accent)] bg-[var(--accent)] text-white"
-                      : "border border-line bg-white text-foreground"
+                      ? "ui-button-primary"
+                      : "ui-button-secondary"
                   }`}
+                  data-help-id="models.filter.all"
+                  disabled={isLoadingCatalog}
                   type="button"
-                  onClick={() => setModelLibraryFilter("all")}
+                  onClick={() => {
+                    setModelLibraryFilter("all");
+                    void refreshCatalog();
+                  }}
                 >
-                  All installed
+                  <span className="flex items-center gap-2">
+                    <span>{isLoadingCatalog ? "Refreshing..." : "All models"}</span>
+                    <span aria-hidden="true">↻</span>
+                  </span>
+                  <span className="rounded-full bg-black/10 px-2 py-0.5 text-xs font-semibold">
+                    {libraryModels.length}
+                  </span>
+                </button>
+                <button
+                  aria-label="Show installed models only"
+                  aria-pressed={modelLibraryFilter === "installed"}
+                  className={`ui-button min-h-[3.35rem] w-full justify-between px-4 py-3 text-sm ${
+                    modelLibraryFilter === "installed"
+                      ? "ui-button-primary"
+                      : "ui-button-secondary"
+                  }`}
+                  data-help-id="models.filter.downloaded"
+                  type="button"
+                  onClick={() => setModelLibraryFilter("installed")}
+                >
+                  Downloaded
+                  <span className="ml-2 rounded-full bg-black/10 px-2 py-0.5 text-xs font-semibold">
+                    {installedLibraryModelCount}
+                  </span>
                 </button>
                 <button
                   aria-label="Show only models with active runtimes"
                   aria-pressed={modelLibraryFilter === "running"}
-                  className={`rounded-full px-4 py-2 text-sm font-semibold ${
+                  className={`ui-button min-h-[3.35rem] w-full justify-between px-4 py-3 text-sm ${
                     modelLibraryFilter === "running"
-                      ? "border border-[var(--accent)] bg-[var(--accent)] text-white"
-                      : "border border-line bg-white text-foreground"
+                      ? "ui-button-primary"
+                      : "ui-button-secondary"
                   }`}
+                  data-help-id="models.filter.ready"
                   type="button"
                   onClick={() => setModelLibraryFilter("running")}
                 >
-                  Running now
+                  Ready now
                   <span className="ml-2 rounded-full bg-black/10 px-2 py-0.5 text-xs font-semibold">
                     {runningLibraryModelCount}
                   </span>
                 </button>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
-                <span className="font-semibold">Visible</span>
-                <span className="rounded-full bg-white px-3 py-1 font-semibold text-foreground">
-                  {visibleModels.length} of {models.length}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex-1">
-                <label className="sr-only" htmlFor="model-library-search">
-                  Search installed models
-                </label>
-                <input
-                  id="model-library-search"
-                  aria-label="Search installed models"
-                  className="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none lg:max-w-sm"
-                  placeholder="Search installed models"
-                  value={modelSearch}
-                  onChange={(event) => setModelSearch(event.target.value)}
-                />
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
+                <div className="min-h-[3.35rem]">
                 <label className="sr-only" htmlFor="model-library-sort">
                   Sort installed models
                 </label>
                 <select
                   id="model-library-sort"
                   aria-label="Sort installed models"
-                  className="rounded-full border border-line bg-white px-4 py-3 text-sm font-semibold text-foreground outline-none"
+                  className="min-h-[3.35rem] w-full rounded-full border border-line bg-white px-4 py-3 text-sm font-semibold text-foreground outline-none"
                   value={modelLibrarySort}
                   onChange={(event) => setModelLibrarySort(event.target.value as ModelLibrarySort)}
                 >
@@ -3079,63 +3584,248 @@ export function ModelOperationsPanel({
                   <option value="name">Name</option>
                   <option value="size">Largest size</option>
                 </select>
-              </div>
-            </div>
-
-            <p className="text-xs text-muted">
-              {modelLibraryScopeLabel} {runningLibraryModelCount} model{runningLibraryModelCount === 1 ? " is" : "s are"} currently loaded in memory.
-            </p>
-          </div>
-          {visibleModels.map((model) => (
-            <div
-              key={model.name}
-              className="flex items-center justify-between gap-4 rounded-[24px] bg-white/55 px-4 py-4"
-            >
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-sm font-semibold text-foreground">{model.name}</p>
-                  {activeRuntimeModelNames.has(model.name.toLowerCase()) ? (
-                    <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-semibold text-emerald-900">
-                      Running now
-                    </span>
-                  ) : null}
-                  <span className="rounded-full bg-stone-200 px-2.5 py-1 text-[11px] font-semibold text-stone-900">
-                    {formatByteCount(model.size) ?? "Unknown size"}
-                  </span>
                 </div>
-                <p className="mt-1 text-xs text-muted">
-                  Updated {new Date(model.modified_at ?? fetchedAt).toLocaleString()}
-                </p>
-              </div>
-              <button
-                aria-label={`${busyModel === model.name ? "Deleting" : "Delete"} model ${model.name}`}
-                className="rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={busyModel === model.name || isPulling || adminLocked}
-                type="button"
-                onClick={() => removeModel(model.name)}
-              >
-                {busyModel === model.name ? "Deleting..." : "Delete"}
-              </button>
             </div>
-          ))}
-          {models.length === 0 ? (
-            <div className="rounded-[24px] border border-dashed border-line bg-white/45 px-4 py-4 text-sm text-muted">
-              No models installed yet.
+            {catalogError ? (
+              <p className="text-xs text-amber-900">
+                Library refresh failed: {catalogError}
+              </p>
+            ) : null}
+            {libraryModels.length > 0 ? (
+              <div className="theme-surface-panel space-y-3 rounded-[24px] px-4 py-4">
+              <div ref={modelPickerRef} className="relative">
+                <p className="px-3 py-2 text-sm font-semibold italic text-muted">
+                  Choose one model below, then use the action card to download it, make it ready, stop it, or remove it.
+                </p>
+                <label className="eyebrow text-muted" htmlFor="model-library-picker-input">
+                  Model picker
+                </label>
+                <div className="theme-surface-input mt-3 flex items-center gap-2 rounded-[24px] px-3 py-2">
+                  <input
+                    id="model-library-picker-input"
+                    aria-autocomplete="list"
+                    aria-controls="model-library-picker-listbox"
+                    aria-expanded={isModelPickerOpen}
+                    aria-label="Choose a model from the library"
+                    aria-haspopup="listbox"
+                    className="min-w-0 flex-1 bg-transparent px-2 py-2 text-sm text-foreground outline-none"
+                    placeholder="Search models or use the arrow"
+                    role="combobox"
+                    value={modelPickerInputValue}
+                    onChange={(event) => {
+                      const nextValue = event.target.value;
+                      setModelSearch(nextValue);
+                      setIsModelPickerOpen(true);
+
+                      const normalizedQuery = nextValue.trim().toLowerCase();
+                      const exactMatch = visibleModels.find((model) => normalizedQuery && [model.displayName, model.slug ?? "", model.pullTarget]
+                        .some((value) => value.toLowerCase() === normalizedQuery));
+
+                      if (exactMatch) {
+                        setSelectedLibraryModelKey(exactMatch.key);
+                      }
+                    }}
+                    onFocus={() => setIsModelPickerOpen(true)}
+                  />
+                  <button
+                    aria-label={isModelPickerOpen ? "Collapse model picker options" : "Expand model picker options"}
+                    className="ui-button ui-button-secondary ui-button-icon h-10 w-10 text-sm"
+                    type="button"
+                    onClick={() => setIsModelPickerOpen((current) => !current)}
+                  >
+                    {isModelPickerOpen ? "^" : "v"}
+                  </button>
+                </div>
+                {isModelPickerOpen ? (
+                  <div className="theme-surface-elevated absolute left-0 right-0 z-20 mt-2 overflow-hidden rounded-[24px] backdrop-blur-xl">
+                    <div
+                      id="model-library-picker-listbox"
+                      aria-label="Filtered model options"
+                      className="max-h-80 overflow-y-auto p-2"
+                      role="listbox"
+                    >
+                      {modelPickerOptions.length > 0 ? modelPickerOptions.map((model) => (
+                        <button
+                          key={model.key}
+                          aria-selected={selectedLibraryModel?.key === model.key}
+                          className={`flex w-full flex-col items-start gap-2 rounded-[20px] border px-4 py-3 text-left text-sm ${
+                            selectedLibraryModel?.key === model.key
+                              ? "border-[rgba(188,95,61,0.35)] bg-[rgba(188,95,61,0.12)]"
+                              : "border-transparent bg-transparent"
+                          }`}
+                          role="option"
+                          type="button"
+                          onClick={() => {
+                            setSelectedLibraryModelKey(model.key);
+                            setModelSearch("");
+                            setIsModelPickerOpen(false);
+                          }}
+                        >
+                          <span className="font-semibold text-foreground">{model.displayName}</span>
+                          <span className="text-xs leading-5 text-muted">{model.description}</span>
+                          <span className="flex flex-wrap gap-2 text-[11px] font-semibold">
+                            {model.installed ? (
+                              <span className="rounded-full bg-sky-100 px-2.5 py-1 text-sky-900">Downloaded</span>
+                            ) : null}
+                            {model.running ? (
+                              <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-emerald-900">Ready</span>
+                            ) : null}
+                            {model.slug ? (
+                              <span className="rounded-full bg-stone-100 px-2.5 py-1 text-stone-700">{model.slug}</span>
+                            ) : null}
+                          </span>
+                        </button>
+                      )) : (
+                        <div className="rounded-[20px] px-4 py-4 text-sm text-muted">
+                          No models match the current library scope.
+                        </div>
+                      )}
+                    </div>
+                    {visibleModelOverflowCount > 0 ? (
+                      <div className="border-t border-line px-4 py-3 text-xs text-muted">
+                        {visibleModelOverflowCount} more model{visibleModelOverflowCount === 1 ? "" : "s"} match. Keep typing to narrow the list.
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+
+              {selectedLibraryModel ? (
+                <div className="theme-surface-strong rounded-[24px] px-5 py-5">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-lg font-semibold text-foreground">{selectedLibraryModel.displayName}</p>
+                        {selectedLibraryModel.installed ? (
+                          <span className="ui-pill ui-pill-surface">Downloaded</span>
+                        ) : null}
+                        {selectedLibraryModel.running ? (
+                          <span className="ui-pill ui-pill-success">Ready now</span>
+                        ) : null}
+                        {selectedLibraryModel.slug ? (
+                          <span className="ui-pill ui-pill-neutral">{selectedLibraryModel.slug}</span>
+                        ) : null}
+                      </div>
+                      <p className="mt-3 max-w-3xl text-sm leading-6 text-muted">{selectedLibraryModel.description}</p>
+                      <div className="mt-4 flex flex-wrap gap-2 text-xs text-muted">
+                        {selectedLibraryModel.size !== null ? (
+                          <span className="ui-pill ui-pill-surface">Size {formatByteCount(selectedLibraryModel.size) ?? "Unknown"}</span>
+                        ) : null}
+                        {selectedLibraryModel.modifiedAt ? (
+                          <span className="ui-pill ui-pill-surface">Updated {new Date(selectedLibraryModel.modifiedAt).toLocaleString()}</span>
+                        ) : null}
+                        <span className="ui-pill ui-pill-surface">Download name {selectedLibraryModel.pullTarget}</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 lg:max-w-sm lg:justify-end">
+                      {!selectedLibraryModel.installed ? (
+                        <button
+                          aria-label={`Download model ${selectedLibraryModel.pullTarget}`}
+                          className="ui-button ui-button-primary px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                          data-help-id="models.download"
+                          disabled={isPulling || adminLocked || !isReachable}
+                          type="button"
+                          onClick={() => {
+                            void startPull(selectedLibraryModel.pullTarget);
+                          }}
+                        >
+                          {isPulling ? "Downloading..." : "Download"}
+                        </button>
+                      ) : null}
+                      {selectedLibraryModel.installed && !selectedLibraryModel.running ? (
+                        <button
+                          aria-label={`Start model ${selectedLibraryModel.installedModelNames[0] ?? selectedLibraryModel.displayName}`}
+                          className="ui-button ui-button-success px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                          data-help-id="models.make-ready"
+                          disabled={runtimeBusyModel === (selectedLibraryModel.installedModelNames[0] ?? selectedLibraryModel.displayName) || adminLocked || !cli.isInstalled}
+                          type="button"
+                          onClick={() => {
+                            void changeModelRuntime(selectedLibraryModel.installedModelNames[0] ?? selectedLibraryModel.displayName, "start");
+                          }}
+                        >
+                          {runtimeBusyModel === (selectedLibraryModel.installedModelNames[0] ?? selectedLibraryModel.displayName) ? "Preparing..." : "Make ready"}
+                        </button>
+                      ) : null}
+                      {selectedLibraryModel.running ? (
+                        <button
+                          aria-label={`Stop model ${selectedLibraryModel.runningModelNames[0] ?? selectedLibraryModel.displayName}`}
+                          className="ui-button ui-button-secondary px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                          data-help-id="models.stop-runtime"
+                          disabled={runtimeBusyModel === (selectedLibraryModel.runningModelNames[0] ?? selectedLibraryModel.displayName) || adminLocked || !cli.isInstalled}
+                          type="button"
+                          onClick={() => {
+                            void changeModelRuntime(selectedLibraryModel.runningModelNames[0] ?? selectedLibraryModel.displayName, "stop");
+                          }}
+                        >
+                          {runtimeBusyModel === (selectedLibraryModel.runningModelNames[0] ?? selectedLibraryModel.displayName) ? "Stopping..." : "Stop"}
+                        </button>
+                      ) : null}
+                      {selectedLibraryModel.installed ? (
+                        <button
+                          aria-label={`${busyModel === selectedLibraryModel.installedModelNames[0] ? "Deleting" : "Delete"} model ${selectedLibraryModel.installedModelNames[0] ?? selectedLibraryModel.displayName}`}
+                          className="ui-button ui-button-danger px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                          data-help-id="models.delete"
+                          disabled={busyModel === selectedLibraryModel.installedModelNames[0] || isPulling || adminLocked || !isReachable}
+                          type="button"
+                          onClick={() => removeModel(selectedLibraryModel.installedModelNames[0] ?? selectedLibraryModel.displayName)}
+                        >
+                          {busyModel === selectedLibraryModel.installedModelNames[0] ? "Deleting..." : "Delete"}
+                        </button>
+                      ) : null}
+                      {isPulling ? (
+                        <button
+                          aria-label="Cancel the active model download"
+                          className="ui-button ui-button-secondary px-4 py-2 text-sm"
+                          data-help-id="models.cancel-download"
+                          type="button"
+                          onClick={cancelPull}
+                        >
+                          Cancel download
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="ui-control-band mt-4 flex flex-wrap items-center gap-2 text-xs text-muted">
+                    <span className="font-semibold">Selected model</span>
+                    {selectedLibraryModel.installedModelNames.length > 0 ? (
+                      <span>Downloaded names: {selectedLibraryModel.installedModelNames.join(", ")}</span>
+                    ) : (
+                      <span>Not downloaded to this device yet.</span>
+                    )}
+                    {selectedLibraryModel.runningModelNames.length > 0 ? (
+                      <span>Ready now: {selectedLibraryModel.runningModelNames.join(", ")}</span>
+                    ) : null}
+                  </div>
+                  <p className={`mt-3 text-xs ${adminLocked ? "text-amber-900" : "text-muted"}`}>
+                    {selectedModelActionMessage}
+                  </p>
+                </div>
+              ) : null}
+              </div>
+            ) : null}
+          </div>
+          {libraryModels.length === 0 ? (
+            <div className="theme-surface-panel rounded-[24px] border-dashed px-4 py-4 text-sm text-muted xl:h-full">
+              No model inventory is available yet.
             </div>
           ) : visibleModels.length === 0 ? (
-            <div className="rounded-[24px] border border-dashed border-line bg-white/45 px-4 py-4 text-sm text-muted">
+            <div className="theme-surface-panel rounded-[24px] border-dashed px-4 py-4 text-sm text-muted xl:h-full">
               {modelLibraryFilter === "running"
-                ? "No running models match the current library scope."
-                : "No installed models match the current search."}
+                ? "No ready models match the current library scope."
+                : modelLibraryFilter === "installed"
+                  ? "No downloaded models match the current search."
+                  : "No models match the current search."}
             </div>
           ) : null}
         </div>
       </div>
+      ) : null}
 
-      <div className="glass-panel rounded-[36px] p-6 sm:p-8">
-        <p className="section-label text-xs font-semibold">Pull progress</p>
+      {showModelsView ? (
+      <div className={panelShellClassName} data-help-context="models">
+        <p className="section-label text-xs font-semibold">Download progress</p>
         <h2 className="mt-3 text-2xl font-semibold tracking-tight text-foreground">
-          Streaming job log
+          Live transfer log
         </h2>
         <p className="mt-3 text-sm leading-6 text-muted">
           {auth.authEnabled
@@ -3143,33 +3833,41 @@ export function ModelOperationsPanel({
               ? "Admin account active. Privileged model operations are unlocked."
               : auth.authenticated
               ? "Admin session active. Privileged model operations are unlocked."
-              : "Admin auth is enabled. Unlock the panel to run pull and delete operations."
+              : "Admin auth is enabled. Unlock the panel to run download and remove actions."
             : currentUser?.role === "admin"
               ? "Local admin account active. Privileged model operations are unlocked without the fallback environment password flow."
               : "Admin auth is currently disabled. Configure environment secrets to require sign-in."}
         </p>
-        <div aria-busy={isPulling} aria-label="Streaming pull job log" aria-live="polite" role="log" className="mt-5 max-h-72 overflow-y-auto rounded-[24px] bg-[#201812] px-4 py-4 font-mono text-xs leading-6 text-[#f3eadf]">
-          {pullLog.length > 0 ? pullLog.join("\n") : "No pull job has been started yet."}
+        <div aria-busy={isPulling} aria-label="Streaming model download log" aria-live="polite" role="log" className="mt-5 max-h-72 overflow-y-auto rounded-[24px] bg-[#201812] px-4 py-4 font-mono text-xs leading-6 text-[#f3eadf]">
+          {pullLog.length > 0 ? pullLog.join("\n") : "No download has started yet."}
         </div>
       </div>
+      ) : null}
 
-      <div className="glass-panel rounded-[36px] p-6 sm:p-8">
-        <div className="flex items-center justify-between gap-4">
+      {showJobsView ? (
+      <div className={panelShellClassName} data-help-context="jobs">
+        <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="section-label text-xs font-semibold">Jobs</p>
             <h2 className="mt-3 text-2xl font-semibold tracking-tight text-foreground">
               Recent job history
             </h2>
+            {isPageSurface ? (
+              <p className="mt-3 max-w-3xl text-sm leading-6 text-muted">
+                Queue operations, retries, cancellations, analytics, and pinned job inspection are elevated into a dedicated operations surface for desktop administration.
+              </p>
+            ) : null}
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="-mx-1 flex w-full items-center gap-2 overflow-x-auto px-1 [scrollbar-width:none] sm:mx-0 sm:w-auto sm:flex-wrap sm:overflow-visible sm:px-0">
             <button
               aria-label={`${confirmBulkRetry ? "Confirm" : "Retry"} failed pull jobs${jobOwnershipFilter === "mine" ? " in your scope" : " across all operators"}`}
               aria-pressed={confirmBulkRetry}
-              className={`rounded-full px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
+              className={`ui-button shrink-0 px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 ${
                 confirmBulkRetry
-                  ? "border border-emerald-600 bg-emerald-600 text-white"
-                  : "border border-emerald-300 bg-emerald-50 text-emerald-900"
+                  ? "ui-button-success"
+                  : "ui-button-secondary"
               }`}
+              data-help-id="jobs.bulk.retry"
               disabled={isRunningBulkAction || !canRunBulkPullActions || jobBulkActions.retryablePulls === 0}
               type="button"
               onClick={() => {
@@ -3191,11 +3889,12 @@ export function ModelOperationsPanel({
             <button
               aria-label={`${confirmBulkCancel ? "Confirm" : "Cancel"} queued pull jobs${jobOwnershipFilter === "mine" ? " in your scope" : " across all operators"}`}
               aria-pressed={confirmBulkCancel}
-              className={`rounded-full px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
+              className={`ui-button shrink-0 px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 ${
                 confirmBulkCancel
-                  ? "border border-amber-700 bg-amber-600 text-white"
-                  : "border border-amber-300 bg-amber-50 text-amber-900"
+                  ? "ui-button-danger"
+                  : "ui-button-secondary"
               }`}
+              data-help-id="jobs.bulk.cancel"
               disabled={isRunningBulkAction || !canRunBulkPullActions || jobBulkActions.queuedPulls === 0}
               type="button"
               onClick={() => {
@@ -3216,7 +3915,8 @@ export function ModelOperationsPanel({
             </button>
             {(confirmBulkRetry || confirmBulkCancel) && !isRunningBulkAction ? (
               <button
-                className="rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-foreground"
+                className="ui-button ui-button-secondary shrink-0 px-4 py-2 text-sm"
+                data-help-id="jobs.bulk.clear-confirm"
                 type="button"
                 onClick={() => {
                   setConfirmBulkRetry(false);
@@ -3227,7 +3927,8 @@ export function ModelOperationsPanel({
               </button>
             ) : null}
             <button
-              className="rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              className="ui-button ui-button-secondary shrink-0 px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+              data-help-id="jobs.refresh"
               disabled={isLoadingJobs}
               type="button"
               onClick={() => {
@@ -3239,11 +3940,12 @@ export function ModelOperationsPanel({
             <button
               aria-label={compactJobHints ? "Switch to expanded jobs hints" : "Switch to compact jobs hints"}
               aria-pressed={compactJobHints}
-              className={`rounded-full px-4 py-2 text-sm font-semibold ${
+              className={`ui-button shrink-0 px-4 py-2 text-sm ${
                 compactJobHints
-                  ? "bg-[var(--accent)] text-white"
-                  : "border border-line bg-white text-foreground"
+                  ? "ui-button-primary"
+                  : "ui-button-secondary"
               }`}
+              data-help-id="jobs.hints.toggle"
               type="button"
               onClick={() => setCompactJobHints((current) => !current)}
             >
@@ -3251,27 +3953,66 @@ export function ModelOperationsPanel({
             </button>
           </div>
         </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted">
+        {isPageSurface ? (
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div className="theme-surface-soft rounded-[24px] px-4 py-4">
+              <p className="eyebrow text-muted">Jobs in view</p>
+              <p className="mt-2 text-base font-semibold text-foreground">{scopedJobSummary.total}</p>
+              <p className="mt-1 text-xs leading-5 text-muted">Current filtered snapshot across queue, running, and terminal states.</p>
+            </div>
+            <div className="theme-surface-soft rounded-[24px] px-4 py-4">
+              <p className="eyebrow text-muted">Active now</p>
+              <p className="mt-2 text-base font-semibold text-foreground">{scopedJobSummary.queued + scopedJobSummary.running}</p>
+              <p className="mt-1 text-xs leading-5 text-muted">Queued and running jobs still changing under auto-refresh.</p>
+            </div>
+            <div className="theme-surface-soft rounded-[24px] px-4 py-4">
+              <p className="eyebrow text-muted">Pinned detail</p>
+              <p className="mt-2 text-base font-semibold text-foreground">{selectedJob ? selectedJob.target : "No selection"}</p>
+              <p className="mt-1 text-xs leading-5 text-muted">Keep one job pinned while pivoting the visible list and analytics scope.</p>
+            </div>
+          </div>
+        ) : null}
+        {isPageSurface ? (
+          <div className="mt-3 grid gap-3 xl:grid-cols-3">
+            <div className="theme-surface-soft rounded-[22px] px-4 py-4 text-sm text-muted">
+              <p className="eyebrow text-muted">Operator scope</p>
+              <p className="mt-2 text-sm font-semibold text-foreground">{getCurrentScopeBadgeText(jobFilter, jobTypeFilter, jobOwnershipFilter, jobSnapshotLimit)}</p>
+              <p className="mt-2 text-xs leading-5">{getScopeSummaryText(jobFilter, jobTypeFilter, jobOwnershipFilter)}</p>
+            </div>
+            <div className="theme-surface-soft rounded-[22px] px-4 py-4 text-sm text-muted">
+              <p className="eyebrow text-muted">Bulk pull actions</p>
+              <p className="mt-2 text-sm font-semibold text-foreground">{canRunBulkPullActions ? `${jobBulkActions.queuedPulls} queued / ${jobBulkActions.retryablePulls} retryable` : "Delete-only view"}</p>
+              <p className="mt-2 text-xs leading-5">{bulkScopeSummaryText}</p>
+            </div>
+            <div className="theme-surface-soft rounded-[22px] px-4 py-4 text-sm text-muted">
+              <p className="eyebrow text-muted">Refresh cadence</p>
+              <p className="mt-2 text-sm font-semibold text-foreground">{jobsRefreshStatus.label}</p>
+              <p className="mt-2 text-xs leading-5">{hasActiveJobs ? "Auto-refresh remains active while queue work is changing." : `Latest snapshot ${jobsRefreshRelativeTime}.`}</p>
+            </div>
+          </div>
+        ) : null}
+        <div className="ui-control-band mt-3 -mx-1 flex items-center gap-2 overflow-x-auto px-1 text-xs text-muted [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
           <span className="font-semibold">Bulk scope</span>
           <span>{bulkScopeSummaryText}</span>
           {canRunBulkPullActions ? (
             <>
-              <span className="rounded-full bg-white px-3 py-1 font-semibold text-foreground">
+              <span className="ui-pill ui-pill-surface">
                 Queued {jobBulkActions.queuedPulls}
               </span>
-              <span className="rounded-full bg-white px-3 py-1 font-semibold text-foreground">
+              <span className="ui-pill ui-pill-surface">
                 Retryable {jobBulkActions.retryablePulls}
               </span>
             </>
           ) : null}
         </div>
-        <div className="mt-4 flex flex-wrap items-center gap-2">
+        <div className="ui-control-band mt-3 -mx-1 flex items-center gap-2 overflow-x-auto px-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
           <span className="text-xs font-semibold text-muted">Current scope</span>
-          <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-foreground">
+          <span className="ui-pill ui-pill-surface">
             {getCurrentScopeBadgeText(jobFilter, jobTypeFilter, jobOwnershipFilter, jobSnapshotLimit)}
           </span>
           <button
-            className="rounded-full border border-line bg-white px-3 py-1 text-xs font-semibold text-foreground"
+            className="ui-button ui-button-chip ui-button-secondary px-3 py-1 text-xs"
+            data-help-id="jobs.scope.copy"
             type="button"
             onClick={() => {
               void copyCurrentScope();
@@ -3281,17 +4022,17 @@ export function ModelOperationsPanel({
           </button>
         </div>
         <div className="mt-5 space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="ui-control-band -mx-1 flex items-center gap-2 overflow-x-auto px-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
             <span className="text-xs font-semibold text-muted">Ownership</span>
             {(["all", "mine"] as const).map((value) => (
               <button
                 key={value}
                 aria-label={`Show ${getOwnershipFilterLabel(value).toLowerCase()} in the jobs view`}
                 aria-pressed={jobOwnershipFilter === value}
-                className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                  className={`ui-button ui-button-chip px-3 py-1 text-xs ${
                   jobOwnershipFilter === value
-                    ? "bg-[var(--accent)] text-white"
-                    : "border border-line bg-white text-foreground"
+                      ? "ui-button-primary"
+                      : "ui-button-secondary"
                 }`}
                 disabled={value === "mine" && !currentUser?.displayName}
                 type="button"
@@ -3301,7 +4042,7 @@ export function ModelOperationsPanel({
               </button>
             ))}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="ui-control-band -mx-1 flex items-center gap-2 overflow-x-auto px-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
             <span className="text-xs font-semibold text-muted">Operator shortcuts</span>
             {([
               ["my-queued", "My queued"],
@@ -3316,10 +4057,10 @@ export function ModelOperationsPanel({
                   key={value}
                   aria-label={`${activeJobsQuickScope === value ? "Clear" : "Apply"} jobs quick scope ${label.toLowerCase()}`}
                   aria-pressed={activeJobsQuickScope === value}
-                  className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                  className={`ui-button ui-button-chip px-3 py-1 text-xs ${
                     activeJobsQuickScope === value
-                      ? "bg-[var(--accent)] text-white"
-                      : "border border-line bg-white text-foreground"
+                      ? "ui-button-primary"
+                      : "ui-button-secondary"
                   }`}
                   disabled={requiresUser && !currentUser?.displayName}
                   type="button"
@@ -3362,23 +4103,24 @@ export function ModelOperationsPanel({
               );
             })}
             {activeJobsQuickScope ? (
-              <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-foreground">
+              <span className="ui-pill ui-pill-surface">
                 Shortcut {getJobsQuickScopeLabel(activeJobsQuickScope)}
               </span>
             ) : null}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="ui-control-band -mx-1 flex items-center gap-2 overflow-x-auto px-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
             <span className="text-xs font-semibold text-muted">Quick pivot</span>
-            <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-foreground">
+            <span className="ui-pill ui-pill-surface">
               {jobFilter === "all" ? "All statuses" : `Status: ${jobFilter === "completed" ? "succeeded" : jobFilter}`}
             </span>
-            <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-foreground">
+            <span className="ui-pill ui-pill-surface">
               {getJobFilterFamilyLabel(jobFilter)}
             </span>
             {jobFilter !== "all" ? (
               <button
                 aria-label="Reset the status quick pivot to all jobs"
-                className="rounded-full border border-line bg-white px-3 py-1 text-xs font-semibold text-foreground"
+                className="ui-button ui-button-chip ui-button-secondary px-3 py-1 text-xs"
+                data-help-id="jobs.reset-pivots"
                 type="button"
                 onClick={() => setJobFilter("all")}
               >
@@ -3388,7 +4130,8 @@ export function ModelOperationsPanel({
             {(jobFilter !== "all" || jobTypeFilter !== "all" || jobOwnershipFilter !== "all") ? (
               <button
                 aria-label="Clear all jobs filters and return to the full jobs scope"
-                className="rounded-full border border-line bg-white px-3 py-1 text-xs font-semibold text-foreground"
+                className="ui-button ui-button-chip ui-button-secondary px-3 py-1 text-xs"
+                data-help-id="jobs.clear-filters"
                 type="button"
                 onClick={() => {
                   setJobFilter("all");
@@ -3402,11 +4145,11 @@ export function ModelOperationsPanel({
           </div>
           <p className="text-xs text-muted">{getScopeSummaryText(jobFilter, jobTypeFilter, jobOwnershipFilter)}</p>
           {manualSummaryBaselineMatchesScope && lastManualJobsRefreshAt ? (
-            <p className="text-xs text-muted">
+            <p className="hidden text-xs text-muted sm:block">
               Summary deltas compare against the last manual refresh for this scope from {lastManualJobsRefreshRelativeTime}.
             </p>
           ) : null}
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="ui-control-band -mx-1 flex items-center gap-2 overflow-x-auto px-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
             <span className="text-xs font-semibold text-muted">Terminal only</span>
             {([
               ["failed", "Failed"],
@@ -3417,10 +4160,10 @@ export function ModelOperationsPanel({
                 key={value}
                 aria-label={`${jobFilter === value ? "Hide" : "Show only"} ${label.toLowerCase()} jobs`}
                 aria-pressed={jobFilter === value}
-                className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                className={`ui-button ui-button-chip px-3 py-1 text-xs ${
                   jobFilter === value
-                    ? "bg-[var(--accent)] text-white"
-                    : "border border-line bg-white text-foreground"
+                    ? "ui-button-primary"
+                    : "ui-button-secondary"
                 }`}
                 type="button"
                 onClick={() => setJobFilter((current) => current === value ? "all" : value)}
@@ -3429,7 +4172,7 @@ export function ModelOperationsPanel({
               </button>
             ))}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="ui-control-band -mx-1 flex items-center gap-2 overflow-x-auto px-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
             <span className="text-xs font-semibold text-muted">Active only</span>
             {([
               ["queued", "Queued"],
@@ -3439,10 +4182,10 @@ export function ModelOperationsPanel({
                 key={value}
                 aria-label={`${jobFilter === value ? "Hide" : "Show only"} ${label.toLowerCase()} jobs`}
                 aria-pressed={jobFilter === value}
-                className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                className={`ui-button ui-button-chip px-3 py-1 text-xs ${
                   jobFilter === value
-                    ? "bg-[var(--accent)] text-white"
-                    : "border border-line bg-white text-foreground"
+                    ? "ui-button-primary"
+                    : "ui-button-secondary"
                 }`}
                 type="button"
                 onClick={() => setJobFilter((current) => current === value ? "all" : value)}
@@ -3607,7 +4350,7 @@ export function ModelOperationsPanel({
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <p className="text-2xl font-semibold text-foreground">{scopedJobSummary.completed}</p>
                 {ownerScopedJobSummary ? (
-                  <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-foreground">
+                  <span className="ui-pill ui-pill-surface text-xs">
                     {jobOwnershipFilter === "mine"
                       ? `${ownerScopedJobSummary.completed} yours`
                       : ownerScopedJobSummary.completed > 0
@@ -3634,12 +4377,12 @@ export function ModelOperationsPanel({
             </button>
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
-            <div className="sm:col-span-3 flex flex-wrap items-center gap-2 text-xs text-muted">
+            <div className="ui-control-band sm:col-span-3 flex flex-wrap items-center gap-2 text-xs text-muted">
               <span className="font-semibold">Analytics scope</span>
-              <span className="rounded-full bg-white px-3 py-1 font-semibold text-foreground">
+              <span className="ui-pill ui-pill-surface">
                 {analyticsOwnershipLabel}
               </span>
-              <span className="rounded-full bg-white px-3 py-1 font-semibold text-foreground">
+              <span className="ui-pill ui-pill-surface">
                 {analyticsTypeLabel}
               </span>
               {analyticsRecentChangeSignal ? (
@@ -3650,12 +4393,12 @@ export function ModelOperationsPanel({
                   {analyticsRecentChangeSignal.label}
                 </span>
               ) : null}
-              <span>{trendWindowText}</span>
+              <span className="ui-pill ui-pill-soft">{trendWindowText}</span>
             </div>
-            <div className="rounded-[24px] border border-line/80 bg-white/45 px-4 py-4">
+            <div className="theme-surface-panel rounded-[24px] px-4 py-4">
               <p className="eyebrow text-muted">Avg pull wait</p>
               <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted">
-                <span className="rounded-full bg-white px-3 py-1 font-semibold text-foreground">
+                <span className="ui-pill ui-pill-surface">
                   {analyticsOwnershipLabel}
                 </span>
                 {analyticsRecentChangeSignal ? (
@@ -3690,10 +4433,10 @@ export function ModelOperationsPanel({
                 </>
               )}
             </div>
-            <div className="rounded-[24px] border border-line/80 bg-white/45 px-4 py-4">
+            <div className="theme-surface-panel rounded-[24px] px-4 py-4">
               <p className="eyebrow text-muted">Retry queued</p>
               <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted">
-                <span className="rounded-full bg-white px-3 py-1 font-semibold text-foreground">
+                <span className="ui-pill ui-pill-surface">
                   {analyticsOwnershipLabel}
                 </span>
                 {analyticsRecentChangeSignal ? (
@@ -3724,10 +4467,10 @@ export function ModelOperationsPanel({
                 </>
               )}
             </div>
-            <div className="rounded-[24px] border border-line/80 bg-white/45 px-4 py-4">
+            <div className="theme-surface-panel rounded-[24px] px-4 py-4">
               <p className="eyebrow text-muted">Failure rate</p>
               <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted">
-                <span className="rounded-full bg-white px-3 py-1 font-semibold text-foreground">
+                <span className="ui-pill ui-pill-surface">
                   {analyticsOwnershipLabel}
                 </span>
                 {analyticsRecentChangeSignal ? (
@@ -3761,7 +4504,7 @@ export function ModelOperationsPanel({
               )}
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="-mx-1 flex gap-2 overflow-x-auto px-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
             {([
               ["all", "All"],
               ["queued", "Queued"],
@@ -3774,10 +4517,10 @@ export function ModelOperationsPanel({
                 key={value}
                 aria-label={`Set jobs status filter to ${label.toLowerCase()}`}
                 aria-pressed={jobFilter === value}
-                className={`rounded-full px-4 py-2 text-sm font-semibold ${
+                className={`ui-button px-4 py-2 text-sm ${
                   jobFilter === value
-                    ? "bg-[var(--accent)] text-white"
-                    : "border border-line bg-white text-foreground"
+                    ? "ui-button-primary"
+                    : "ui-button-secondary"
                 }`}
                 type="button"
                 onClick={() => setJobFilter(value)}
@@ -3786,7 +4529,7 @@ export function ModelOperationsPanel({
               </button>
             ))}
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="-mx-1 flex gap-2 overflow-x-auto px-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
             {([
               ["all", "All jobs"],
               ["model.pull", "Pulls"],
@@ -3796,10 +4539,10 @@ export function ModelOperationsPanel({
                 key={value}
                 aria-label={`Set jobs type filter to ${label.toLowerCase()}`}
                 aria-pressed={jobTypeFilter === value}
-                className={`rounded-full px-4 py-2 text-sm font-semibold ${
+                className={`ui-button px-4 py-2 text-sm ${
                   jobTypeFilter === value
-                    ? "bg-[var(--accent)] text-white"
-                    : "border border-line bg-white text-foreground"
+                    ? "ui-button-primary"
+                    : "ui-button-secondary"
                 }`}
                 type="button"
                 onClick={() => setJobTypeFilter(value)}
@@ -3811,17 +4554,17 @@ export function ModelOperationsPanel({
               {getJobTypeFamilyLabel(jobTypeFilter)}
             </span>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="-mx-1 flex items-center gap-2 overflow-x-auto px-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
             <span className="text-xs font-semibold text-muted">Snapshot</span>
             {JOB_SNAPSHOT_LIMIT_OPTIONS.map((value) => (
               <button
                 key={value}
                 aria-label={`Show the latest ${value} jobs in the current scope`}
                 aria-pressed={jobSnapshotLimit === value}
-                className={`rounded-full px-4 py-2 text-sm font-semibold ${
+                className={`ui-button px-4 py-2 text-sm ${
                   jobSnapshotLimit === value
-                    ? "bg-[var(--accent)] text-white"
-                    : "border border-line bg-white text-foreground"
+                    ? "ui-button-primary"
+                    : "ui-button-secondary"
                 }`}
                 type="button"
                 onClick={() => setJobSnapshotLimit(value)}
@@ -3831,10 +4574,11 @@ export function ModelOperationsPanel({
             ))}
           </div>
           {groupedJobs.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
+            <div className="-mx-1 flex gap-2 overflow-x-auto px-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
               <button
                 aria-label="Expand every visible job section"
-                className="rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-foreground"
+                className="ui-button ui-button-secondary px-4 py-2 text-sm"
+                data-help-id="jobs.expand-all"
                 type="button"
                 onClick={expandAllSections}
               >
@@ -3842,7 +4586,8 @@ export function ModelOperationsPanel({
               </button>
               <button
                 aria-label="Collapse every visible job section"
-                className="rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-foreground"
+                className="ui-button ui-button-secondary px-4 py-2 text-sm"
+                data-help-id="jobs.collapse-all"
                 type="button"
                 onClick={collapseAllSections}
               >
@@ -3917,7 +4662,7 @@ export function ModelOperationsPanel({
                         Scope changed since pin
                       </span>
                       <button
-                        className="rounded-full border border-line bg-white px-3 py-1 text-xs font-semibold text-foreground"
+                        className="ui-button ui-button-chip ui-button-secondary px-3 py-1 text-xs"
                         type="button"
                         onClick={() => setSelectedJobScopeSignature(currentScopeSignature)}
                       >
@@ -3967,11 +4712,12 @@ export function ModelOperationsPanel({
                   ) : null}
                   <button
                     aria-label={selectedJobNeedsManualRefresh ? "Refresh stale selected job detail now" : "Refresh selected job detail"}
-                    className={`rounded-full px-3 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
+                    className={`ui-button ui-button-chip px-3 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-50 ${
                       selectedJobNeedsManualRefresh
-                        ? "border border-amber-700 bg-amber-600 text-white"
-                        : "border border-line bg-white text-foreground"
+                        ? "ui-button-danger"
+                        : "ui-button-secondary"
                     }`}
+                    data-help-id="jobs.refresh-detail"
                     disabled={isLoadingJobDetail}
                     type="button"
                     onClick={() => {
@@ -3986,7 +4732,8 @@ export function ModelOperationsPanel({
                   </button>
                   {selectedJobIsVisibleInList ? (
                     <button
-                      className="rounded-full border border-line bg-white px-3 py-1 text-xs font-semibold text-foreground"
+                      className="ui-button ui-button-chip ui-button-secondary px-3 py-1 text-xs"
+                      data-help-id="jobs.jump-to-row"
                       type="button"
                       onClick={jumpToSelectedJobInList}
                     >
@@ -3995,7 +4742,8 @@ export function ModelOperationsPanel({
                   ) : null}
                   {!selectedJobIsVisibleInList ? (
                     <button
-                      className="rounded-full border border-line bg-white px-3 py-1 text-xs font-semibold text-foreground"
+                      className="ui-button ui-button-chip ui-button-secondary px-3 py-1 text-xs"
+                      data-help-id="jobs.reveal-in-list"
                       type="button"
                       onClick={revealSelectedJobInList}
                     >
@@ -4003,7 +4751,8 @@ export function ModelOperationsPanel({
                     </button>
                   ) : null}
                   <button
-                    className="rounded-full border border-line bg-white px-3 py-1 text-xs font-semibold text-foreground"
+                    className="ui-button ui-button-chip ui-button-secondary px-3 py-1 text-xs"
+                    data-help-id="jobs.clear-selection"
                     type="button"
                     onClick={() => setSelectedJobId(null)}
                   >
@@ -4178,7 +4927,7 @@ export function ModelOperationsPanel({
                     {job.type === "model.pull" && job.status === "queued" ? (
                       <div className="mt-3 flex flex-wrap gap-2">
                         <button
-                          className="rounded-full border border-line bg-white px-3 py-1.5 text-xs font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                          className="ui-button ui-button-chip ui-button-secondary px-3 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-50"
                           disabled={isReorderingJob || job.queuePosition === 1}
                           type="button"
                           onClick={() => {
@@ -4188,7 +4937,7 @@ export function ModelOperationsPanel({
                           {isReorderingJob && selectedJobId === job.id ? "Moving..." : "Move earlier"}
                         </button>
                         <button
-                          className="rounded-full border border-line bg-white px-3 py-1.5 text-xs font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                          className="ui-button ui-button-chip ui-button-secondary px-3 py-1.5 text-xs disabled:cursor-not-allowed disabled:opacity-50"
                           disabled={isReorderingJob || job.queuePosition === jobSummary.queued}
                           type="button"
                           onClick={() => {
@@ -4261,7 +5010,7 @@ export function ModelOperationsPanel({
           </div>
         ) : null}
         {groupedJobs.length > 0 ? (
-          <p className="mt-2 text-xs text-muted">
+          <p className="mt-2 hidden text-xs text-muted sm:block">
             Keyboard: focus a section header or job row, then use Up and Down to move, Enter or Space to pin a row, Left or Right to collapse or expand a section, R to refresh jobs, D to refresh pinned detail, J to jump to the pinned job, and Escape to clear selection.
           </p>
         ) : null}
@@ -4282,7 +5031,7 @@ export function ModelOperationsPanel({
           >
             <p>{actionSummary.message}</p>
             <button
-              className="rounded-full border border-current px-3 py-1 text-xs font-semibold"
+              className="ui-button ui-button-chip ui-button-secondary px-3 py-1 text-xs"
               type="button"
               onClick={() => setActionSummary(null)}
             >
@@ -4291,8 +5040,10 @@ export function ModelOperationsPanel({
           </div>
         ) : null}
       </div>
+      ) : null}
 
-      <div className="glass-panel rounded-[36px] p-6 sm:p-8">
+      {showJobsView ? (
+      <div className={panelShellClassName} data-help-context="jobs">
         <div className="flex items-center justify-between gap-4">
           <div>
             <p className="section-label text-xs font-semibold">Job detail</p>
@@ -4302,7 +5053,8 @@ export function ModelOperationsPanel({
           </div>
           {selectedJobId ? (
             <button
-              className="rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              className="ui-button ui-button-secondary px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+              data-help-id="jobs.refresh-detail"
               disabled={isLoadingJobDetail}
               type="button"
               onClick={() => {
@@ -4315,7 +5067,7 @@ export function ModelOperationsPanel({
         </div>
         {selectedJob ? (
           <div className="mt-5 space-y-4">
-            <div className="rounded-[24px] bg-white/55 px-4 py-4">
+            <div className="theme-surface-soft rounded-[24px] px-4 py-4">
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="text-sm font-semibold text-foreground">{selectedJob.target}</p>
@@ -4368,7 +5120,8 @@ export function ModelOperationsPanel({
                 && (selectedJob.status === "queued" || selectedJob.status === "running") ? (
                 <div className="mt-4">
                   <button
-                    className="rounded-full border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-900 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="ui-button ui-button-danger px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                    data-help-id="jobs.cancel-selected"
                     disabled={isCancellingJob || !selectedJobIsInCurrentScope}
                     type="button"
                     onClick={() => {
@@ -4382,7 +5135,8 @@ export function ModelOperationsPanel({
               {selectedJob.type === "model.pull" && selectedJob.status === "queued" ? (
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button
-                    className="rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                    className="ui-button ui-button-secondary px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                    data-help-id="jobs.reorder-earlier"
                     disabled={isReorderingJob || !selectedJobIsInCurrentScope}
                     type="button"
                     onClick={() => {
@@ -4392,7 +5146,8 @@ export function ModelOperationsPanel({
                     {isReorderingJob ? "Moving..." : "Move earlier"}
                   </button>
                   <button
-                    className="rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                    className="ui-button ui-button-secondary px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                    data-help-id="jobs.reorder-later"
                     disabled={isReorderingJob || !selectedJobIsInCurrentScope}
                     type="button"
                     onClick={() => {
@@ -4407,7 +5162,8 @@ export function ModelOperationsPanel({
                 && (selectedJob.status === "failed" || selectedJob.status === "cancelled") ? (
                 <div className="mt-4">
                   <button
-                    className="rounded-full border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-900 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="ui-button ui-button-success px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                    data-help-id="jobs.retry-selected"
                     disabled={isPulling || !selectedJobIsInCurrentScope}
                     type="button"
                     onClick={() => {
@@ -4420,7 +5176,7 @@ export function ModelOperationsPanel({
               ) : null}
             </div>
             {jobDetailRefreshDiff.compared ? (
-              <div className="rounded-[24px] border border-line/80 bg-white/45 px-4 py-4 text-sm text-foreground">
+              <div className="theme-surface-panel rounded-[24px] px-4 py-4 text-sm text-foreground">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-foreground">
                     Since last detail refresh
@@ -4445,11 +5201,12 @@ export function ModelOperationsPanel({
                 <button
                   aria-label="Show all timeline entries for the selected job"
                   aria-pressed={timelineEntryFilter === "all"}
-                  className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                  className={`ui-button ui-button-chip px-3 py-1 text-xs ${
                     timelineEntryFilter === "all"
-                      ? "bg-[var(--accent)] text-white"
-                      : "border border-line bg-white text-foreground"
+                      ? "ui-button-primary"
+                      : "ui-button-secondary"
                   }`}
+                  data-help-id="jobs.timeline.all"
                   type="button"
                   onClick={() => setTimelineEntryFilter("all")}
                 >
@@ -4458,11 +5215,12 @@ export function ModelOperationsPanel({
                 <button
                   aria-label="Show only new timeline entries since the last detail refresh"
                   aria-pressed={timelineEntryFilter === "new"}
-                  className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                  className={`ui-button ui-button-chip px-3 py-1 text-xs ${
                     timelineEntryFilter === "new"
-                      ? "bg-[var(--accent)] text-white"
-                      : "border border-line bg-white text-foreground"
+                      ? "ui-button-primary"
+                      : "ui-button-secondary"
                   }`}
+                  data-help-id="jobs.timeline.new"
                   disabled={jobDetailRefreshDiff.newEntryStartIndex === null}
                   type="button"
                   onClick={() => setTimelineEntryFilter("new")}
@@ -4472,11 +5230,12 @@ export function ModelOperationsPanel({
                 <button
                   aria-label="Show only changed timeline entries for the selected job"
                   aria-pressed={timelineEntryFilter === "changed"}
-                  className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                  className={`ui-button ui-button-chip px-3 py-1 text-xs ${
                     timelineEntryFilter === "changed"
-                      ? "bg-[var(--accent)] text-white"
-                      : "border border-line bg-white text-foreground"
+                      ? "ui-button-primary"
+                      : "ui-button-secondary"
                   }`}
+                  data-help-id="jobs.timeline.changed"
                   type="button"
                   onClick={() => setTimelineEntryFilter("changed")}
                 >
@@ -4541,24 +5300,32 @@ export function ModelOperationsPanel({
             </div>
           </div>
         ) : (
-          <div className="mt-5 rounded-[24px] border border-dashed border-line bg-white/45 px-4 py-4 text-sm text-muted">
+          <div className="theme-surface-panel mt-5 rounded-[24px] border-dashed px-4 py-4 text-sm text-muted">
             {adminLocked
               ? "Unlock admin access to inspect job details."
               : "Select a job to inspect its full progress trail."}
           </div>
         )}
       </div>
+      ) : null}
 
-      <div className="glass-panel rounded-[36px] p-6 sm:p-8">
+      {showActivityView ? (
+      <div className={panelShellClassName} data-help-context="activity">
         <div className="flex items-center justify-between gap-4">
           <div>
             <p className="section-label text-xs font-semibold">Activity</p>
             <h2 className="mt-3 text-2xl font-semibold tracking-tight text-foreground">
               Recent control-plane events
             </h2>
+            {isPageSurface ? (
+              <p className="mt-3 max-w-3xl text-sm leading-6 text-muted">
+                Administrative events stay visible here so queue operations, model changes, auth actions, and recovery work can be reviewed without competing with the chat transcript.
+              </p>
+            ) : null}
           </div>
           <button
-            className="rounded-full border border-line bg-white px-4 py-2 text-sm font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            className="ui-button ui-button-secondary px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+            data-help-id="activity.refresh"
             disabled={isLoadingActivity}
             type="button"
             onClick={refreshActivity}
@@ -4566,12 +5333,31 @@ export function ModelOperationsPanel({
             {isLoadingActivity ? "Refreshing..." : "Refresh log"}
           </button>
         </div>
+        {isPageSurface ? (
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div className="theme-surface-soft rounded-[24px] px-4 py-4">
+              <p className="eyebrow text-muted">Entries loaded</p>
+              <p className="mt-2 text-base font-semibold text-foreground">{activityEvents.length}</p>
+              <p className="mt-1 text-xs leading-5 text-muted">Recent control-plane events currently visible in this snapshot.</p>
+            </div>
+            <div className="theme-surface-soft rounded-[24px] px-4 py-4">
+              <p className="eyebrow text-muted">Warnings</p>
+              <p className="mt-2 text-base font-semibold text-foreground">{activityWarningCount}</p>
+              <p className="mt-1 text-xs leading-5 text-muted">Events marked warning severity in the current activity slice.</p>
+            </div>
+            <div className="theme-surface-soft rounded-[24px] px-4 py-4">
+              <p className="eyebrow text-muted">Access state</p>
+              <p className="mt-2 text-base font-semibold text-foreground">{adminLocked ? "Restricted" : "Readable"}</p>
+              <p className="mt-1 text-xs leading-5 text-muted">Activity visibility stays aligned to the admin gate and session state.</p>
+            </div>
+          </div>
+        ) : null}
         <div className="mt-5 space-y-3">
           {activityEvents.length > 0 ? (
             activityEvents.map((event) => (
               <div
                 key={event.id}
-                className="rounded-[24px] bg-white/55 px-4 py-4"
+                className="theme-surface-soft rounded-[24px] px-4 py-4"
               >
                 <div className="flex items-center justify-between gap-4">
                   <p className="text-sm font-semibold text-foreground">
@@ -4596,7 +5382,7 @@ export function ModelOperationsPanel({
               </div>
             ))
           ) : (
-            <div className="rounded-[24px] border border-dashed border-line bg-white/45 px-4 py-4 text-sm text-muted">
+            <div className="theme-surface-panel rounded-[24px] border-dashed px-4 py-4 text-sm text-muted">
               {auth.authEnabled && !auth.authenticated
                 ? userCount > 0
                   ? "Sign in as an admin user to read the activity log."
@@ -4606,6 +5392,7 @@ export function ModelOperationsPanel({
           )}
         </div>
       </div>
+      ) : null}
     </section>
   );
 }

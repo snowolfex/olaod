@@ -1,3 +1,18 @@
+import type { AiKnowledgeCitation } from "@/lib/ai-types";
+
+export type OllamaCliStatus = {
+  isInstalled: boolean;
+  executablePath: string | null;
+  version?: string;
+  error?: string;
+};
+
+export type OllamaServerStatus = {
+  isProcessRunning: boolean;
+  canReachApi: boolean;
+  pid: number | null;
+};
+
 export type OllamaModel = {
   name: string;
   size: number;
@@ -16,6 +31,7 @@ export type OllamaChatRole = "system" | "user" | "assistant";
 export type OllamaChatMessage = {
   role: OllamaChatRole;
   content: string;
+  knowledgeCitations?: AiKnowledgeCitation[];
 };
 
 export type OllamaChatRequest = {
@@ -50,15 +66,23 @@ export type OllamaStatus = {
   runningCount: number;
   models: OllamaModel[];
   running: OllamaRuntime[];
+  cli: OllamaCliStatus;
+  server: OllamaServerStatus;
   version?: string;
   error?: string;
 };
 
-const DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434";
-const PLAYWRIGHT_FALLBACK_MODEL: OllamaModel = {
-  name: "playwright:reply",
-  size: 0,
+export type OllamaCatalogModel = {
+  slug: string;
+  name: string;
+  description: string;
+  installed: boolean;
+  installedModelNames: string[];
+  running: boolean;
+  runningModelNames: string[];
 };
+
+const DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434";
 
 function getPlaywrightDeleteResponse(name: string) {
   if (!isPlaywrightTestMode() || !name.startsWith("playwright:")) {
@@ -90,15 +114,7 @@ function isPlaywrightTestMode() {
   return process.env.PLAYWRIGHT_TEST === "1";
 }
 
-function getPlaywrightFallbackModels(models: OllamaModel[]) {
-  if (!isPlaywrightTestMode() || models.length > 0) {
-    return models;
-  }
-
-  return [PLAYWRIGHT_FALLBACK_MODEL];
-}
-
-function getBaseUrl() {
+export function getOllamaBaseUrl() {
   return (
     process.env.OLLAMA_BASE_URL?.replace(/\/$/, "") ?? DEFAULT_OLLAMA_BASE_URL
   );
@@ -123,98 +139,16 @@ function buildChatMessages(
   ];
 }
 
-async function fetchFromOllama<T>(path: string): Promise<T> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 3000);
-
-  try {
-    const response = await fetch(`${getBaseUrl()}${path}`, {
-      cache: "no-store",
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      throw new Error(`Ollama returned ${response.status}`);
-    }
-
-    return (await response.json()) as T;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 export async function getOllamaStatus(): Promise<OllamaStatus> {
-  const baseUrl = getBaseUrl();
-
-  try {
-    const [tagsResult, runningResult, versionResult] = await Promise.allSettled([
-      fetchFromOllama<{ models?: OllamaModel[] }>("/api/tags"),
-      fetchFromOllama<{ models?: OllamaRuntime[] }>("/api/ps"),
-      fetchFromOllama<{ version?: string }>("/api/version"),
-    ]);
-
-    const models =
-      tagsResult.status === "fulfilled" ? tagsResult.value.models ?? [] : [];
-    const resolvedModels = getPlaywrightFallbackModels(models);
-    const running =
-      runningResult.status === "fulfilled"
-        ? runningResult.value.models ?? []
-        : [];
-    const version =
-      versionResult.status === "fulfilled"
-        ? versionResult.value.version
-        : undefined;
-
-    if (
-      tagsResult.status === "rejected" &&
-      runningResult.status === "rejected" &&
-      versionResult.status === "rejected"
-    ) {
-      throw tagsResult.reason;
-    }
-
-    return {
-      isReachable: true,
-      baseUrl,
-      fetchedAt: new Date().toISOString(),
-      modelCount: resolvedModels.length,
-      runningCount: running.length,
-      models: resolvedModels,
-      running,
-      version,
-    };
-  } catch (error) {
-    if (isPlaywrightTestMode()) {
-      return {
-        isReachable: false,
-        baseUrl,
-        fetchedAt: new Date().toISOString(),
-        modelCount: 1,
-        runningCount: 0,
-        models: [PLAYWRIGHT_FALLBACK_MODEL],
-        running: [],
-        error: error instanceof Error ? error.message : "Unknown Ollama error",
-      };
-    }
-
-    return {
-      isReachable: false,
-      baseUrl,
-      fetchedAt: new Date().toISOString(),
-      modelCount: 0,
-      runningCount: 0,
-      models: [],
-      running: [],
-      error: error instanceof Error ? error.message : "Unknown Ollama error",
-    };
-  }
+  const { getOllamaStatus: getResolvedOllamaStatus } = await import("@/lib/ollama-status");
+  return getResolvedOllamaStatus();
 }
 
 export async function requestOllamaChatStream(
   payload: OllamaChatRequest,
   signal?: AbortSignal,
 ) {
-  const response = await fetch(`${getBaseUrl()}/api/chat`, {
+  const response = await fetch(`${getOllamaBaseUrl()}/api/chat`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -242,7 +176,7 @@ export async function deleteOllamaModel(name: string) {
     return playwrightResponse;
   }
 
-  const response = await fetch(`${getBaseUrl()}/api/delete`, {
+  const response = await fetch(`${getOllamaBaseUrl()}/api/delete`, {
     method: "DELETE",
     headers: {
       "Content-Type": "application/json",
@@ -255,7 +189,7 @@ export async function deleteOllamaModel(name: string) {
 }
 
 export async function requestOllamaPullStream(name: string, signal?: AbortSignal) {
-  const response = await fetch(`${getBaseUrl()}/api/pull`, {
+  const response = await fetch(`${getOllamaBaseUrl()}/api/pull`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

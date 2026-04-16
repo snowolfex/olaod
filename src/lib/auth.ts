@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import type { AdminSessionStatus } from "@/lib/auth-types";
+import { getGoogleAuthMode, isGoogleAuthConfigured } from "@/lib/google-auth";
 import type { SessionUser, UserSessionStatus } from "@/lib/user-types";
 import { getUserById, toSessionUser } from "@/lib/users";
 import { countUsers } from "@/lib/users";
@@ -9,7 +10,11 @@ const AUTH_COOKIE_NAME = "oload_admin_session";
 const USER_COOKIE_NAME = "oload_user_session";
 const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 
-function getSessionSecret() {
+type SessionCookieOptions = {
+  persistent?: boolean;
+};
+
+export function getSessionSecret() {
   return process.env.OLOAD_SESSION_SECRET ||
     (process.env.NODE_ENV !== "production" ? "oload-local-dev-secret" : undefined);
 }
@@ -156,7 +161,7 @@ export function verifyAdminPassword(password: string) {
   return safeEqual(password, config.password);
 }
 
-export function createUserSessionCookie(user: SessionUser) {
+export function createUserSessionCookie(user: SessionUser, options?: SessionCookieOptions) {
   const secret = getSessionSecret();
 
   if (!secret) {
@@ -170,17 +175,21 @@ export function createUserSessionCookie(user: SessionUser) {
   return {
     name: USER_COOKIE_NAME,
     value: `${payload}.${signature}`,
-    maxAge: SESSION_TTL_MS / 1000,
+    maxAge: options?.persistent ? SESSION_TTL_MS / 1000 : undefined,
   };
 }
 
 export function getUserSessionStatus(cookieHeader: string | null): UserSessionStatus {
   const secret = getSessionSecret();
   const rawValue = parseCookieValue(cookieHeader, USER_COOKIE_NAME);
+  const googleAuthEnabled = isGoogleAuthConfigured();
+  const googleAuthMode = getGoogleAuthMode();
 
   if (!secret) {
     return {
       authAvailable: false,
+      googleAuthEnabled,
+      googleAuthMode,
       user: null,
       userCount: 0,
     };
@@ -191,6 +200,8 @@ export function getUserSessionStatus(cookieHeader: string | null): UserSessionSt
   if (!decoded?.exp || decoded.exp <= Date.now() || !decoded.user) {
     return {
       authAvailable: true,
+      googleAuthEnabled,
+      googleAuthMode,
       user: null,
       userCount: 0,
     };
@@ -198,6 +209,8 @@ export function getUserSessionStatus(cookieHeader: string | null): UserSessionSt
 
   return {
     authAvailable: true,
+    googleAuthEnabled,
+    googleAuthMode,
     user: decoded.user,
     userCount: 0,
   };

@@ -1,7 +1,9 @@
+import type { AiProviderId } from "@/lib/ai-types";
 import type { OllamaChatMessage } from "@/lib/ollama";
 
 export type ConversationSettings = {
   model: string;
+  providerId: AiProviderId;
   systemPrompt: string;
   temperature: number;
 };
