@@ -3,6 +3,8 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
+import { getHelpHint } from "@/lib/help-manual";
+import { readQuickHelpEnabled, writeQuickHelpEnabled } from "@/lib/help-preferences";
 import type {
   AiModelSummary,
   AiKnowledgeDebugResult,
@@ -193,16 +195,26 @@ export function UserAccessPanel({ compact = false, onSessionChange, session, sur
   const knowledgeTitleInputRef = useRef<HTMLInputElement | null>(null);
   const currentUserId = session.user?.id ?? null;
   const isPageSurface = surface === "page" && !compact;
+  const isAdminSession = session.user?.role === "admin";
   const [mode, setMode] = useState<"login" | "register">("login");
   const [managedUsers, setManagedUsers] = useState<ManagedUser[]>([]);
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
+  const [accountDisplayName, setAccountDisplayName] = useState("");
+  const [accountEmail, setAccountEmail] = useState("");
+  const [currentPasswordDraft, setCurrentPasswordDraft] = useState("");
+  const [nextPasswordDraft, setNextPasswordDraft] = useState("");
   const [rememberSession, setRememberSession] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [accountSummary, setAccountSummary] = useState<string | null>(null);
+  const [accountSummaryTone, setAccountSummaryTone] = useState<"success" | "warning">("success");
   const [backupSummary, setBackupSummary] = useState<string | null>(null);
   const [backupSummaryTone, setBackupSummaryTone] = useState<"success" | "warning">("success");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSavingAccountProfile, setIsSavingAccountProfile] = useState(false);
+  const [isSavingPassword, setIsSavingPassword] = useState(false);
+  const [isQuickHelpEnabled, setIsQuickHelpEnabled] = useState(true);
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
   const [pendingDeleteUserId, setPendingDeleteUserId] = useState<string | null>(null);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
@@ -246,6 +258,19 @@ export function UserAccessPanel({ compact = false, onSessionChange, session, sur
   const hasDirectGoogleSignIn = session.googleAuthMode === "direct" && hasOfficialGoogleSignIn;
   const hasLegacyGoogleRedirect = session.googleAuthMode === "redirect";
   const showGoogleAuthUi = GOOGLE_AUTH_UI_ENABLED;
+  const quickHelpHint = getHelpHint("command.quick-help-toggle");
+
+  useEffect(() => {
+    setAccountDisplayName(session.user?.displayName ?? "");
+    setAccountEmail(session.user?.email ?? "");
+    setCurrentPasswordDraft("");
+    setNextPasswordDraft("");
+    setAccountSummary(null);
+  }, [session.user?.displayName, session.user?.email, session.user?.id]);
+
+  useEffect(() => {
+    setIsQuickHelpEnabled(readQuickHelpEnabled());
+  }, []);
 
   useEffect(() => {
     const message = getLoginErrorMessage(searchParams.get("loginError"));
@@ -1018,6 +1043,86 @@ export function UserAccessPanel({ compact = false, onSessionChange, session, sur
     }
   }
 
+  async function saveAccountProfile() {
+    if (!session.user) {
+      return;
+    }
+
+    setIsSavingAccountProfile(true);
+    setError(null);
+    setAccountSummary(null);
+
+    try {
+      const response = await fetch("/api/users/profile", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          displayName: accountDisplayName,
+          email: accountEmail,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+
+      const nextSession = await fetchCurrentSession();
+      onSessionChange(nextSession);
+      setAccountSummary("Account details saved.");
+      setAccountSummaryTone("success");
+    } catch (accountError) {
+      setError(
+        accountError instanceof Error
+          ? accountError.message
+          : "Unable to save your account details.",
+      );
+    } finally {
+      setIsSavingAccountProfile(false);
+    }
+  }
+
+  async function resetPassword() {
+    if (!session.user) {
+      return;
+    }
+
+    setIsSavingPassword(true);
+    setError(null);
+    setAccountSummary(null);
+
+    try {
+      const response = await fetch("/api/users/password", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          currentPassword: currentPasswordDraft,
+          nextPassword: nextPasswordDraft,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+
+      setCurrentPasswordDraft("");
+      setNextPasswordDraft("");
+      setAccountSummary("Password updated for this local account.");
+      setAccountSummaryTone("success");
+    } catch (passwordError) {
+      setError(
+        passwordError instanceof Error
+          ? passwordError.message
+          : "Unable to reset your password.",
+      );
+    } finally {
+      setIsSavingPassword(false);
+    }
+  }
+
   async function changeRole(userId: string, role: PublicUser["role"]) {
     setBusyUserId(userId);
     setPendingDeleteUserId((current) => (current === userId ? null : current));
@@ -1232,11 +1337,17 @@ export function UserAccessPanel({ compact = false, onSessionChange, session, sur
           <div>
             <p className="section-label text-xs font-semibold">Accounts</p>
             <h2 className="mt-3 text-2xl font-semibold tracking-tight text-foreground">
-              {isPageSurface ? "Identity, providers, knowledge, and backup" : "Users and backup"}
+              {isPageSurface
+                ? isAdminSession
+                  ? "Identity, providers, knowledge, and backup"
+                  : "Account, preferences, and sign-in"
+                : "Users and backup"}
             </h2>
             {isPageSurface ? (
               <p className="mt-3 max-w-3xl text-sm leading-6 text-muted sm:text-base">
-                Access is the administrative control surface for local identity, hosted-provider credentials, shared knowledge grounding, and workspace recovery operations.
+                {isAdminSession
+                  ? "Access is the administrative control surface for local identity, hosted-provider credentials, shared knowledge grounding, and workspace recovery operations."
+                  : "Use this page to manage your profile details, quick-help preference, password, and current sign-in session without exposing admin-only operations."}
               </p>
             ) : null}
           </div>
@@ -1254,42 +1365,187 @@ export function UserAccessPanel({ compact = false, onSessionChange, session, sur
             <p className="mt-1 text-xs leading-5 text-muted">{session.user ? `${session.user.role} via ${session.user.authProvider === "google" ? "Google" : "local"} auth.` : "Local access gate only."}</p>
           </div>
           <div className="theme-surface-soft rounded-[24px] px-4 py-4">
-            <p className="eyebrow text-muted">Providers ready</p>
-            <p className="mt-2 text-base font-semibold text-foreground">{configuredProviderCount}</p>
-            <p className="mt-1 text-xs leading-5 text-muted">Hosted gateway providers currently configured for use.</p>
+            <p className="eyebrow text-muted">{isAdminSession ? "Providers ready" : "Quick help"}</p>
+            <p className="mt-2 text-base font-semibold text-foreground">{isAdminSession ? configuredProviderCount : isQuickHelpEnabled ? "Enabled" : "Muted"}</p>
+            <p className="mt-1 text-xs leading-5 text-muted">{isAdminSession ? "Hosted gateway providers currently configured for use." : "Contextual help cards follow this device-local preference."}</p>
           </div>
           <div className="theme-surface-soft rounded-[24px] px-4 py-4">
             <p className="eyebrow text-muted">Access posture</p>
-            <p className="mt-2 text-base font-semibold text-foreground">{session.user?.role === "admin" ? "Administrative" : session.user ? "Signed-in" : "Entry required"}</p>
-            <p className="mt-1 text-xs leading-5 text-muted">Backup restore and role changes stay gated to admin sessions.</p>
+            <p className="mt-2 text-base font-semibold text-foreground">{session.user?.role === "admin" ? "Administrative" : session.user ? "Self-service" : "Entry required"}</p>
+            <p className="mt-1 text-xs leading-5 text-muted">{isAdminSession ? "Backup restore and role changes stay gated to admin sessions." : "Only your own account settings appear here outside admin sessions."}</p>
           </div>
         </div>
       ) : null}
 
       {session.user ? (
-        <div className={`mt-6 rounded-[28px] ${isPageSurface ? "theme-surface-elevated px-5 py-5" : "theme-surface-soft p-5"}`}>
-          <p className="text-lg font-semibold text-foreground">{session.user.displayName}</p>
-          <p className="mt-1 text-sm text-muted">@{session.user.username}</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <p className="ui-pill ui-pill-success inline-flex text-xs">
-              {session.user.role}
+        <div className={`mt-6 grid gap-6 ${isPageSurface ? "lg:grid-cols-[minmax(0,0.88fr)_minmax(0,1.12fr)]" : ""}`}>
+          <div className={`rounded-[28px] ${isPageSurface ? "theme-surface-elevated px-5 py-5" : "theme-surface-soft p-5"}`}>
+            <p className="text-lg font-semibold text-foreground">{session.user.displayName}</p>
+            <p className="mt-1 text-sm text-muted">@{session.user.username}</p>
+            {session.user.email ? (
+              <p className="mt-1 text-sm text-muted">{session.user.email}</p>
+            ) : null}
+            <div className="mt-3 flex flex-wrap gap-2">
+              <p className="ui-pill ui-pill-success inline-flex text-xs">
+                {session.user.role}
+              </p>
+              <p className="ui-pill ui-pill-soft inline-flex border border-line text-xs text-muted">
+                {session.user.authProvider === "google" ? "Google account" : "Local account"}
+              </p>
+            </div>
+            <p className="mt-4 text-sm leading-6 text-muted">
+              {isAdminSession
+                ? "Conversations remain scoped to the signed-in user while this session also unlocks role management, provider configuration, workspace recovery, and model operations."
+                : "Conversations remain scoped to your signed-in account. This view keeps only your own profile, preference, and password controls visible."}
             </p>
-            <p className="ui-pill ui-pill-soft inline-flex border border-line text-xs text-muted">
-              {session.user.authProvider === "google" ? "Google account" : "Local account"}
-            </p>
+            <button
+              className="ui-button ui-button-secondary mt-5 w-full px-4 py-2 text-sm sm:w-auto"
+              data-help-id="access.logout"
+              type="button"
+              onClick={logout}
+            >
+              Sign out
+            </button>
           </div>
-          <p className="mt-4 text-sm leading-6 text-muted">
-            Conversations are scoped to the signed-in user. Admin role unlocks
-            privileged model controls without the fallback env password flow.
-          </p>
-          <button
-            className="ui-button ui-button-secondary mt-5 w-full px-4 py-2 text-sm sm:w-auto"
-            data-help-id="access.logout"
-            type="button"
-            onClick={logout}
-          >
-            Sign out
-          </button>
+
+          <div className={`rounded-[28px] border border-line/80 ${isPageSurface ? "theme-surface-panel p-6" : "theme-surface-soft p-5"}`}>
+            <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="eyebrow text-muted">Account settings</p>
+                <p className="mt-2 text-sm text-muted">
+                  Change your display name, manage your email, and move quick-help preferences out of the floating deck.
+                </p>
+              </div>
+              <span className="ui-pill ui-pill-surface text-xs">
+                {session.user.authProvider === "google" ? "Google sign-in" : "Local sign-in"}
+              </span>
+            </div>
+
+            <div className="mt-4 grid gap-4 xl:grid-cols-2">
+              <div className="rounded-[24px] bg-white px-4 py-4">
+                <p className="text-sm font-semibold text-foreground">Profile</p>
+                <div className="mt-4 space-y-3">
+                  <label className="block text-xs font-semibold uppercase tracking-[0.16em] text-muted/75">
+                    Display name
+                    <input
+                      className="mt-2 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm font-normal text-foreground outline-none"
+                      autoComplete="name"
+                      value={accountDisplayName}
+                      onChange={(event) => setAccountDisplayName(event.target.value)}
+                    />
+                  </label>
+                  <label className="block text-xs font-semibold uppercase tracking-[0.16em] text-muted/75">
+                    Email
+                    <input
+                      className="mt-2 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm font-normal text-foreground outline-none disabled:cursor-not-allowed disabled:bg-neutral-100"
+                      autoComplete="email"
+                      disabled={session.user.authProvider === "google"}
+                      placeholder={session.user.authProvider === "google" ? "Managed by Google sign-in" : "name@example.com"}
+                      type="email"
+                      value={accountEmail}
+                      onChange={(event) => setAccountEmail(event.target.value)}
+                    />
+                  </label>
+                </div>
+                <p className="mt-3 text-xs leading-6 text-muted">
+                  {session.user.authProvider === "google"
+                    ? "Google-managed accounts keep their provider email. You can still change the display name shown in the workspace."
+                    : "Local accounts can keep email blank or store one address for account recovery and identification."}
+                </p>
+                <button
+                  className="ui-button ui-button-primary mt-4 w-full px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                  disabled={isSavingAccountProfile}
+                  type="button"
+                  onClick={() => {
+                    void saveAccountProfile();
+                  }}
+                >
+                  {isSavingAccountProfile ? "Saving..." : "Save profile"}
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="rounded-[24px] bg-white px-4 py-4">
+                  <label
+                    className="theme-surface-soft flex items-start gap-3 rounded-[18px] px-3 py-3 text-sm text-foreground"
+                    data-help-id="command.quick-help-toggle"
+                  >
+                    <input
+                      checked={isQuickHelpEnabled}
+                      className="mt-1 h-4 w-4 accent-[var(--accent)]"
+                      type="checkbox"
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        setIsQuickHelpEnabled(enabled);
+                        writeQuickHelpEnabled(enabled);
+                      }}
+                    />
+                    <span>
+                      <span className="block font-semibold text-foreground">Quick help popovers</span>
+                      <span className="mt-1 block text-xs leading-6 text-muted">
+                        {quickHelpHint?.summary ?? "Show contextual help cards on hover-capable desktops and long-press on mobile."}
+                      </span>
+                    </span>
+                  </label>
+                </div>
+
+                <div className="rounded-[24px] bg-white px-4 py-4">
+                  <p className="text-sm font-semibold text-foreground">Password</p>
+                  {session.user.authProvider === "local" ? (
+                    <>
+                      <div className="mt-4 space-y-3">
+                        <input
+                          className="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
+                          autoComplete="current-password"
+                          placeholder="Current password"
+                          type="password"
+                          value={currentPasswordDraft}
+                          onChange={(event) => setCurrentPasswordDraft(event.target.value)}
+                        />
+                        <input
+                          className="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
+                          autoComplete="new-password"
+                          placeholder="New password"
+                          type="password"
+                          value={nextPasswordDraft}
+                          onChange={(event) => setNextPasswordDraft(event.target.value)}
+                        />
+                      </div>
+                      <p className="mt-3 text-xs leading-6 text-muted">
+                        Local password resets require your current password and a new password with at least 8 characters.
+                      </p>
+                      <button
+                        className="ui-button ui-button-secondary mt-4 w-full px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                        disabled={isSavingPassword}
+                        type="button"
+                        onClick={() => {
+                          void resetPassword();
+                        }}
+                      >
+                        {isSavingPassword ? "Updating..." : "Reset password"}
+                      </button>
+                    </>
+                  ) : (
+                    <p className="mt-3 text-sm leading-6 text-muted">
+                      Google-managed accounts do not use a local password here. Use your Google account security settings if you need to rotate credentials.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {accountSummary ? (
+              <div
+                className={`mt-4 rounded-2xl px-4 py-3 text-sm ${
+                  accountSummaryTone === "warning"
+                    ? "bg-amber-50 text-amber-900"
+                    : "bg-emerald-50 text-emerald-900"
+                }`}
+              >
+                {accountSummary}
+              </div>
+            ) : null}
+          </div>
         </div>
       ) : (
         <form className={`${compact ? "space-y-4" : "mt-5 space-y-4 sm:mt-6"}`} onSubmit={submit}>

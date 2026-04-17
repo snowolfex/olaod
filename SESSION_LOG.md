@@ -1,5 +1,10 @@
 # Session Log
 
+## 2026-04-17
+- Added signed-in self-service account management to the Access page so regular users can update display name, manage a local email address, toggle quick-help popovers, and rotate local passwords without seeing admin-only controls.
+- Added authenticated self-service profile and password API routes plus user-store helpers, expanded session user payloads to include email, and kept Google-managed accounts read-only for provider-owned email and password behavior.
+- Reframed the standalone Admin destination for limited users so it reads as account access rather than an operations console, removed the floating command-deck quick-help toggle, and revalidated the changes with clean `cmd /c npm run lint` and `cmd /c npm run build`.
+
 ## 2026-04-16
 - Checked the active local development ports and confirmed nothing stale was still bound on 3000, 3101, 4010, or 11434 before restart.
 - Confirmed broker auth is not configured in the current environment, so no broker process was started for today’s local development session.

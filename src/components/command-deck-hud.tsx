@@ -3,8 +3,6 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
-import { getHelpHint } from "@/lib/help-manual";
-import { readQuickHelpEnabled, writeQuickHelpEnabled } from "@/lib/help-preferences";
 import { APP_THEMES, APP_THEME_STORAGE_KEY, isAppThemeId } from "@/lib/theme";
 import type { AppThemeId } from "@/lib/theme";
 import type { SessionUser } from "@/lib/user-types";
@@ -129,10 +127,8 @@ export function CommandDeckHud({
   const [iconPosition, setIconPosition] = useState<IconPosition>({ x: ICON_MARGIN, y: ICON_MARGIN });
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [theme, setTheme] = useState<AppThemeId>("light");
-  const [isQuickHelpEnabled, setIsQuickHelpEnabled] = useState(true);
   const dragOffsetRef = useRef<IconPosition>({ x: 0, y: 0 });
   const movedDuringDragRef = useRef(false);
-  const quickHelpHint = getHelpHint("command.quick-help-toggle");
   const activePageMeta = desktopWorkspacePages.find((page) => page.id === activeWorkspacePage) ?? desktopWorkspacePages[0];
 
   const applyTheme = (nextTheme: AppThemeId) => {
@@ -173,8 +169,6 @@ export function CommandDeckHud({
     } else if (isAppThemeId(document.documentElement.dataset.theme)) {
       applyTheme(document.documentElement.dataset.theme);
     }
-
-    setIsQuickHelpEnabled(readQuickHelpEnabled());
 
     setIsReady(true);
   }, []);
@@ -338,12 +332,12 @@ export function CommandDeckHud({
                 <div className="mt-3 grid gap-2 xl:grid-cols-3">
                   {desktopWorkspacePages.map((page) => {
                     const isActive = activeWorkspacePage === page.id;
-                    const isPending = isNavigatingWorkspacePage && isActive;
 
                     return (
                       <button
                         key={page.id}
-                        className={`group min-h-[7.25rem] rounded-[22px] border px-4 py-4 text-left transition ${isActive ? "theme-accent-gradient border-transparent text-white shadow-[0_18px_42px_color-mix(in_srgb,var(--accent)_24%,transparent)]" : "theme-surface-strong text-foreground hover:border-[color:color-mix(in_srgb,var(--accent)_35%,transparent)]"}`}
+                        aria-current={isActive ? "page" : undefined}
+                        className={`group flex min-h-[4.25rem] items-center justify-center gap-3 rounded-[22px] border px-4 py-4 text-left transition ${isActive ? "theme-accent-gradient border-transparent text-white shadow-[0_18px_42px_color-mix(in_srgb,var(--accent)_24%,transparent)]" : "theme-surface-strong text-foreground hover:border-[color:color-mix(in_srgb,var(--accent)_35%,transparent)]"}`}
                         data-help-id={page.id === "chat" ? "nav.chat" : page.id === "admin" ? "nav.admin" : "nav.help"}
                         disabled={isNavigatingWorkspacePage}
                         type="button"
@@ -351,17 +345,10 @@ export function CommandDeckHud({
                           void onNavigateWorkspacePage(page.id);
                         }}
                       >
-                        <div className="flex items-start justify-between gap-3">
-                          <span className={`flex h-10 w-10 items-center justify-center rounded-full ${isActive ? "bg-white/18 text-white" : "theme-accent-soft"}`}>
-                            <WorkspacePageIcon page={page.id} />
-                          </span>
-                          <span className={`ui-pill ${isActive ? "border border-white/20 bg-white/12 text-white" : "ui-pill-surface"}`}>
-                            {isPending ? "Opening..." : isNavigatingWorkspacePage ? "Waiting..." : isActive ? "Open now" : "Open"}
-                          </span>
-                        </div>
-                        <p className="mt-4 text-base font-semibold">{page.label}</p>
-                        <p className={`mt-1 text-xs ${isActive ? "text-white/80" : "text-muted"}`}>{page.hint}</p>
-                        <p className={`mt-3 text-xs leading-5 ${isActive ? "text-white/78" : "text-muted"}`}>{page.detail}</p>
+                        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${isActive ? "bg-white/18 text-white" : "theme-accent-soft"}`}>
+                          <WorkspacePageIcon page={page.id} />
+                        </span>
+                        <span className="text-base font-semibold leading-none">{page.label}</span>
                       </button>
                     );
                   })}
@@ -373,29 +360,8 @@ export function CommandDeckHud({
               <div>
                 <p className="eyebrow text-muted">Theme</p>
                 <p className="mt-1 text-xs leading-6 text-muted">
-                  Theme selection is device-local so more themes can be added later without changing account data.
+                  Theme selection is device-local so more themes can be added later without changing account data. Quick-help controls now live in the Access page with the rest of account preferences.
                 </p>
-                <label
-                  className="theme-surface-soft mt-3 flex items-start gap-3 rounded-[18px] px-3 py-3 text-sm text-foreground"
-                  data-help-id="command.quick-help-toggle"
-                >
-                  <input
-                    checked={isQuickHelpEnabled}
-                    className="mt-1 h-4 w-4 accent-[var(--accent)]"
-                    type="checkbox"
-                    onChange={(event) => {
-                      const enabled = event.target.checked;
-                      setIsQuickHelpEnabled(enabled);
-                      writeQuickHelpEnabled(enabled);
-                    }}
-                  />
-                  <span>
-                    <span className="block font-semibold text-foreground">Quick help popovers</span>
-                    <span className="mt-1 block text-xs leading-6 text-muted">
-                      {quickHelpHint?.summary ?? "Show contextual help cards on hover-capable desktops and long-press on mobile. The first quick-help card in each session stays open until you dismiss it or turn quick help off; after that, desktop cards remain briefly visible and can be muted per control, while mobile long-press help remains available whenever quick help is enabled."}
-                    </span>
-                  </span>
-                </label>
               </div>
               <label className="min-w-[8rem]" data-help-id="command.theme-select">
                 <span className="sr-only">Choose site theme</span>

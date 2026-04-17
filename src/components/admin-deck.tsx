@@ -25,9 +25,9 @@ const adminTabs: Array<{
 }> = [
   {
     id: "access",
-    label: "Users",
-    hint: "Accounts and backup",
-    detail: "Manage sign-in state, local accounts, roles, and workspace backup safety from one place.",
+    label: "Access",
+    hint: "Accounts and preferences",
+    detail: "Manage sign-in state, self-service account settings, local users, and workspace backup safety from one place.",
     eyebrow: "Identity",
   },
   {
@@ -120,7 +120,8 @@ export function AdminDeck({
   status,
   userSession,
 }: AdminDeckProps) {
-  const availableTabs = userSession.user?.role === "admin"
+  const isAdminSession = userSession.user?.role === "admin";
+  const availableTabs = isAdminSession
     ? adminTabs
     : adminTabs.filter((tab) => tab.id === "access");
   const activeTabMeta = availableTabs.find((tab) => tab.id === activeTab) ?? availableTabs[0];
@@ -136,10 +137,12 @@ export function AdminDeck({
             <div className="max-w-3xl">
               <p className="section-label text-xs font-semibold">Admin page</p>
               <h2 className="mt-3 text-2xl font-semibold tracking-[-0.04em] text-foreground sm:text-3xl">
-                Operations and access control
+                {isAdminSession ? "Operations and access control" : "Account and access"}
               </h2>
               <p className="mt-3 text-sm leading-6 text-muted sm:text-base">
-                The command deck now opens admin as a full desktop destination so user access, model operations, jobs, and activity can breathe outside the chat stage.
+                {isAdminSession
+                  ? "The command deck now opens admin as a full desktop destination so user access, model operations, jobs, and activity can breathe outside the chat stage."
+                  : "This destination keeps your account, sign-in controls, and workspace preferences separate from the chat stage without exposing admin-only tooling."}
               </p>
             </div>
 
@@ -171,7 +174,7 @@ export function AdminDeck({
             </div>
             <div className="theme-surface-soft rounded-[22px] px-4 py-4">
               <p className="eyebrow text-muted">Access scope</p>
-              <p className="mt-2 text-base font-semibold text-foreground">{userSession.user?.role === "admin" ? "Full deck" : "Limited deck"}</p>
+              <p className="mt-2 text-base font-semibold text-foreground">{isAdminSession ? "Full deck" : "Limited deck"}</p>
               <p className="mt-1 text-xs leading-5 text-muted">{userSession.userCount} workspace user{userSession.userCount === 1 ? "" : "s"} with {availableTabs.length} visible admin section{availableTabs.length === 1 ? "" : "s"}.</p>
             </div>
           </div>
@@ -194,12 +197,12 @@ export function AdminDeck({
 
               <div className="grid min-w-[15rem] gap-2 sm:grid-cols-2">
                 <div className="theme-surface-soft rounded-[20px] px-3 py-3">
-                  <p className="eyebrow text-muted">Models ready</p>
-                  <p className="mt-1 text-sm font-semibold text-foreground">{status.modelCount}</p>
+                  <p className="eyebrow text-muted">{isAdminSession ? "Models ready" : "Signed-in role"}</p>
+                  <p className="mt-1 text-sm font-semibold text-foreground">{isAdminSession ? status.modelCount : userSession.user?.role ?? "viewer"}</p>
                 </div>
                 <div className="theme-surface-soft rounded-[20px] px-3 py-3">
-                  <p className="eyebrow text-muted">Runtime live</p>
-                  <p className="mt-1 text-sm font-semibold text-foreground">{runningModelsCount}</p>
+                  <p className="eyebrow text-muted">{isAdminSession ? "Runtime live" : "Gateway status"}</p>
+                  <p className="mt-1 text-sm font-semibold text-foreground">{isAdminSession ? runningModelsCount : isGatewayHealthy ? "Online" : "Offline"}</p>
                 </div>
               </div>
             </div>

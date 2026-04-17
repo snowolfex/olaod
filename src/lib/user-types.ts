@@ -24,7 +24,7 @@ export type ManagedUser = PublicUser & {
   savedConversationCount: number;
 };
 
-export type SessionUser = Pick<PublicUser, "id" | "username" | "displayName" | "role" | "authProvider">;
+export type SessionUser = Pick<PublicUser, "id" | "username" | "displayName" | "role" | "authProvider" | "email">;
 
 export type UserSessionStatus = {
   authAvailable: boolean;

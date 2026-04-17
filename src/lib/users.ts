@@ -92,6 +92,7 @@ export function toSessionUser(user: StoredUser): SessionUser {
     displayName: user.displayName,
     role: user.role,
     authProvider: user.authProvider,
+    email: user.email,
   };
 }
 
@@ -132,6 +133,110 @@ export async function updateUserRole(id: string, role: StoredUser["role"]) {
   users[index] = {
     ...users[index],
     role,
+  };
+
+  await writeStore(users);
+  return users[index];
+}
+
+function normalizeEmailAddress(email: string) {
+  return email.trim().toLowerCase();
+}
+
+function validateOptionalEmail(email: string) {
+  if (!email.trim()) {
+    return undefined;
+  }
+
+  const normalized = normalizeEmailAddress(email);
+
+  if (!normalized.includes("@") || normalized.startsWith("@") || normalized.endsWith("@")) {
+    throw new Error("Enter a valid email address.");
+  }
+
+  return normalized;
+}
+
+export async function updateUserProfile(input: {
+  displayName: string;
+  email?: string;
+  id: string;
+}) {
+  const users = await readStore();
+  const index = users.findIndex((user) => user.id === input.id);
+
+  if (index === -1) {
+    return null;
+  }
+
+  const currentUser = users[index];
+  const nextDisplayName = normalizeDisplayName(input.displayName, currentUser.username);
+
+  if (!nextDisplayName.trim()) {
+    throw new Error("Display name is required.");
+  }
+
+  let nextEmail = currentUser.email;
+
+  if (currentUser.authProvider === "local") {
+    nextEmail = validateOptionalEmail(input.email ?? "");
+
+    const conflictingUser = users.find((user) => {
+      if (user.id === currentUser.id) {
+        return false;
+      }
+
+      return Boolean(nextEmail && (user.email === nextEmail || user.username === nextEmail));
+    });
+
+    if (conflictingUser) {
+      throw new Error("That email address is already attached to another account.");
+    }
+  }
+
+  users[index] = {
+    ...currentUser,
+    displayName: nextDisplayName,
+    email: currentUser.authProvider === "google" ? currentUser.email : nextEmail,
+  };
+
+  await writeStore(users);
+  return users[index];
+}
+
+export async function updateUserPassword(input: {
+  currentPassword: string;
+  id: string;
+  nextPassword: string;
+}) {
+  const users = await readStore();
+  const index = users.findIndex((user) => user.id === input.id);
+
+  if (index === -1) {
+    return null;
+  }
+
+  const currentUser = users[index];
+
+  if (currentUser.authProvider !== "local") {
+    throw new Error("Google-managed accounts do not use local password reset here.");
+  }
+
+  if (!verifyUserPassword(currentUser, input.currentPassword)) {
+    throw new Error("Your current password is incorrect.");
+  }
+
+  const nextPassword = input.nextPassword.trim();
+
+  if (nextPassword.length < 8) {
+    throw new Error("New password must be at least 8 characters long.");
+  }
+
+  const salt = randomBytes(16).toString("hex");
+  users[index] = {
+    ...currentUser,
+    passwordHash: hashPassword(nextPassword, salt),
+    passwordSalt: salt,
   };
 
   await writeStore(users);
