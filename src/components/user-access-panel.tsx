@@ -259,6 +259,7 @@ export function UserAccessPanel({ compact = false, onSessionChange, session, sur
   const hasLegacyGoogleRedirect = session.googleAuthMode === "redirect";
   const showGoogleAuthUi = GOOGLE_AUTH_UI_ENABLED;
   const quickHelpHint = getHelpHint("command.quick-help-toggle");
+  const quickHelpPreferenceSummary = "Show short contextual help cards on desktop hover and mobile long-press.";
 
   useEffect(() => {
     setAccountDisplayName(session.user?.displayName ?? "");
@@ -1341,7 +1342,9 @@ export function UserAccessPanel({ compact = false, onSessionChange, session, sur
                 ? isAdminSession
                   ? "Identity, providers, knowledge, and backup"
                   : "Account, preferences, and sign-in"
-                : "Users and backup"}
+                : isAdminSession
+                  ? "Users and backup"
+                  : "Account and sign-in"}
             </h2>
             {isPageSurface ? (
               <p className="mt-3 max-w-3xl text-sm leading-6 text-muted sm:text-base">
@@ -1413,7 +1416,7 @@ export function UserAccessPanel({ compact = false, onSessionChange, session, sur
               <div>
                 <p className="eyebrow text-muted">Account settings</p>
                 <p className="mt-2 text-sm text-muted">
-                  Change your display name, manage your email, and move quick-help preferences out of the floating deck.
+                  Manage your profile details, quick-help preference, and local password from one place.
                 </p>
               </div>
               <span className="ui-pill ui-pill-surface text-xs">
@@ -1450,7 +1453,7 @@ export function UserAccessPanel({ compact = false, onSessionChange, session, sur
                 <p className="mt-3 text-xs leading-6 text-muted">
                   {session.user.authProvider === "google"
                     ? "Google-managed accounts keep their provider email. You can still change the display name shown in the workspace."
-                    : "Local accounts can keep email blank or store one address for account recovery and identification."}
+                    : "Local accounts can leave email blank or store one address for identification and future recovery workflows."}
                 </p>
                 <button
                   className="ui-button ui-button-primary mt-4 w-full px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
@@ -1483,7 +1486,10 @@ export function UserAccessPanel({ compact = false, onSessionChange, session, sur
                     <span>
                       <span className="block font-semibold text-foreground">Quick help popovers</span>
                       <span className="mt-1 block text-xs leading-6 text-muted">
-                        {quickHelpHint?.summary ?? "Show contextual help cards on hover-capable desktops and long-press on mobile."}
+                        {quickHelpPreferenceSummary}
+                      </span>
+                      <span className="mt-1 block text-[11px] leading-5 text-muted/85">
+                        {quickHelpHint?.summary ?? "The first card in a session stays open until dismissed or turned off."}
                       </span>
                     </span>
                   </label>
@@ -1522,7 +1528,7 @@ export function UserAccessPanel({ compact = false, onSessionChange, session, sur
                           void resetPassword();
                         }}
                       >
-                        {isSavingPassword ? "Updating..." : "Reset password"}
+                        {isSavingPassword ? "Updating..." : "Update password"}
                       </button>
                     </>
                   ) : (

@@ -53,8 +53,11 @@ export function InteractionSurface({
   const [helpContext, setHelpContext] = useState<HelpContext>("chat");
   const [requestedHelpSectionId, setRequestedHelpSectionId] = useState<string | null>(null);
   const [requestedHelpSectionNonce, setRequestedHelpSectionNonce] = useState(0);
-  const canAccessAdmin = userSession.user?.role === "admin";
-  const visibleMobileDeckTabs = canAccessAdmin
+  const canOpenAdmin = Boolean(userSession.user);
+  const canAccessAdminSubsections = userSession.user?.role === "admin";
+  const adminAvailability = !canOpenAdmin ? "none" : canAccessAdminSubsections ? "full" : "access";
+  const adminHelpContext = canAccessAdminSubsections ? activeAdminTab : "access";
+  const visibleMobileDeckTabs = canOpenAdmin
     ? mobileDeckTabs
     : mobileDeckTabs.filter((tab) => tab.id !== "admin");
 
@@ -132,34 +135,34 @@ export function InteractionSurface({
       return;
     }
 
-    if (activeMobileTab === "admin" && canAccessAdmin) {
-      setHelpContext(activeAdminTab);
+    if (activeMobileTab === "admin" && canOpenAdmin) {
+      setHelpContext(adminHelpContext);
       return;
     }
 
     setHelpContext("chat");
-  }, [activeAdminTab, activeMobileTab, canAccessAdmin]);
+  }, [activeMobileTab, adminHelpContext, canOpenAdmin]);
 
   useEffect(() => {
     if (activeDesktopPage === "admin") {
-      setHelpContext(canAccessAdmin ? activeAdminTab : "access");
+      setHelpContext(adminHelpContext);
       return;
     }
 
     setHelpContext("chat");
-  }, [activeAdminTab, activeDesktopPage, canAccessAdmin]);
+  }, [activeDesktopPage, adminHelpContext]);
 
   useEffect(() => {
-    if (!canAccessAdmin) {
+    if (adminAvailability === "none") {
       if (activeMobileTab === "admin") {
         setActiveMobileTab("chat");
       }
-
-      if (activeAdminTab !== "access") {
-        setActiveAdminTab("access");
-      }
     }
-  }, [activeAdminTab, activeMobileTab, canAccessAdmin]);
+
+    if (adminAvailability !== "full" && activeAdminTab !== "access") {
+      setActiveAdminTab("access");
+    }
+  }, [activeAdminTab, activeMobileTab, adminAvailability]);
 
   const openHelpSection = useEffectEvent((sectionId: string) => {
     const section = getHelpSection(sectionId);
@@ -173,7 +176,7 @@ export function InteractionSurface({
     if (section) {
       setHelpContext(section.context);
 
-      if (section.context !== "chat" && canAccessAdmin) {
+      if (section.context !== "chat" && canAccessAdminSubsections) {
         setActiveAdminTab(section.context);
       }
     }
@@ -253,7 +256,7 @@ export function InteractionSurface({
               isReachable={status.isReachable}
               models={status.models}
             />
-          ) : activeMobileTab === "admin" && canAccessAdmin ? (
+          ) : activeMobileTab === "admin" && canOpenAdmin ? (
             adminPanel
           ) : (
             helpPanel

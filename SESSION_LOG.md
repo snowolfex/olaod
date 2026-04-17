@@ -4,6 +4,8 @@
 - Added signed-in self-service account management to the Access page so regular users can update display name, manage a local email address, toggle quick-help popovers, and rotate local passwords without seeing admin-only controls.
 - Added authenticated self-service profile and password API routes plus user-store helpers, expanded session user payloads to include email, and kept Google-managed accounts read-only for provider-owned email and password behavior.
 - Reframed the standalone Admin destination for limited users so it reads as account access rather than an operations console, removed the floating command-deck quick-help toggle, and revalidated the changes with clean `cmd /c npm run lint` and `cmd /c npm run build`.
+- Ran live browser verification on the new Access experience, tightened the account-card copy, and fixed a missed shell gate so signed-in non-admin users now actually see the Admin destination and land on the limited Access-only view.
+- Verified local self-service profile updates live, confirmed the regular-user Admin surface shows only Access controls, cleaned up the temporary QA test account from local app data, and confirmed Google sign-in is unavailable in the current environment because `/api/users/session` reports `googleAuthEnabled: false` and `googleAuthMode: "none"`.
 
 ## 2026-04-16
 - Checked the active local development ports and confirmed nothing stale was still bound on 3000, 3101, 4010, or 11434 before restart.
