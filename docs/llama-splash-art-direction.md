@@ -2,6 +2,8 @@
 
 This document defines the approved candidate pool for the limited splash-page llama system.
 
+For a faster sign-off workflow, use `docs/llama-splash-review-board.md` alongside this file.
+
 Goal:
 - Keep a shared llama identity across themes.
 - Offer three visual variants per theme.
