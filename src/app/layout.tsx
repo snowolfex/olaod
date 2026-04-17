@@ -32,10 +32,10 @@ export default function RootLayout({
     <html
       lang="en"
       data-theme="light"
-      className={`${sora.variable} ${ibmPlexMono.variable} h-full antialiased`}
+      className={`${sora.variable} ${ibmPlexMono.variable} h-full antialiased lg:h-auto`}
       suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col">
+      <body className="min-h-full flex flex-col lg:block lg:min-h-screen">
         <Script id="theme-init" strategy="beforeInteractive">
           {`(() => {
             try {

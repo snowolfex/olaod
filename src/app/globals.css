@@ -58,6 +58,15 @@ html {
   scroll-behavior: smooth;
 }
 
+@media (min-width: 1024px) {
+  html,
+  body {
+    height: auto;
+    min-height: 100%;
+    overflow-y: auto;
+  }
+}
+
 body {
   background:
     radial-gradient(circle at top left, rgba(173, 101, 76, 0.12), transparent 34%),

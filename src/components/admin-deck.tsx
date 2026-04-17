@@ -130,7 +130,7 @@ export function AdminDeck({
   const isGatewayHealthy = status.isReachable;
 
   return (
-    <section className={isPageSurface ? "glass-panel flex h-full min-h-0 flex-col overflow-hidden rounded-[32px] p-4 sm:rounded-[36px] sm:p-6" : "flex min-h-0 flex-col gap-3"}>
+    <section className={isPageSurface ? "glass-panel flex flex-col rounded-[32px] p-4 sm:rounded-[36px] sm:p-6" : "flex min-h-0 flex-col gap-3"}>
       {isPageSurface ? (
         <div className="theme-surface-elevated rounded-[28px] px-5 py-5">
           <div className="flex flex-wrap items-start justify-between gap-4">
@@ -244,7 +244,7 @@ export function AdminDeck({
         </div>
       </div>
 
-      <div className={`${isPageSurface ? "mt-4" : ""} min-h-0 flex-1 overflow-y-auto pr-1`}>
+      <div className={isPageSurface ? "mt-4 pr-1" : "min-h-0 flex-1 overflow-y-auto pr-1"}>
         {activeTab === "access" ? (
           <UserAccessPanel onSessionChange={onSessionChange} session={userSession} surface={isPageSurface ? "page" : "embedded"} />
         ) : (

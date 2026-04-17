@@ -51,7 +51,7 @@ export default async function Home() {
   ]);
 
   return (
-    <main className="relative h-[100dvh] overflow-hidden px-3 py-3 sm:px-4 sm:py-4">
+    <main className="relative min-h-[100dvh] overflow-y-auto px-3 py-3 sm:px-4 sm:py-4">
       <div className="app-page-atmosphere absolute inset-0 -z-10" />
 
       <WorkspaceShell

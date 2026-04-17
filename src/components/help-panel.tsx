@@ -193,7 +193,7 @@ export function HelpPanel({
   };
 
   return (
-    <section className="glass-panel flex h-full min-h-0 flex-col overflow-hidden rounded-[32px] p-4 sm:rounded-[36px] sm:p-6">
+    <section className={`glass-panel flex flex-col rounded-[32px] p-4 sm:rounded-[36px] sm:p-6 ${isPageSurface ? "" : "h-full min-h-0 overflow-hidden"}`}>
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="section-label text-xs font-semibold">{isPageSurface ? "Help page" : "Help lane"}</p>
@@ -303,7 +303,7 @@ export function HelpPanel({
         </div>
       </div>
 
-      <div className="mt-5 min-h-0 flex-1 overflow-y-auto pr-1">
+      <div className={isPageSurface ? "mt-5 pr-1" : "mt-5 min-h-0 flex-1 overflow-y-auto pr-1"}>
         <div className={isPageSurface ? "grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]" : "space-y-3"}>
           {isPageSurface ? (
             <div className="space-y-3 xl:sticky xl:top-3 xl:self-start">

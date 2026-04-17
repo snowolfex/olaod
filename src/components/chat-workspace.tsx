@@ -2738,7 +2738,7 @@ export function ChatWorkspace({
   );
 
   return (
-    <section className="glass-panel flex h-full min-h-0 flex-col overflow-hidden rounded-[36px] p-3 sm:p-5 lg:p-6">
+    <section className="glass-panel flex min-h-0 flex-col overflow-hidden rounded-[36px] p-3 sm:p-5 lg:h-auto lg:overflow-visible lg:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="section-label text-xs font-semibold">Live chat</p>
@@ -2803,7 +2803,7 @@ export function ChatWorkspace({
         </div>
       </div>
 
-      <div className="mt-4 flex min-h-0 flex-1 flex-col gap-3 lg:items-center">
+      <div className="mt-4 flex min-h-0 flex-1 flex-col gap-3 lg:flex-none lg:items-center">
         <div className={`${showWorkspaceSidebar ? "block" : "hidden"} order-1 lg:block lg:w-full lg:max-w-[92rem] xl:max-w-[96rem] lg:flex-none ${controlsFirst ? "lg:order-1" : "lg:order-2"}`}>
           <div className="grid gap-3 lg:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)] lg:items-start">
             {savedChatsPanel}
@@ -2811,7 +2811,7 @@ export function ChatWorkspace({
           </div>
         </div>
 
-        <div className={`order-2 min-h-0 flex-1 lg:w-full lg:max-w-[98rem] xl:max-w-[104rem] ${controlsFirst ? "lg:order-2" : "lg:order-1"}`}>
+        <div className={`order-2 min-h-0 flex-1 lg:w-full lg:max-w-[98rem] lg:flex-none xl:max-w-[104rem] ${controlsFirst ? "lg:order-2" : "lg:order-1"}`}>
           {chatStage}
         </div>
       </div>

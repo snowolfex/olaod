@@ -208,7 +208,7 @@ export function InteractionSurface({
   );
 
   const desktopWorkspacePage = activeDesktopPage === "chat" ? (
-    <div className="h-full overflow-y-auto pr-1">
+    <div className="h-full overflow-y-auto pr-1 lg:h-auto lg:overflow-visible">
       <ChatWorkspace
         currentUser={userSession.user}
         initialConversation={initialConversation}
@@ -220,7 +220,7 @@ export function InteractionSurface({
   ) : activeDesktopPage === "admin" ? adminPanel : helpPanel;
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
+    <section className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden lg:min-h-full lg:flex-none lg:overflow-visible">
       <div className={`theme-surface-strong sticky top-3 z-20 grid gap-2 rounded-[24px] p-1.5 backdrop-blur lg:hidden ${visibleMobileDeckTabs.length === 2 ? "grid-cols-2" : "grid-cols-3"}`}>
         {visibleMobileDeckTabs.map((tab) => {
           const isActive = activeMobileTab === tab.id;
@@ -240,8 +240,8 @@ export function InteractionSurface({
         })}
       </div>
 
-      <div className="hidden min-h-0 flex-1 overflow-hidden lg:block">
-        <div key={activeDesktopPage} className="desktop-page-transition h-full min-h-0">
+      <div className="hidden min-h-0 flex-1 overflow-hidden lg:block lg:min-h-full lg:flex-none lg:overflow-visible">
+        <div key={activeDesktopPage} className="desktop-page-transition h-full min-h-0 lg:h-auto">
           {desktopWorkspacePage}
         </div>
       </div>

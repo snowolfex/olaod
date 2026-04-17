@@ -81,7 +81,7 @@ export function WorkspaceShell({
         userCount={initialUserSession.userCount}
       />
 
-      <div className="mx-auto flex h-full w-full max-w-[1800px] flex-col">
+      <div className="mx-auto flex min-h-full w-full max-w-[1800px] flex-col">
         <InteractionSurface
           activeDesktopPage={activeWorkspacePage}
           initialConversation={initialConversation}
