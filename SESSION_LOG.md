@@ -14,6 +14,8 @@
 - Reworked the Help page into a fuller AI reference with technical terminology first, plain-language translations and comparisons second, an expanded glossary, and a bottom references container linking to free official docs plus practical outside learning resources such as Edward Donner and Simon Willison; also trimmed remaining scaffolding-style copy in the Help, Admin, and command-deck surfaces.
 - Added a standalone llama splash art-direction document with nine candidates organized as three per theme, plus approval criteria and a future random-per-theme splash selection plan so mascot visuals can be approved before any implementation work starts.
 - Added a companion llama splash review board with per-candidate approve/revise/reject slots so the nine mascot variants can be signed off quickly by theme before any art or motion implementation begins.
+- Added a browser-viewable llama reference board that pulls together official Ollama imagery, broader mascot-search lanes, and extracted design constraints so future mascot passes can start from real visual anchors instead of rough invention.
+- Added a refined second-pass llama concept board built around one stronger Ollama-adjacent base mascot with plain, tech, and dark variants branched from the same silhouette family instead of nine disconnected rough sketches.
 
 ## 2026-04-16
 - Checked the active local development ports and confirmed nothing stale was still bound on 3000, 3101, 4010, or 11434 before restart.

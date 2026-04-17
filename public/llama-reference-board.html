@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>oload Llama Reference Board</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #1d2630;
+        --muted: #627180;
+        --line: rgba(29, 38, 48, 0.12);
+        --panel: rgba(255, 255, 255, 0.82);
+        --soft-blue: #dff1ff;
+        --soft-sand: #f6ede3;
+        --soft-char: #20171d;
+        --shadow: 0 22px 60px rgba(27, 39, 51, 0.12);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: Georgia, "Trebuchet MS", sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, rgba(117, 197, 255, 0.22), transparent 30%),
+          radial-gradient(circle at top right, rgba(255, 195, 137, 0.22), transparent 34%),
+          linear-gradient(180deg, #f7f4ef 0%, #edf2f6 100%);
+      }
+
+      a {
+        color: inherit;
+      }
+
+      .wrap {
+        width: min(1200px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 28px 0 56px;
+      }
+
+      .hero,
+      .section {
+        border: 1px solid var(--line);
+        border-radius: 28px;
+        background: var(--panel);
+        backdrop-filter: blur(12px);
+        box-shadow: var(--shadow);
+      }
+
+      .hero {
+        padding: 28px;
+      }
+
+      .eyebrow {
+        margin: 0;
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        margin-top: 10px;
+        font-size: clamp(2rem, 4vw, 3.35rem);
+        line-height: 1.02;
+      }
+
+      .lede {
+        max-width: 760px;
+        margin-top: 14px;
+        line-height: 1.65;
+        color: var(--muted);
+      }
+
+      .hero-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 18px;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 14px;
+        border-radius: 999px;
+        text-decoration: none;
+        background: rgba(255, 255, 255, 0.74);
+        border: 1px solid rgba(29, 38, 48, 0.12);
+        font-size: 13px;
+      }
+
+      .section {
+        margin-top: 22px;
+        padding: 22px;
+      }
+
+      .section-head {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        justify-content: space-between;
+        align-items: end;
+      }
+
+      .section-head p {
+        margin-top: 8px;
+        max-width: 720px;
+        line-height: 1.6;
+        color: var(--muted);
+      }
+
+      .grid {
+        display: grid;
+        gap: 18px;
+        margin-top: 18px;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      }
+
+      .card {
+        overflow: hidden;
+        border-radius: 24px;
+        border: 1px solid rgba(29, 38, 48, 0.12);
+        background: rgba(255, 255, 255, 0.7);
+      }
+
+      .image-frame {
+        display: grid;
+        place-items: center;
+        min-height: 220px;
+        padding: 14px;
+      }
+
+      .image-frame img {
+        width: 100%;
+        height: auto;
+        max-height: 310px;
+        object-fit: contain;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.72);
+      }
+
+      .official-a { background: linear-gradient(180deg, #f0f7fc 0%, #dcecf7 100%); }
+      .official-b { background: linear-gradient(180deg, #f8f2ea 0%, #f0e3d3 100%); }
+      .official-c { background: linear-gradient(180deg, #21181e 0%, #120d10 100%); }
+
+      .body {
+        padding: 18px;
+      }
+
+      .tag {
+        display: inline-flex;
+        padding: 7px 10px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        background: rgba(29, 38, 48, 0.08);
+        color: var(--muted);
+      }
+
+      .body h3 {
+        margin-top: 12px;
+        font-size: 1.2rem;
+      }
+
+      .body p {
+        margin-top: 10px;
+        line-height: 1.6;
+        color: var(--muted);
+      }
+
+      .trait-list,
+      .link-list {
+        display: grid;
+        gap: 12px;
+        margin-top: 18px;
+      }
+
+      .trait,
+      .link-card {
+        border: 1px solid rgba(29, 38, 48, 0.1);
+        border-radius: 20px;
+        padding: 16px;
+        background: rgba(255, 255, 255, 0.72);
+      }
+
+      .trait strong,
+      .link-card strong {
+        display: block;
+        font-size: 14px;
+      }
+
+      .trait span,
+      .link-card span {
+        display: block;
+        margin-top: 6px;
+        color: var(--muted);
+        line-height: 1.55;
+        font-size: 14px;
+      }
+
+      .link-card a {
+        text-decoration: none;
+      }
+
+      .callout {
+        margin-top: 18px;
+        padding: 16px 18px;
+        border-radius: 22px;
+        border: 1px solid rgba(29, 38, 48, 0.12);
+        background: linear-gradient(180deg, rgba(225, 244, 255, 0.9) 0%, rgba(255, 250, 244, 0.9) 100%);
+      }
+
+      .callout p + p {
+        margin-top: 8px;
+      }
+
+      @media (max-width: 720px) {
+        .wrap {
+          width: min(100% - 20px, 1200px);
+        }
+
+        .hero,
+        .section {
+          padding: 18px;
+          border-radius: 22px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <section class="hero">
+        <p class="eyebrow">Reference Board</p>
+        <h1>Official Ollama Visuals Plus Better Mascot Direction</h1>
+        <p class="lede">
+          This board separates actual Ollama brand imagery from broader mascot inspiration. The point is to stop inventing blind and start from
+          real visual signals that already exist around Ollama.
+        </p>
+        <div class="hero-links">
+          <a class="pill" href="/llama-preview.html">Open rough concept preview</a>
+          <a class="pill" href="/llama-refined-concepts.html">Open refined concept family</a>
+          <a class="pill" href="https://docs.ollama.com/images/welcome.png" target="_blank" rel="noreferrer">Open official docs image</a>
+          <a class="pill" href="https://ollama.com/public/openclaw_ollama.png" target="_blank" rel="noreferrer">Open official integration art</a>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Official Ollama</p>
+            <h2>Use these as the hard boundary</h2>
+            <p>
+              These are the most relevant references because they show what Ollama already ships publicly: rounded cartoon forms, readable eyes,
+              simple flat shading, and a friendly non-corporate tone.
+            </p>
+          </div>
+        </div>
+        <div class="grid">
+          <article class="card">
+            <div class="image-frame official-a">
+              <img src="https://docs.ollama.com/images/welcome.png" alt="Official Ollama docs welcome image with cartoon llamas." />
+            </div>
+            <div class="body">
+              <span class="tag">official docs</span>
+              <h3>Documentation Hero</h3>
+              <p>
+                Strongest reference for character language. Multiple cartoon llamas, desk scene, soft rounded edges, expressive but restrained faces.
+              </p>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="image-frame official-b">
+              <img src="https://ollama.com/public/openclaw_ollama.png" alt="Official Ollama integration illustration for OpenClaw." />
+            </div>
+            <div class="body">
+              <span class="tag">official integration art</span>
+              <h3>OpenClaw Launch Artwork</h3>
+              <p>
+                Useful for product-marketing tone: simple shapes, high legibility, brand-safe playfulness, and room for app-specific spin.
+              </p>
+            </div>
+          </article>
+
+          <article class="card">
+            <div class="image-frame official-c">
+              <img src="https://github.com/ollama/ollama/assets/3325447/0d0b44e2-8f4a-4e99-9b52-a5c1c741c8f7" alt="Official Ollama logo asset." />
+            </div>
+            <div class="body">
+              <span class="tag">official logo</span>
+              <h3>Logo Shape Reference</h3>
+              <p>
+                Not a mascot sheet, but it matters for proportion and brand character. The final mascot should feel adjacent to this level of simplicity.
+              </p>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Extracted Traits</p>
+            <h2>What to borrow and what to avoid</h2>
+            <p>
+              This is the useful part. If the next concept pass follows these constraints, it will land much closer to Ollama instead of generic llama clip art.
+            </p>
+          </div>
+        </div>
+        <div class="trait-list">
+          <div class="trait">
+            <strong>Keep the silhouette blunt and readable.</strong>
+            <span>Big wool mass, simple neck and head shapes, minimal tiny accessory clutter, and forms that still read at favicon or splash-card size.</span>
+          </div>
+          <div class="trait">
+            <strong>Favor flat illustration over faux-3D mascot rendering.</strong>
+            <span>Official Ollama visuals read as clean editorial cartoon work, not gaming mascots, plastic stickers, or plush-toy realism.</span>
+          </div>
+          <div class="trait">
+            <strong>Eyes matter more than costume.</strong>
+            <span>The official material is friendly because the faces are simple and readable. A good llama here needs stronger eye and mouth decisions before theme decoration.</span>
+          </div>
+          <div class="trait">
+            <strong>Theme variants should come from attitude and palette first.</strong>
+            <span>Plain, tech, and dark should mostly be pose, accent color, and small props. Do not solve them with over-designed accessories.</span>
+          </div>
+          <div class="trait">
+            <strong>Avoid generic vector-stock problems.</strong>
+            <span>No hyper-cute eyelashes, no rainbow party clutter, no oversaturated sticker gradients, and no ultra-thin limbs that look like clip-art leftovers.</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Search Lanes</p>
+            <h2>Useful external inspiration</h2>
+            <p>
+              These are the broader search lanes worth mining. The direct Ollama searches get noisy quickly, but these still help for line quality, pose ideas, and tone.
+            </p>
+          </div>
+        </div>
+        <div class="link-list">
+          <div class="link-card">
+            <a href="https://www.bing.com/images/search?q=cute+llama+cartoon+vector" target="_blank" rel="noreferrer">
+              <strong>Cute llama cartoon vector</strong>
+              <span>Best generic search for soft, simplified llama drawing styles. Good for silhouette and face treatment, bad for brand specificity.</span>
+            </a>
+          </div>
+          <div class="link-card">
+            <a href="https://www.bing.com/images/search?q=cartoon+llama+mascot+illustration" target="_blank" rel="noreferrer">
+              <strong>Cartoon llama mascot illustration</strong>
+              <span>Better for character poses and “product mascot” energy. Useful when choosing how animated or theatrical the llama should feel.</span>
+            </a>
+          </div>
+          <div class="link-card">
+            <a href="https://www.bing.com/images/search?q=ollama+cartoon+llama" target="_blank" rel="noreferrer">
+              <strong>Ollama cartoon llama</strong>
+              <span>Worth checking for product-adjacent references, but expect mixed quality and repeated noise. Use it to confirm tone, not to pick final style.</span>
+            </a>
+          </div>
+        </div>
+
+        <div class="callout">
+          <p><strong>Recommended next pass:</strong> build one high-standard Ollama-adjacent llama first, then branch plain, tech, and dark variants from that same base drawing.</p>
+          <p><strong>Wrong next pass:</strong> invent three disconnected theme mascots again and hope one accidentally feels branded.</p>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
