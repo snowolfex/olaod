@@ -6,6 +6,7 @@
 - Reframed the standalone Admin destination for limited users so it reads as account access rather than an operations console, removed the floating command-deck quick-help toggle, and revalidated the changes with clean `cmd /c npm run lint` and `cmd /c npm run build`.
 - Ran live browser verification on the new Access experience, tightened the account-card copy, and fixed a missed shell gate so signed-in non-admin users now actually see the Admin destination and land on the limited Access-only view.
 - Verified local self-service profile updates live, confirmed the regular-user Admin surface shows only Access controls, cleaned up the temporary QA test account from local app data, and confirmed Google sign-in is unavailable in the current environment because `/api/users/session` reports `googleAuthEnabled: false` and `googleAuthMode: "none"`.
+- Fixed the desktop Admin page wrapper so it participates in the shell flex layout and the standalone Admin destination can scroll again instead of clipping its content area.
 
 ## 2026-04-16
 - Checked the active local development ports and confirmed nothing stale was still bound on 3000, 3101, 4010, or 11434 before restart.

@@ -240,7 +240,7 @@ export function InteractionSurface({
         })}
       </div>
 
-      <div className="hidden min-h-0 overflow-hidden lg:block">
+      <div className="hidden min-h-0 flex-1 overflow-hidden lg:block">
         <div key={activeDesktopPage} className="desktop-page-transition h-full min-h-0">
           {desktopWorkspacePage}
         </div>
