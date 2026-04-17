@@ -27,28 +27,28 @@ const adminTabs: Array<{
     id: "access",
     label: "Access",
     hint: "Accounts and preferences",
-    detail: "Manage sign-in state, self-service account settings, local users, and workspace backup safety from one place.",
+    detail: "Manage sign-in, account defaults, local users, and backup controls.",
     eyebrow: "Identity",
   },
   {
     id: "models",
     label: "Models",
     hint: "Library and ready",
-    detail: "Inspect runtime readiness, model inventory, and download posture across the local stack.",
+    detail: "Inspect model inventory, runtime readiness, and download state.",
     eyebrow: "Runtime",
   },
   {
     id: "jobs",
     label: "Jobs",
     hint: "Queue and detail",
-    detail: "Track queued and active operations with retry, cancellation, and timeline inspection tools.",
+    detail: "Track queued and active operations with retry, cancel, and detail tools.",
     eyebrow: "Execution",
   },
   {
     id: "activity",
     label: "Activity",
     hint: "Audit trail",
-    detail: "Review operational history, warnings, and administrative change traces.",
+    detail: "Review warnings, history, and administrative change records.",
     eyebrow: "Audit",
   },
 ];
@@ -141,8 +141,8 @@ export function AdminDeck({
               </h2>
               <p className="mt-3 text-sm leading-6 text-muted sm:text-base">
                 {isAdminSession
-                  ? "The command deck now opens admin as a full desktop destination so user access, model operations, jobs, and activity can breathe outside the chat stage."
-                  : "This destination keeps your account, sign-in controls, and workspace preferences separate from the chat stage without exposing admin-only tooling."}
+                  ? "This page groups access, models, jobs, and activity into one dedicated operations surface."
+                  : "This page keeps your account, defaults, and sign-in controls separate from the chat surface."}
               </p>
             </div>
 

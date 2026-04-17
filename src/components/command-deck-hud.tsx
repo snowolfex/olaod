@@ -36,9 +36,9 @@ const desktopWorkspacePages: Array<{
   hint: string;
   detail: string;
 }> = [
-  { id: "chat", label: "Chat", hint: "Transcript and controls", detail: "Return to the wide conversation stage and lower control modules." },
-  { id: "admin", label: "Admin", hint: "Users and ops", detail: "Open the standalone operations page for access, jobs, models, and audit work." },
-  { id: "help", label: "Help", hint: "Manual and guide", detail: "Open the full workspace manual and focused reference sections." },
+  { id: "chat", label: "Chat", hint: "Messages and history", detail: "Open the main conversation surface and saved chats." },
+  { id: "admin", label: "Admin", hint: "Accounts and operations", detail: "Open access settings, models, jobs, and activity." },
+  { id: "help", label: "Help", hint: "Reference and docs", detail: "Open the technical guide, plain-language explanations, and outside references." },
 ];
 
 function formatEndpointLabel(endpoint: string) {
@@ -305,10 +305,10 @@ export function CommandDeckHud({
               <div className="border-b border-line/70 px-4 py-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="section-label text-xs font-semibold">Control center</p>
-                    <h2 className="mt-2 text-lg font-semibold tracking-[-0.03em] text-foreground">Desktop page routing</h2>
+                    <p className="section-label text-xs font-semibold">Navigation</p>
+                    <h2 className="mt-2 text-lg font-semibold tracking-[-0.03em] text-foreground">Workspace pages</h2>
                     <p className="mt-1 text-xs leading-6 text-muted">
-                      Chat, Admin, and Help now open as separate desktop destinations through a POST-backed switch.
+                      Chat, Admin, and Help each open as their own desktop destination.
                     </p>
                   </div>
                   <span className="ui-pill ui-pill-surface">Live route</span>
@@ -360,7 +360,7 @@ export function CommandDeckHud({
               <div>
                 <p className="eyebrow text-muted">Theme</p>
                 <p className="mt-1 text-xs leading-6 text-muted">
-                  Theme selection is device-local so more themes can be added later without changing account data. Quick-help controls now live in the Access page with the rest of account preferences.
+                  Theme selection is device-local. Quick-help settings live in Access with the rest of your account defaults.
                 </p>
               </div>
               <label className="min-w-[8rem]" data-help-id="command.theme-select">

@@ -14,6 +14,31 @@ GitHub repo description: Mobile-first Next.js control plane for Ollama with a se
 - Workspace backup export and restore flows for local users, conversations, activity, and job history
 - Deterministic Playwright coverage for auth, chat, jobs, conversation lifecycle, and backup recovery flows
 
+## AI Reference
+
+The in-app Help page now includes a full AI reference section written in two layers:
+
+- Technical terminology first: inference, prompts, assistant-style instructions, temperature, tokens, context windows, retrieval-augmented generation, local versus hosted providers, and runtime readiness.
+- Plain-language translation second: each section explains the same concept in everyday terms and includes a short comparison so non-specialists can map the concept to something familiar.
+- External references at the bottom: the Help page ends with a dedicated references container linking to free official docs and high-signal explainers.
+
+Core AI concepts used in oload:
+
+- Inference: sending a request to a model and receiving an output without retraining the model.
+- Assistant style: the standing instruction layer that shapes tone, behavior, and constraints for new chats.
+- Reply style: the sampling-temperature control that influences how tight or varied the response feels.
+- Shared knowledge: indexed workspace context injected at request time to ground answers without changing model weights.
+- Downloaded versus ready: a downloaded model exists on disk; a ready model is loaded into runtime memory and can respond immediately.
+
+Free references surfaced in Help:
+
+- Ollama documentation for local runtime concepts and setup.
+- OpenAI developer docs for prompts, tokens, embeddings, tools, and streaming.
+- Anthropic Claude docs for capabilities, tool use, context handling, and implementation flow.
+- DeepLearning.AI short courses for practical AI engineering topics.
+- Edward Donner for practical AI engineering and agentic-builder learning material.
+- Simon Willison's LLM writing for high-signal independent analysis and practical tradeoffs.
+
 ## Stack
 
 - Next.js 16 App Router, React 19, and TypeScript

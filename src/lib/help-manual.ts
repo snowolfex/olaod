@@ -6,12 +6,21 @@ export type HelpSection = {
   title: string;
   summary: string;
   body: string[];
+  plainLanguage: string[];
+  comparison?: string;
   keyPoints: string[];
 };
 
 export type HelpGlossaryEntry = {
   term: string;
   definition: string;
+};
+
+export type HelpReferenceEntry = {
+  title: string;
+  url: string;
+  category: "Docs" | "Course" | "Blog";
+  description: string;
 };
 
 export type HelpHint = {
@@ -22,24 +31,73 @@ export type HelpHint = {
 };
 
 export const HELP_MANUAL_TITLE = "oload Operator Guide";
-export const HELP_MANUAL_SUBTITLE = "Operations manual for chat, access control, model runtime, jobs, activity auditing, and service administration.";
+export const HELP_MANUAL_SUBTITLE = "Technical reference for the AI stack, local runtime, provider routing, retrieval, prompting, jobs, and administrative controls.";
 
 export const helpSections: HelpSection[] = [
   {
+    id: "ai-foundations",
+    context: "chat",
+    title: "AI Foundations in oload",
+    summary: "oload is an inference orchestration surface: it assembles instructions, conversation context, retrieval context, and model selection into one gateway request without retraining the underlying model.",
+    body: [
+      "At runtime, the application constructs a request envelope that can include a user message, prior conversation turns, account-level default instructions, and optional retrieved knowledge. That envelope is sent to a selected model through a single server-side gateway path.",
+      "Inference means the model is producing an output from its existing weights. The model is not being fine-tuned, retrained, or permanently modified by ordinary chat usage in this workspace.",
+      "Because the gateway normalizes local and hosted providers, the interface can preserve a stable operator workflow even when the actual execution target changes from a local Ollama model to a hosted provider endpoint.",
+    ],
+    plainLanguage: [
+      "The app is basically a controlled front desk for AI. It gathers what you typed, any saved chat context, and any extra shared knowledge, then sends that bundle to the selected model.",
+      "Nothing you do in normal chat is teaching the model new permanent facts. You are giving it instructions and context for this run, not rewriting the model itself.",
+    ],
+    comparison: "Think of it like handing a briefing folder to a specialist: the specialist reads the folder and answers, but the specialist's training does not change just because you handed over one more folder.",
+    keyPoints: [
+      "Treat chat runs as inference requests, not training events.",
+      "Use new chats when you want a clean context boundary.",
+      "Assume retrieved knowledge affects the current answer, not the stored model weights.",
+      "Use the same interface to compare local and hosted execution paths.",
+    ],
+  },
+  {
     id: "chat-overview",
     context: "chat",
-    title: "Chat Operations",
-    summary: "Use the chat lane to compose prompts, select a provider and model, manage conversation state, and review streamed replies through the shared AI gateway.",
+    title: "Chat Request Lifecycle",
+    summary: "The chat surface manages request composition, model targeting, streaming response delivery, and per-thread state restoration through the shared AI gateway.",
     body: [
-      "The chat lane is the operator-facing inference workspace. Every prompt is sent through the shared gateway, which normalizes local and hosted providers behind one request path.",
-      "Conversation state is scoped per signed-in local user. Saved threads preserve prompt history, model selection, provider selection, temperature, and system prompt settings so a session can be resumed without reconstructing the prior operating state.",
-      "When shared knowledge is enabled, the gateway performs retrieval-augmented generation. Matching workspace context is inserted at prompt time without modifying the base model weights.",
+      "The active chat surface is the primary inference client. It collects the current draft, selected model, thread history, and standing instruction defaults, then initiates a streaming request through the server-side gateway.",
+      "Saved conversations persist the state that materially affects later outputs, including message history and thread-level settings. Reopening a conversation restores that context so later responses remain grounded in the original working thread.",
+      "Streaming delivery matters operationally because the response is not produced as a single final payload. Partial text can arrive, be interrupted, and still remain visible as a partial result for review.",
     ],
+    plainLanguage: [
+      "This is the part of the app where you actually talk to the model. When you send a message, the app bundles the message with the current chat history and sends it to the AI service.",
+      "Saved chats are not just notes. They keep the working context so reopening a chat feels like resuming a conversation instead of starting from scratch.",
+    ],
+    comparison: "Think of it like reopening a work ticket with the full thread attached instead of starting a brand-new email every time.",
     keyPoints: [
       "Use New chat to isolate a task from prior context.",
       "Use archived conversations for completed or low-frequency work.",
       "Use Stop to terminate an in-flight stream without losing the partial reply already received.",
-      "Select a provider and model before sending if you need deterministic comparison across runs.",
+      "Use saved threads when continuity is more important than a clean slate.",
+    ],
+  },
+  {
+    id: "prompting-and-control",
+    context: "chat",
+    title: "Prompts, Instructions, and Reply Style",
+    summary: "Model behavior is shaped by the composed instruction stack: account defaults, thread-specific instructions, conversation history, and the current user message, plus the configured sampling temperature.",
+    body: [
+      "The effective prompt is not only the text in the message box. The model also receives standing instruction text such as the account-level assistant style, any thread-specific instruction preserved with a saved conversation, and prior turns in the same conversation.",
+      "Temperature is a sampling control. Lower values reduce output variance and usually produce tighter, more repeatable responses. Higher values increase variety and can make outputs feel more exploratory or stylistically loose.",
+      "A system prompt or assistant-style instruction should describe operating constraints, tone, domain behavior, and refusal boundaries. It should not be treated as a place to dump task-specific scratch content that belongs in the actual user request.",
+    ],
+    plainLanguage: [
+      "The model is listening to more than the one message you just typed. It is also listening to the saved chat history and to the default assistant style you set in Access.",
+      "Reply style is basically a creativity dial. Lower keeps things more literal and consistent. Higher lets the model wander a bit more.",
+    ],
+    comparison: "Think of the assistant style as the standing job description, and your typed message as today's assignment.",
+    keyPoints: [
+      "Put long-term behavior in the assistant style, not in every message.",
+      "Put the actual task, constraints, and desired output in the current message.",
+      "Use lower reply-style values for repeatability and exactness.",
+      "Use higher reply-style values when ideation matters more than strict consistency.",
     ],
   },
   {
@@ -52,6 +110,11 @@ export const helpSections: HelpSection[] = [
       "Archived conversations remain stored but are removed from the primary working rail. This is a lifecycle control, not a deletion event.",
       "Conversation titles should describe the task or outcome, not just the opening prompt. Clear titles improve retrieval and reduce operator ambiguity during later review.",
     ],
+    plainLanguage: [
+      "Pinning is for chats you keep coming back to. Archiving is for chats you want to keep without leaving them in your day-to-day list.",
+      "A good title should help future-you find the right thread fast without rereading the whole conversation.",
+    ],
+    comparison: "Think of pinned chats like favorites, and archived chats like moving finished work into a filing cabinet instead of the desk surface.",
     keyPoints: [
       "Use Save title to rename the active thread with an operational label.",
       "Use Archive to remove a thread from the current working set without deleting it.",
@@ -69,6 +132,11 @@ export const helpSections: HelpSection[] = [
       "Administrative role management includes explicit guardrails to prevent self-demotion and last-admin removal. Those controls are intended to preserve recoverable control of the local installation.",
       "Hosted-provider credentials are encrypted at rest when stored locally. Environment variables still take precedence so deployments can externalize secrets when required by policy.",
     ],
+    plainLanguage: [
+      "This section decides who you are in the app, what you are allowed to do, and which AI settings belong to your account by default.",
+      "The app also protects you from easy-to-make admin mistakes like locking the last administrator out of the system.",
+    ],
+    comparison: "Think of this area as the identity and permissions control room, not the place where the AI answers questions.",
     keyPoints: [
       "Use Sign in for an existing local user and Create account for a new local identity.",
       "Use Refresh users before making role decisions if multiple operators have changed accounts recently.",
@@ -80,12 +148,17 @@ export const helpSections: HelpSection[] = [
     id: "provider-configuration",
     context: "access",
     title: "Hosted Provider Configuration",
-    summary: "Hosted provider controls define whether Anthropic and OpenAI are eligible routing targets inside the shared gateway.",
+    summary: "Hosted provider controls determine whether external AI services such as Anthropic and OpenAI are valid routing targets for the shared gateway.",
     body: [
       "A hosted provider is considered configured when a valid API credential is available either through encrypted local storage or through environment-based secret injection.",
       "Provider configuration affects model availability in the chat lane. An unconfigured provider is intentionally left unavailable so the operator does not attempt a route that cannot authenticate upstream.",
       "When troubleshooting hosted traffic, validate three things in order: credential presence, upstream reachability, and any custom base URL override.",
     ],
+    plainLanguage: [
+      "This is where the app learns whether it is allowed to talk to outside AI services. No key means no route.",
+      "If a hosted provider is missing or broken, the app hides or de-emphasizes that route so you do not send requests into a dead end.",
+    ],
+    comparison: "Think of provider keys like signed access badges that let the gateway enter someone else's AI building.",
     keyPoints: [
       "Save key writes the encrypted local credential for the selected provider.",
       "Clear stored key removes the locally stored credential but does not affect environment-defined secrets.",
@@ -97,12 +170,17 @@ export const helpSections: HelpSection[] = [
     id: "knowledge-operations",
     context: "access",
     title: "Shared Knowledge Operations",
-    summary: "Shared knowledge is the reusable context layer for retrieval-augmented generation, overlap detection, and operator-managed grounding data.",
+    summary: "Shared knowledge is the operator-managed grounding layer for retrieval-augmented generation, scoped recall, overlap control, and answer-quality debugging.",
     body: [
       "Knowledge entries are indexed records that can be filtered by provider and model scope. They are intended to improve answer quality through prompt-time retrieval rather than model retraining.",
       "Overlap checks identify near-duplicate notes before they degrade retrieval quality. Excess duplication tends to crowd the ranking layer and produce redundant grounding context.",
       "The retrieval debugger is a validation tool. It explains which indexed records matched a prompt and why they ranked the way they did.",
     ],
+    plainLanguage: [
+      "Shared knowledge is the app's reusable reference shelf. When enabled, the app grabs the most relevant notes and attaches them to the request before the model answers.",
+      "That helps the answer stay grounded in your workspace facts without needing to retrain the model itself.",
+    ],
+    comparison: "Think of it like giving the model a short stack of relevant index cards right before it answers.",
     keyPoints: [
       "Use Save knowledge entry to create or update a reusable context record.",
       "Use Refresh knowledge after bulk edits or restores.",
@@ -120,6 +198,11 @@ export const helpSections: HelpSection[] = [
       "The local Ollama service is the control-plane dependency for download, runtime start, runtime stop, and deletion operations. If the service is unavailable, local model actions should be treated as blocked rather than partially available.",
       "Hosted providers appear in the same operations lane because the application routes chat through a unified gateway. Even so, hosted providers do not expose local runtime controls such as download or memory residency.",
     ],
+    plainLanguage: [
+      "A downloaded model is stored on your machine. A ready model is one that is already warmed up and able to answer right away.",
+      "Local models are like software you installed yourself. Hosted models are like calling a remote service somebody else runs for you.",
+    ],
+    comparison: "Think of downloaded versus ready like an app being installed on disk versus already open and running in memory.",
     keyPoints: [
       "Use Start Ollama when the local service is offline and local model work is required.",
       "Use Refresh to resynchronize the library, runtime state, and service status.",
@@ -137,6 +220,11 @@ export const helpSections: HelpSection[] = [
       "Manual refresh establishes the operator's current baseline for delta summaries. When list state continues changing after that point, stale-detail guidance indicates that a manual detail refresh may be required before making a judgment call.",
       "Ownership filters and quick pivots are there to reduce accidental broad actions. Always verify scope before issuing queue-wide cancellation or retry commands.",
     ],
+    plainLanguage: [
+      "This is the work log for model downloads and similar long-running operations. It tells you what is waiting, what is running, what failed, and what finished.",
+      "Use it when you need to manage the work queue itself, not when you just want to know whether a model exists.",
+    ],
+    comparison: "Think of the jobs view like a dispatch board for operations, while the model library is the inventory room.",
     keyPoints: [
       "Use quick pivots for fast state isolation, then validate filters before acting.",
       "Use the pinned job detail view when queue state is changing rapidly.",
@@ -154,6 +242,11 @@ export const helpSections: HelpSection[] = [
       "Warnings should be investigated first because they typically indicate a blocked control path, an upstream failure, or a sensitive action that requires operator validation.",
       "Activity records are most useful when correlated with the originating control surface. Treat the lane as an audit and traceability view rather than a primary operating console.",
     ],
+    plainLanguage: [
+      "This is the app's memory of important events. It helps you answer who did what and whether anything failed or needs attention.",
+      "It is there for confirmation and troubleshooting, not for doing the work itself.",
+    ],
+    comparison: "Think of it like the flight recorder for the workspace, not the cockpit controls.",
     keyPoints: [
       "Use Activity after administrative actions that need audit confirmation.",
       "Cross-check Activity with Jobs when a model action also has queue history.",
@@ -164,13 +257,18 @@ export const helpSections: HelpSection[] = [
   {
     id: "mobile-gesture-help",
     context: "chat",
-    title: "Desktop and Mobile Help Gestures",
+    title: "Help Access and Navigation",
     summary: "Contextual help uses hover on desktop and long-press on mobile so operators can request guidance without leaving their current workflow.",
     body: [
       "On desktop browsers, hovering a tagged control opens a contextual help card positioned near the target control. The card remains visible while the pointer is within the control or the card itself.",
       "On touch devices, pressing and holding a tagged control for roughly two seconds opens the same contextual help card. This avoids occupying the screen with persistent hint text while preserving discoverability.",
       "The contextual help card contains a direct link into the full help manual. That link is intended for deeper review, while the card summary is intended for quick operational orientation.",
     ],
+    plainLanguage: [
+      "If you hover on desktop or long-press on mobile, the app can show a quick explanation right next to the control you are looking at.",
+      "Use the full Help page when you want the complete explanation, terminology, and outside reading links in one place.",
+    ],
+    comparison: "Think of the popovers as tooltips with substance, and the Help page as the full handbook.",
     keyPoints: [
       "Hover for contextual help on desktop.",
       "Press and hold for contextual help on mobile.",
@@ -181,6 +279,14 @@ export const helpSections: HelpSection[] = [
 ];
 
 export const helpGlossary: HelpGlossaryEntry[] = [
+  {
+    term: "Prompt",
+    definition: "The input instructions and content sent to a model for one inference request.",
+  },
+  {
+    term: "System prompt / assistant style",
+    definition: "A standing instruction layer that shapes the model's behavior, tone, and constraints across a conversation or account default.",
+  },
   {
     term: "Downloaded model",
     definition: "A model whose weights are stored locally on disk but are not necessarily loaded into runtime memory.",
@@ -194,8 +300,36 @@ export const helpGlossary: HelpGlossaryEntry[] = [
     definition: "The process of sending a prompt to a model and receiving an output without altering the model weights.",
   },
   {
+    term: "Temperature",
+    definition: "A sampling control that changes how deterministic or varied a model's next-token choices are.",
+  },
+  {
+    term: "Token",
+    definition: "A chunk of text processed by the model. Context limits and many cost calculations are expressed in tokens, not characters.",
+  },
+  {
+    term: "Context window",
+    definition: "The maximum amount of prompt and response text a model can consider in one run.",
+  },
+  {
+    term: "Embedding",
+    definition: "A numerical vector representation of content used for similarity search, retrieval, clustering, and ranking.",
+  },
+  {
     term: "Retrieval-augmented generation",
     definition: "A prompt-time grounding method that injects relevant indexed context into a request without retraining the model.",
+  },
+  {
+    term: "Grounding",
+    definition: "The act of anchoring a model response to supplied documents, data, or reference context instead of relying only on the model's prior training.",
+  },
+  {
+    term: "Streaming",
+    definition: "Incremental delivery of model output as it is generated, instead of waiting for a full final response payload.",
+  },
+  {
+    term: "Hosted provider",
+    definition: "A remote AI service operated outside the local machine, typically accessed through an API key and network call.",
   },
   {
     term: "Operator scope",
@@ -204,6 +338,45 @@ export const helpGlossary: HelpGlossaryEntry[] = [
   {
     term: "Audit trail",
     definition: "A structured event history used to confirm that an action occurred and to reconstruct control-plane activity over time.",
+  },
+];
+
+export const helpReferences: HelpReferenceEntry[] = [
+  {
+    title: "Ollama Documentation",
+    url: "https://docs.ollama.com/",
+    category: "Docs",
+    description: "Official local-model runtime documentation for setup, model pulls, and local execution concepts.",
+  },
+  {
+    title: "OpenAI API Key Concepts",
+    url: "https://developers.openai.com/api/docs/concepts",
+    category: "Docs",
+    description: "Clear reference material for prompts, tokens, embeddings, tools, streaming, and agent-oriented API concepts.",
+  },
+  {
+    title: "Anthropic: Building with Claude",
+    url: "https://platform.claude.com/docs/en/docs/overview",
+    category: "Docs",
+    description: "Official guide to Claude capabilities, tool use, context handling, deployment planning, and production considerations.",
+  },
+  {
+    title: "DeepLearning.AI Short Courses",
+    url: "https://www.deeplearning.ai/short-courses/",
+    category: "Course",
+    description: "Free short courses covering prompting, agents, retrieval, inference, evaluation, and practical AI engineering.",
+  },
+  {
+    title: "Edward Donner",
+    url: "https://edwarddonner.com/",
+    category: "Blog",
+    description: "Practical learning resources and course-adjacent AI engineering explainers, including agentic engineering and builder workflows.",
+  },
+  {
+    title: "Simon Willison on LLMs",
+    url: "https://simonwillison.net/tags/llms/",
+    category: "Blog",
+    description: "High-signal independent writing on local models, prompting, agents, vendor APIs, evaluation, and real-world AI engineering tradeoffs.",
   },
 ];
 

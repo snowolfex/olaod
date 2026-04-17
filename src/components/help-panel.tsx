@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import {
   helpGlossary,
+  helpReferences,
   HELP_MANUAL_SUBTITLE,
   HELP_MANUAL_TITLE,
   helpSections,
@@ -23,29 +24,29 @@ type HelpPanelProps = {
 
 const contextSummary: Record<HelpContext, { badge: string; title: string; intro: string }> = {
   chat: {
-    badge: "Chat focus",
-    title: "Conversation and prompt operations",
-    intro: "This help focus is centered on prompt flow, conversation state, provider routing, and response handling through the shared AI gateway.",
+    badge: "Chat",
+    title: "Inference, prompting, and conversation state",
+    intro: "Technical reference for how prompts, instruction layers, retrieval context, and streaming replies behave in the chat surface.",
   },
   access: {
-    badge: "Access focus",
-    title: "Identity, roles, provider keys, and backup safety",
-    intro: "This help focus is centered on authentication, authorization, credential management, knowledge administration, and workspace recovery operations.",
+    badge: "Access",
+    title: "Identity, provider credentials, and knowledge controls",
+    intro: "Technical reference for account scope, hosted-provider routing, shared knowledge, and recovery-sensitive admin operations.",
   },
   models: {
-    badge: "Models focus",
-    title: "Local runtime and library administration",
-    intro: "This help focus is centered on downloaded models, runtime readiness, service health, hosted-service visibility, and local storage actions.",
+    badge: "Models",
+    title: "Local runtime and model inventory",
+    intro: "Technical reference for local model availability, runtime readiness, service state, and the distinction between installed and loaded models.",
   },
   jobs: {
-    badge: "Jobs focus",
+    badge: "Jobs",
     title: "Queue control and execution history",
-    intro: "This help focus is centered on queue sequencing, lifecycle state, bulk actions, retries, and job-detail interpretation.",
+    intro: "Technical reference for operation sequencing, retries, status transitions, and queue-scoped operator actions.",
   },
   activity: {
-    badge: "Activity focus",
+    badge: "Activity",
     title: "Audit and change traceability",
-    intro: "This help focus is centered on operational history, warning-level events, and the audit confirmation path for administrative actions.",
+    intro: "Technical reference for audit events, warning interpretation, and cross-surface traceability after administrative changes.",
   },
 };
 
@@ -160,8 +161,20 @@ export function HelpPanel({
         drawLines([section.title], { bold: true, fontSize: 15, color: [0.2, 0.2, 0.2] });
         drawLines(wrapText(section.summary, 82), { fontSize: 10, color: [0.34, 0.34, 0.34] });
 
+        drawLines(["Technical detail"], { bold: true, fontSize: 11 });
+
         for (const paragraph of section.body) {
           drawLines(wrapText(paragraph, 84), { fontSize: 10 });
+        }
+
+        drawLines(["Plain-language explanation"], { bold: true, fontSize: 11 });
+
+        for (const paragraph of section.plainLanguage) {
+          drawLines(wrapText(paragraph, 84), { fontSize: 10, color: [0.28, 0.28, 0.28] });
+        }
+
+        if (section.comparison) {
+          drawLines([`Think of it as: ${section.comparison}`], { fontSize: 10, color: [0.28, 0.28, 0.28] });
         }
 
         drawLines(["Key procedures"], { bold: true, fontSize: 11 });
@@ -176,6 +189,14 @@ export function HelpPanel({
       for (const entry of helpGlossary) {
         drawLines([entry.term], { bold: true, fontSize: 11 });
         drawLines(wrapText(entry.definition, 84), { fontSize: 10 });
+      }
+
+      drawLines(["References"], { bold: true, fontSize: 15, color: [0.2, 0.2, 0.2] });
+
+      for (const entry of helpReferences) {
+        drawLines([`${entry.category}: ${entry.title}`], { bold: true, fontSize: 11 });
+        drawLines(wrapText(entry.description, 84), { fontSize: 10 });
+        drawLines(wrapText(entry.url, 84), { fontSize: 9, color: [0.2, 0.32, 0.45] });
       }
 
       const pdfBytes = await pdfDocument.save();
@@ -196,13 +217,13 @@ export function HelpPanel({
     <section className={`glass-panel flex flex-col rounded-[32px] p-4 sm:rounded-[36px] sm:p-6 ${isPageSurface ? "" : "h-full min-h-0 overflow-hidden"}`}>
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="section-label text-xs font-semibold">{isPageSurface ? "Help page" : "Help lane"}</p>
+          <p className="section-label text-xs font-semibold">Help</p>
           <h2 className="mt-2 text-xl font-semibold tracking-tight text-foreground sm:mt-3 sm:text-2xl">
             {HELP_MANUAL_TITLE}
           </h2>
           <p className="mt-2 text-sm leading-6 text-muted sm:mt-3">
             {isPageSurface
-              ? "Full reference surface for the workspace. Use the command deck to move between Chat, Admin, and this manual without sharing a desktop lane."
+              ? "Technical reference first, plain-language translation second, and free outside reading links at the bottom."
               : HELP_MANUAL_SUBTITLE}
           </p>
         </div>
@@ -225,7 +246,7 @@ export function HelpPanel({
         <div className="theme-surface-elevated mt-5 rounded-[28px] px-5 py-5">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="max-w-3xl">
-              <p className="eyebrow text-muted">Reference focus</p>
+              <p className="eyebrow text-muted">Current focus</p>
               <p className="mt-2 text-lg font-semibold text-foreground">{focusSummary.title}</p>
               <p className="mt-2 text-sm leading-6 text-muted">{focusSummary.intro}</p>
             </div>
@@ -259,7 +280,7 @@ export function HelpPanel({
 
             <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-3">
               <div className="theme-surface-soft rounded-[20px] px-3 py-3">
-                <p className="eyebrow text-muted">Focus sections</p>
+                <p className="eyebrow text-muted">Sections in view</p>
                 <p className="mt-1 text-sm font-semibold text-foreground">{contextSections.length}</p>
               </div>
               <div className="theme-surface-soft rounded-[20px] px-3 py-3">
@@ -277,7 +298,7 @@ export function HelpPanel({
 
       <div className="mt-5 grid gap-3 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
         <div className="theme-surface-soft rounded-[24px] px-4 py-4">
-          <p className="eyebrow text-muted">Manual focus</p>
+          <p className="eyebrow text-muted">Focus</p>
           <p className="mt-2 text-base font-semibold text-foreground">
             {focusSummary.title}
           </p>
@@ -291,7 +312,7 @@ export function HelpPanel({
             {status.isReachable ? "Ready" : "Needs attention"}
           </p>
           {isPageSurface ? (
-            <p className="mt-1 text-xs leading-5 text-muted">Use the guide as a reference while the operational shell stays separate.</p>
+            <p className="mt-1 text-xs leading-5 text-muted">Status here helps explain whether local AI paths are currently usable.</p>
           ) : null}
         </div>
         <div className="theme-surface-soft rounded-[24px] px-4 py-4">
@@ -308,7 +329,7 @@ export function HelpPanel({
           {isPageSurface ? (
             <div className="space-y-3 xl:sticky xl:top-3 xl:self-start">
               <div className="theme-surface-soft rounded-[28px] p-5">
-                <p className="eyebrow text-muted">Focus navigator</p>
+                <p className="eyebrow text-muted">Jump list</p>
                 <p className="mt-2 text-base font-semibold text-foreground">{focusSummary.title}</p>
                 <p className="mt-2 text-sm leading-6 text-muted">{focusSummary.intro}</p>
                 <div className="mt-4 space-y-2">
@@ -344,13 +365,13 @@ export function HelpPanel({
                     </span>
                   </div>
                   <p className="mt-3 text-sm leading-6 text-muted">
-                    Your account details stay visible here even without the admin lane. Use the floating command deck to sign out, then sign back in if you want to change the stay-logged-in setting on this device.
+                    Your account details stay visible here even without full admin tooling. Use Access for your defaults and sign-in controls.
                   </p>
                 </div>
               ) : null}
 
               <div className="theme-surface-soft rounded-[28px] p-5">
-                <p className="eyebrow text-muted">Manual atlas</p>
+                <p className="eyebrow text-muted">All sections</p>
                 <div className="mt-3 space-y-2">
                   {helpSections.map((section, index) => (
                     <button
@@ -374,7 +395,7 @@ export function HelpPanel({
             <div className="theme-surface-soft rounded-[28px] p-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="eyebrow text-muted">Context summary</p>
+                  <p className="eyebrow text-muted">Overview</p>
                   <p className="mt-2 text-base font-semibold text-foreground">{focusSummary.title}</p>
                   <p className="mt-2 text-sm leading-6 text-muted">{focusSummary.intro}</p>
                 </div>
@@ -411,7 +432,7 @@ export function HelpPanel({
                   </span>
                 </div>
                 <p className="mt-3 text-sm leading-6 text-muted">
-                  Your account details stay visible here even without the admin lane. Use the floating command deck to sign out, then sign back in if you want to change the stay-logged-in setting on this device.
+                  Your account details stay visible here even without full admin tooling. Use Access for your defaults and sign-in controls.
                 </p>
               </div>
             ) : null}
@@ -448,14 +469,33 @@ export function HelpPanel({
                   <p className="mt-1 text-xs uppercase tracking-[0.16em] text-muted">{section.context}</p>
                 </div>
               </div>
-              <p className="mt-3 text-sm leading-7 text-muted">{section.summary}</p>
-              <div className="mt-4 space-y-3">
-                {section.body.map((paragraph) => (
-                  <p key={paragraph} className="text-sm leading-7 text-muted">{paragraph}</p>
-                ))}
-              </div>
               <div className="theme-surface-strong mt-4 rounded-[22px] px-4 py-4">
-                <p className="eyebrow text-muted">Key procedures</p>
+                <p className="eyebrow text-muted">Technical summary</p>
+                <p className="mt-3 text-sm leading-7 text-muted">{section.summary}</p>
+              </div>
+              <div className="mt-4 rounded-[22px] border border-line/70 px-4 py-4">
+                <p className="eyebrow text-muted">Technical detail</p>
+                <div className="mt-3 space-y-3">
+                  {section.body.map((paragraph) => (
+                    <p key={paragraph} className="text-sm leading-7 text-muted">{paragraph}</p>
+                  ))}
+                </div>
+              </div>
+              <div className="theme-surface-panel mt-4 rounded-[22px] px-4 py-4">
+                <p className="eyebrow text-muted">In plain language</p>
+                <div className="mt-3 space-y-3">
+                  {section.plainLanguage.map((paragraph) => (
+                    <p key={paragraph} className="text-sm leading-7 text-muted">{paragraph}</p>
+                  ))}
+                </div>
+                {section.comparison ? (
+                  <div className="theme-surface-chip mt-4 rounded-[18px] px-3 py-3 text-sm leading-6 text-foreground">
+                    <span className="font-semibold">Think of it as:</span> {section.comparison}
+                  </div>
+                ) : null}
+              </div>
+              <div className="theme-surface-elevated mt-4 rounded-[22px] px-4 py-4">
+                <p className="eyebrow text-muted">Operational steps</p>
                 <div className="mt-3 space-y-2">
                   {section.keyPoints.map((point) => (
                     <div key={point} className="theme-surface-chip rounded-[18px] px-3 py-3 text-sm leading-6 text-foreground">
@@ -474,6 +514,33 @@ export function HelpPanel({
                   <div key={item.term} className="theme-surface-strong rounded-[22px] px-4 py-4">
                     <p className="text-sm font-semibold text-foreground">{item.term}</p>
                     <p className="mt-2 text-sm leading-6 text-muted">{item.definition}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="theme-surface-soft rounded-[28px] p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="eyebrow text-muted">References</p>
+                  <p className="mt-2 text-base font-semibold text-foreground">Free docs, courses, and blog-style explainers</p>
+                  <p className="mt-2 text-sm leading-6 text-muted">Official docs come first for accuracy. The blog and course links are useful when you want the same ideas explained in a more human teaching voice.</p>
+                </div>
+                <span className="ui-pill ui-pill-surface">External</span>
+              </div>
+              <div className="mt-4 space-y-3">
+                {helpReferences.map((item) => (
+                  <div key={item.url} className="theme-surface-strong rounded-[22px] px-4 py-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">{item.title}</p>
+                        <p className="mt-2 text-sm leading-6 text-muted">{item.description}</p>
+                      </div>
+                      <span className="ui-pill ui-pill-soft border border-line text-xs text-muted">{item.category}</span>
+                    </div>
+                    <a className="mt-3 inline-flex text-sm font-semibold text-[var(--accent-strong)] underline-offset-2 hover:underline" href={item.url} rel="noreferrer" target="_blank">
+                      {item.url}
+                    </a>
                   </div>
                 ))}
               </div>
