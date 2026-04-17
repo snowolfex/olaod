@@ -1560,6 +1560,8 @@ export function ChatWorkspace({
     ? `${visibleConversations.length} in view / ${pinnedConversationIds.length} pinned`
     : "Sign in to save and reopen chats";
   const modelControlsSummary = `${selectedModel || "No model"} / temp ${temperature.toFixed(1)}`;
+  const hasLocalAiAvailable = isReachable && models.length > 0;
+  const localAiStatusLabel = hasLocalAiAvailable ? "Local AI ready" : "No local AI";
   const collapsedSavedChatPreview = visibleConversations.slice(0, 3);
   const transcriptSummary = messages.length > 0
     ? `${messages.length} message${messages.length === 1 ? "" : "s"} in this thread`
@@ -2584,9 +2586,30 @@ export function ChatWorkspace({
           <p className="mt-1 text-sm font-semibold text-foreground">{transcriptSummary}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <span className="theme-surface-chip rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground">
-            {selectedModel || "No model"}
-          </span>
+          {hasLocalAiAvailable ? (
+            <label className="theme-surface-chip flex items-center gap-2 rounded-full px-2 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground">
+              <span className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(34,197,94,0.55)]" />
+              <span className="text-muted">Talk to</span>
+              <select
+                aria-label="Select the AI for this chat"
+                className="min-w-[10rem] bg-transparent text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground outline-none"
+                disabled={isStreaming}
+                value={selectedModel}
+                onChange={(event) => setSelectedModel(event.target.value)}
+              >
+                {models.map((model) => (
+                  <option key={model.name} value={model.name}>
+                    {model.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <span className="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-rose-800">
+              <span className="inline-flex h-2.5 w-2.5 rounded-full bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.55)]" />
+              {localAiStatusLabel}
+            </span>
+          )}
           <span className="theme-surface-chip rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground">
             {lastLatency ? `${lastLatency} ms` : "Awaiting first reply"}
           </span>
@@ -2598,12 +2621,12 @@ export function ChatWorkspace({
       >
         {messages.length === 0 ? (
           <div className="theme-surface-feature rounded-[28px] border-dashed p-5 sm:p-6">
-            <p className="eyebrow text-muted">Ready state</p>
+            <p className="eyebrow text-muted">Chat box ready</p>
             <h3 className="mt-3 text-xl font-semibold tracking-tight text-foreground">
-              Start with a practical prompt.
+              Type a message to start the conversation.
             </h3>
             <p className="mt-3 text-sm leading-7 text-muted">
-              Ask for model comparisons, code help, drafting, or admin instructions. The response will stream directly into this pane.
+              This is the chat area. Ask for code help, drafting, troubleshooting, or model comparisons and the reply will stream here.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
               {PROMPT_PRESETS.map((preset) => (

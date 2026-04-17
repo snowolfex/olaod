@@ -8,6 +8,7 @@
 - Verified local self-service profile updates live, confirmed the regular-user Admin surface shows only Access controls, cleaned up the temporary QA test account from local app data, and confirmed Google sign-in is unavailable in the current environment because `/api/users/session` reports `googleAuthEnabled: false` and `googleAuthMode: "none"`.
 - Fixed the desktop Admin page wrapper so it participates in the shell flex layout and the standalone Admin destination can scroll again instead of clipping its content area.
 - Reworked desktop Chat, Admin, and Help out of nested viewport-locked shells and back onto document-level page scrolling, including relaxing the root `html` and `body` desktop height rules; live browser checks confirmed window scroll now moves on all three desktop destinations.
+- Adjusted the chat-page empty transcript copy so it reads as a real chat box, and promoted the transcript-stage model badge into a second live model selector with a brief local-AI status treatment for the no-local-model case.
 
 ## 2026-04-16
 - Checked the active local development ports and confirmed nothing stale was still bound on 3000, 3101, 4010, or 11434 before restart.
