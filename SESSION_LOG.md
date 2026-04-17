@@ -12,6 +12,7 @@
 - Moved the default assistant-style prompt into the per-user Access page, expanded the session and user model to persist that preference, changed chat controls to summarize assistant style instead of editing it inline, and strengthened the chat composer into a more obvious desktop-first message box while preserving older thread-specific prompts for existing saved chats.
 - Moved per-user model and reply-style defaults into the Access page, removed the bottom-right chat controls module, kept saved chats below the chat area, simplified the chat wording for non-technical users, and stripped out several explanatory display-only sections from the main chat surface.
 - Reworked the Help page into a fuller AI reference with technical terminology first, plain-language translations and comparisons second, an expanded glossary, and a bottom references container linking to free official docs plus practical outside learning resources such as Edward Donner and Simon Willison; also trimmed remaining scaffolding-style copy in the Help, Admin, and command-deck surfaces.
+- Added a standalone llama splash art-direction document with nine candidates organized as three per theme, plus approval criteria and a future random-per-theme splash selection plan so mascot visuals can be approved before any implementation work starts.
 
 ## 2026-04-16
 - Checked the active local development ports and confirmed nothing stale was still bound on 3000, 3101, 4010, or 11434 before restart.
