@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { getDataStorePath } from "@/lib/data-store";
+import { DEFAULT_USER_SYSTEM_PROMPT } from "@/lib/system-prompt";
 import type { OllamaChatMessage } from "@/lib/ollama";
 import type {
   ConversationSettings,
@@ -21,8 +22,7 @@ const STORE_PATH = getDataStorePath("conversations.json");
 const DEFAULT_SETTINGS: ConversationSettings = {
   model: "",
   providerId: "ollama",
-  systemPrompt:
-    "You are a concise, high-signal AI assistant.",
+  systemPrompt: DEFAULT_USER_SYSTEM_PROMPT,
   temperature: 0.7,
 };
 

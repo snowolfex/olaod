@@ -15,12 +15,14 @@ export async function PATCH(request: Request) {
     const payload = (await request.json()) as {
       displayName?: string;
       email?: string;
+      preferredSystemPrompt?: string;
     };
 
     const updatedUser = await updateUserProfile({
       id: currentUser.id,
       displayName: payload.displayName ?? currentUser.displayName,
       email: payload.email,
+      preferredSystemPrompt: payload.preferredSystemPrompt,
     });
 
     if (!updatedUser) {

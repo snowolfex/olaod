@@ -9,6 +9,7 @@
 - Fixed the desktop Admin page wrapper so it participates in the shell flex layout and the standalone Admin destination can scroll again instead of clipping its content area.
 - Reworked desktop Chat, Admin, and Help out of nested viewport-locked shells and back onto document-level page scrolling, including relaxing the root `html` and `body` desktop height rules; live browser checks confirmed window scroll now moves on all three desktop destinations.
 - Adjusted the chat-page empty transcript copy so it reads as a real chat box, and promoted the transcript-stage model badge into a second live model selector with a brief local-AI status treatment for the no-local-model case.
+- Moved the default assistant-style prompt into the per-user Access page, expanded the session and user model to persist that preference, changed chat controls to summarize assistant style instead of editing it inline, and strengthened the chat composer into a more obvious desktop-first message box while preserving older thread-specific prompts for existing saved chats.
 
 ## 2026-04-16
 - Checked the active local development ports and confirmed nothing stale was still bound on 3000, 3101, 4010, or 11434 before restart.

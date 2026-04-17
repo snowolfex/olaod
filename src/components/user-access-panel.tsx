@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { getHelpHint } from "@/lib/help-manual";
 import { readQuickHelpEnabled, writeQuickHelpEnabled } from "@/lib/help-preferences";
+import { DEFAULT_USER_SYSTEM_PROMPT } from "@/lib/system-prompt";
 import type {
   AiModelSummary,
   AiKnowledgeDebugResult,
@@ -203,6 +204,7 @@ export function UserAccessPanel({ compact = false, onSessionChange, session, sur
   const [password, setPassword] = useState("");
   const [accountDisplayName, setAccountDisplayName] = useState("");
   const [accountEmail, setAccountEmail] = useState("");
+  const [accountPreferredSystemPrompt, setAccountPreferredSystemPrompt] = useState(DEFAULT_USER_SYSTEM_PROMPT);
   const [currentPasswordDraft, setCurrentPasswordDraft] = useState("");
   const [nextPasswordDraft, setNextPasswordDraft] = useState("");
   const [rememberSession, setRememberSession] = useState(true);
@@ -264,10 +266,11 @@ export function UserAccessPanel({ compact = false, onSessionChange, session, sur
   useEffect(() => {
     setAccountDisplayName(session.user?.displayName ?? "");
     setAccountEmail(session.user?.email ?? "");
+    setAccountPreferredSystemPrompt(session.user?.preferredSystemPrompt ?? DEFAULT_USER_SYSTEM_PROMPT);
     setCurrentPasswordDraft("");
     setNextPasswordDraft("");
     setAccountSummary(null);
-  }, [session.user?.displayName, session.user?.email, session.user?.id]);
+  }, [session.user?.displayName, session.user?.email, session.user?.id, session.user?.preferredSystemPrompt]);
 
   useEffect(() => {
     setIsQuickHelpEnabled(readQuickHelpEnabled());
@@ -1062,6 +1065,7 @@ export function UserAccessPanel({ compact = false, onSessionChange, session, sur
         body: JSON.stringify({
           displayName: accountDisplayName,
           email: accountEmail,
+          preferredSystemPrompt: accountPreferredSystemPrompt,
         }),
       });
 
@@ -1071,7 +1075,7 @@ export function UserAccessPanel({ compact = false, onSessionChange, session, sur
 
       const nextSession = await fetchCurrentSession();
       onSessionChange(nextSession);
-      setAccountSummary("Account details saved.");
+      setAccountSummary("Account details and assistant style saved.");
       setAccountSummaryTone("success");
     } catch (accountError) {
       setError(
@@ -1398,8 +1402,8 @@ export function UserAccessPanel({ compact = false, onSessionChange, session, sur
             </div>
             <p className="mt-4 text-sm leading-6 text-muted">
               {isAdminSession
-                ? "Conversations remain scoped to the signed-in user while this session also unlocks role management, provider configuration, workspace recovery, and model operations."
-                : "Conversations remain scoped to your signed-in account. This view keeps only your own profile, preference, and password controls visible."}
+                ? "Conversations remain scoped to the signed-in user while this session also unlocks role management, provider configuration, workspace recovery, and model operations. Your assistant style stays personal to this account."
+                : "Conversations remain scoped to your signed-in account. This view keeps only your own profile, assistant style, preference, and password controls visible."}
             </p>
             <button
               className="ui-button ui-button-secondary mt-5 w-full px-4 py-2 text-sm sm:w-auto"
@@ -1416,7 +1420,7 @@ export function UserAccessPanel({ compact = false, onSessionChange, session, sur
               <div>
                 <p className="eyebrow text-muted">Account settings</p>
                 <p className="mt-2 text-sm text-muted">
-                  Manage your profile details, quick-help preference, and local password from one place.
+                  Manage your profile details, assistant style, quick-help preference, and local password from one place.
                 </p>
               </div>
               <span className="ui-pill ui-pill-surface text-xs">
@@ -1449,11 +1453,19 @@ export function UserAccessPanel({ compact = false, onSessionChange, session, sur
                       onChange={(event) => setAccountEmail(event.target.value)}
                     />
                   </label>
+                  <label className="block text-xs font-semibold uppercase tracking-[0.16em] text-muted/75">
+                    Assistant style
+                    <textarea
+                      className="mt-2 min-h-36 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm font-normal leading-7 text-foreground outline-none"
+                      value={accountPreferredSystemPrompt}
+                      onChange={(event) => setAccountPreferredSystemPrompt(event.target.value)}
+                    />
+                  </label>
                 </div>
                 <p className="mt-3 text-xs leading-6 text-muted">
                   {session.user.authProvider === "google"
-                    ? "Google-managed accounts keep their provider email. You can still change the display name shown in the workspace."
-                    : "Local accounts can leave email blank or store one address for identification and future recovery workflows."}
+                    ? "Google-managed accounts keep their provider email. You can still change the display name and default assistant style used for new chats."
+                    : "Local accounts can leave email blank or store one address for identification and future recovery workflows. The assistant style becomes your per-user default for new chats."}
                 </p>
                 <button
                   className="ui-button ui-button-primary mt-4 w-full px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"

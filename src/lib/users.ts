@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { getDataStorePath } from "@/lib/data-store";
+import { normalizeSystemPrompt } from "@/lib/system-prompt";
 import type { AuthProvider, PublicUser, SessionUser, StoredUser } from "@/lib/user-types";
 
 const STORE_PATH = getDataStorePath("users.json");
@@ -48,6 +49,7 @@ function normalizeStoredUser(user: StoredUser): StoredUser {
     role: user.role,
     authProvider: isAuthProvider(user.authProvider) ? user.authProvider : "local",
     email: normalizeOptionalString(user.email),
+    preferredSystemPrompt: normalizeSystemPrompt(user.preferredSystemPrompt),
     providerSubject: normalizeOptionalString(user.providerSubject),
     avatarUrl: normalizeOptionalString(user.avatarUrl),
     passwordHash: typeof user.passwordHash === "string" ? user.passwordHash : undefined,
@@ -79,6 +81,7 @@ export function toPublicUser(user: StoredUser): PublicUser {
     role: user.role,
     authProvider: user.authProvider,
     email: user.email,
+    preferredSystemPrompt: user.preferredSystemPrompt,
     providerSubject: user.providerSubject,
     avatarUrl: user.avatarUrl,
     createdAt: user.createdAt,
@@ -93,6 +96,7 @@ export function toSessionUser(user: StoredUser): SessionUser {
     role: user.role,
     authProvider: user.authProvider,
     email: user.email,
+    preferredSystemPrompt: user.preferredSystemPrompt,
   };
 }
 
@@ -161,6 +165,7 @@ export async function updateUserProfile(input: {
   displayName: string;
   email?: string;
   id: string;
+  preferredSystemPrompt?: string;
 }) {
   const users = await readStore();
   const index = users.findIndex((user) => user.id === input.id);
@@ -198,6 +203,7 @@ export async function updateUserProfile(input: {
     ...currentUser,
     displayName: nextDisplayName,
     email: currentUser.authProvider === "google" ? currentUser.email : nextEmail,
+    preferredSystemPrompt: normalizeSystemPrompt(input.preferredSystemPrompt),
   };
 
   await writeStore(users);

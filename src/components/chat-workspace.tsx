@@ -13,6 +13,7 @@ import type {
   StoredConversation,
 } from "@/lib/conversation-types";
 import type { OllamaChatMessage, OllamaModel } from "@/lib/ollama";
+import { DEFAULT_USER_SYSTEM_PROMPT } from "@/lib/system-prompt";
 import type { SessionUser } from "@/lib/user-types";
 
 type ChatWorkspaceProps = {
@@ -509,7 +510,8 @@ export function ChatWorkspace({
   );
   const [systemPrompt, setSystemPrompt] = useState(
     initialConversation?.settings.systemPrompt ||
-      "You are a concise, high-signal local assistant running through Ollama.",
+      currentUser?.preferredSystemPrompt ||
+      DEFAULT_USER_SYSTEM_PROMPT,
   );
   const [isStreaming, setIsStreaming] = useState(false);
   const [isLoadingConversation, setIsLoadingConversation] = useState(false);
@@ -537,6 +539,14 @@ export function ChatWorkspace({
       setSelectedModel(models[0]?.name ?? "");
     }
   }, [models, selectedModel]);
+
+  useEffect(() => {
+    if (activeConversationId || messages.length > 0) {
+      return;
+    }
+
+    setSystemPrompt(currentUser?.preferredSystemPrompt || DEFAULT_USER_SYSTEM_PROMPT);
+  }, [activeConversationId, currentUser?.preferredSystemPrompt, messages.length]);
 
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -960,7 +970,7 @@ export function ChatWorkspace({
       setConversationTitle(conversation.title);
       setMessages(conversation.messages);
       setSelectedModel(conversation.settings.model || models[0]?.name || "");
-      setSystemPrompt(conversation.settings.systemPrompt);
+      setSystemPrompt(conversation.settings.systemPrompt || currentUser?.preferredSystemPrompt || DEFAULT_USER_SYSTEM_PROMPT);
       setTemperature(conversation.settings.temperature);
       setDraft("");
       setLastLatency(null);
@@ -1041,9 +1051,7 @@ export function ChatWorkspace({
     setIsStreaming(false);
     setMessages([]);
     setSelectedModel(models[0]?.name ?? selectedModel);
-    setSystemPrompt(
-      "You are a concise, high-signal local assistant running through Ollama.",
-    );
+    setSystemPrompt(currentUser?.preferredSystemPrompt || DEFAULT_USER_SYSTEM_PROMPT);
     setTemperature(0.7);
   }
 
@@ -1133,7 +1141,7 @@ export function ChatWorkspace({
       setConversationTitleDraft(payload.conversation.title);
       setMessages(payload.conversation.messages);
       setSelectedModel(payload.conversation.settings.model || models[0]?.name || "");
-      setSystemPrompt(payload.conversation.settings.systemPrompt);
+      setSystemPrompt(payload.conversation.settings.systemPrompt || currentUser?.preferredSystemPrompt || DEFAULT_USER_SYSTEM_PROMPT);
       setTemperature(payload.conversation.settings.temperature);
     } catch (archiveError) {
       setError(
@@ -1562,6 +1570,7 @@ export function ChatWorkspace({
   const modelControlsSummary = `${selectedModel || "No model"} / temp ${temperature.toFixed(1)}`;
   const hasLocalAiAvailable = isReachable && models.length > 0;
   const localAiStatusLabel = hasLocalAiAvailable ? "Local AI ready" : "No local AI";
+  const accountSystemPrompt = currentUser?.preferredSystemPrompt?.trim() || DEFAULT_USER_SYSTEM_PROMPT;
   const collapsedSavedChatPreview = visibleConversations.slice(0, 3);
   const transcriptSummary = messages.length > 0
     ? `${messages.length} message${messages.length === 1 ? "" : "s"} in this thread`
@@ -1569,6 +1578,8 @@ export function ChatWorkspace({
   const systemPromptPreview = systemPrompt.trim()
     ? `${systemPrompt.trim().slice(0, 120)}${systemPrompt.trim().length > 120 ? "..." : ""}`
     : "Using the current system prompt defaults.";
+  const isUsingAccountPrompt = systemPrompt.trim() === accountSystemPrompt;
+  const assistantStyleBadgeLabel = isUsingAccountPrompt ? "Account style" : "Saved thread style";
   const desktopControlBodyMaxHeightClass = controlsFirst
     ? "lg:max-h-[min(26dvh,18rem)] xl:max-h-[min(28dvh,20rem)] 2xl:max-h-[min(30dvh,22rem)]"
     : "lg:max-h-[min(36dvh,26rem)] xl:max-h-[min(38dvh,29rem)] 2xl:max-h-[min(40dvh,31rem)]";
@@ -2443,7 +2454,7 @@ export function ChatWorkspace({
         <span className="min-w-0">
           <span className="eyebrow text-muted">AI controls</span>
           <span className="mt-2 block text-base font-semibold text-foreground sm:text-lg">
-            Model, temperature, and prompt setup
+            Model, response, and assistant style
           </span>
           <span className="mt-2 block text-[11px] font-semibold uppercase tracking-[0.2em] text-[color:color-mix(in_srgb,var(--accent-strong)_56%,#245d7b_44%)]">
             Expand to tune replies
@@ -2514,15 +2525,14 @@ export function ChatWorkspace({
           </div>
 
           <div className="theme-surface-soft rounded-[28px] p-4 sm:p-5">
-            <label className="eyebrow text-muted" htmlFor="system-prompt">
-              System prompt
-            </label>
-            <textarea
-              id="system-prompt"
-              className="mt-3 min-h-32 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm leading-7 text-foreground outline-none"
-              value={systemPrompt}
-              onChange={(event) => setSystemPrompt(event.target.value)}
-            />
+            <p className="eyebrow text-muted">Assistant style</p>
+            <p className="mt-3 text-sm font-semibold text-foreground">
+              {isUsingAccountPrompt ? "Using your account default" : "Using a saved thread style"}
+            </p>
+            <p className="mt-3 text-sm leading-7 text-muted">{systemPromptPreview}</p>
+            <p className="mt-3 text-xs leading-6 text-muted">
+              Change the default in Admin / Access. Older saved chats keep any thread-specific assistant style already stored with them.
+            </p>
           </div>
 
           <div className="theme-surface-panel rounded-[28px] border-dashed p-4 text-sm leading-7 text-muted">
@@ -2555,7 +2565,7 @@ export function ChatWorkspace({
               {selectedModel || "No model selected"}
             </p>
             <p className="text-xs leading-5 text-muted">
-              Choose a model and prompt posture to steer replies.
+              Choose a model here. Your assistant style default now lives in Admin / Access.
             </p>
           </div>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
@@ -2569,7 +2579,7 @@ export function ChatWorkspace({
             </div>
           </div>
           <div className="theme-surface-strong lg:col-span-2 rounded-[18px] px-3 py-2">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">Prompt posture</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">Assistant style</p>
             <p className="mt-1 text-xs leading-5 text-muted">{systemPromptPreview}</p>
           </div>
         </div>
@@ -2681,7 +2691,26 @@ export function ChatWorkspace({
         })}
       </div>
 
-      <form ref={composerFormRef} className="theme-surface-panel mt-4 space-y-3 rounded-[28px] px-4 py-4" onSubmit={handleSubmit}>
+      <form ref={composerFormRef} className="theme-surface-panel mt-4 overflow-hidden rounded-[32px] border border-line/80 px-4 py-4 shadow-[0_20px_54px_rgba(83,53,31,0.1)] sm:px-5 sm:py-5" onSubmit={handleSubmit}>
+        <div className="mb-1 flex flex-wrap items-start justify-between gap-3">
+          <div className="max-w-2xl">
+            <p className="eyebrow text-muted">Message box</p>
+            <h3 className="mt-2 text-lg font-semibold tracking-tight text-foreground sm:text-xl">
+              Talk to the model from here.
+            </h3>
+            <p className="mt-2 text-sm leading-6 text-muted">
+              Use this box for the actual request. Your default assistant style now lives in Admin / Access, while saved chats keep any older thread-specific style.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="theme-surface-chip rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground">
+              {selectedModel || "No model selected"}
+            </span>
+            <span className="theme-surface-chip rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground">
+              {assistantStyleBadgeLabel}
+            </span>
+          </div>
+        </div>
         <div className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <button
@@ -2716,7 +2745,7 @@ export function ChatWorkspace({
         </div>
         <textarea
           ref={draftInputRef}
-          className="min-h-32 w-full rounded-[28px] border border-line bg-white px-4 py-4 text-sm leading-7 text-foreground outline-none"
+          className="min-h-36 w-full rounded-[30px] border border-line bg-white px-4 py-4 text-sm leading-7 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.72)] outline-none sm:px-5 sm:py-5 lg:min-h-40"
           placeholder="Ask Ollama something useful..."
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
@@ -2730,7 +2759,7 @@ export function ChatWorkspace({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
             <button
-              className="rounded-full bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-full bg-[var(--accent)] px-6 py-3 text-sm font-semibold text-white shadow-[0_16px_34px_rgba(213,122,66,0.24)] disabled:cursor-not-allowed disabled:opacity-50"
               disabled={!draft.trim() || !selectedModel || isStreaming}
               type="submit"
             >
