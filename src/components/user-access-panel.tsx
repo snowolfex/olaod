@@ -5,7 +5,8 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { getHelpHint } from "@/lib/help-manual";
 import { readQuickHelpEnabled, writeQuickHelpEnabled } from "@/lib/help-preferences";
-import { DEFAULT_USER_SYSTEM_PROMPT } from "@/lib/system-prompt";
+import { DEFAULT_USER_CHAT_TEMPERATURE, DEFAULT_USER_SYSTEM_PROMPT } from "@/lib/system-prompt";
+import type { OllamaModel } from "@/lib/ollama";
 import type {
   AiModelSummary,
   AiKnowledgeDebugResult,
@@ -81,6 +82,7 @@ type WorkspaceBackupSnapshot = {
 };
 
 type UserAccessPanelProps = {
+  availableModels?: OllamaModel[];
   compact?: boolean;
   onSessionChange: (status: UserSessionStatus) => void;
   session: UserSessionStatus;
@@ -186,7 +188,7 @@ function loadGoogleIdentityScript() {
   return googleScriptLoadPromise;
 }
 
-export function UserAccessPanel({ compact = false, onSessionChange, session, surface = "embedded" }: UserAccessPanelProps) {
+export function UserAccessPanel({ availableModels = [], compact = false, onSessionChange, session, surface = "embedded" }: UserAccessPanelProps) {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -204,6 +206,8 @@ export function UserAccessPanel({ compact = false, onSessionChange, session, sur
   const [password, setPassword] = useState("");
   const [accountDisplayName, setAccountDisplayName] = useState("");
   const [accountEmail, setAccountEmail] = useState("");
+  const [accountPreferredModel, setAccountPreferredModel] = useState("");
+  const [accountPreferredTemperature, setAccountPreferredTemperature] = useState(DEFAULT_USER_CHAT_TEMPERATURE);
   const [accountPreferredSystemPrompt, setAccountPreferredSystemPrompt] = useState(DEFAULT_USER_SYSTEM_PROMPT);
   const [currentPasswordDraft, setCurrentPasswordDraft] = useState("");
   const [nextPasswordDraft, setNextPasswordDraft] = useState("");
@@ -266,11 +270,13 @@ export function UserAccessPanel({ compact = false, onSessionChange, session, sur
   useEffect(() => {
     setAccountDisplayName(session.user?.displayName ?? "");
     setAccountEmail(session.user?.email ?? "");
+    setAccountPreferredModel(session.user?.preferredModel ?? "");
+    setAccountPreferredTemperature(session.user?.preferredTemperature ?? DEFAULT_USER_CHAT_TEMPERATURE);
     setAccountPreferredSystemPrompt(session.user?.preferredSystemPrompt ?? DEFAULT_USER_SYSTEM_PROMPT);
     setCurrentPasswordDraft("");
     setNextPasswordDraft("");
     setAccountSummary(null);
-  }, [session.user?.displayName, session.user?.email, session.user?.id, session.user?.preferredSystemPrompt]);
+  }, [session.user?.displayName, session.user?.email, session.user?.id, session.user?.preferredModel, session.user?.preferredSystemPrompt, session.user?.preferredTemperature]);
 
   useEffect(() => {
     setIsQuickHelpEnabled(readQuickHelpEnabled());
@@ -1065,6 +1071,8 @@ export function UserAccessPanel({ compact = false, onSessionChange, session, sur
         body: JSON.stringify({
           displayName: accountDisplayName,
           email: accountEmail,
+          preferredModel: accountPreferredModel,
+          preferredTemperature: accountPreferredTemperature,
           preferredSystemPrompt: accountPreferredSystemPrompt,
         }),
       });
@@ -1454,6 +1462,39 @@ export function UserAccessPanel({ compact = false, onSessionChange, session, sur
                     />
                   </label>
                   <label className="block text-xs font-semibold uppercase tracking-[0.16em] text-muted/75">
+                    Default model
+                    <select
+                      className="mt-2 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm font-normal text-foreground outline-none"
+                      value={accountPreferredModel}
+                      onChange={(event) => setAccountPreferredModel(event.target.value)}
+                    >
+                      <option value="">Use the first available local model</option>
+                      {availableModels.map((model) => (
+                        <option key={model.name} value={model.name}>
+                          {model.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div>
+                    <div className="flex items-center justify-between gap-4 text-xs font-semibold uppercase tracking-[0.16em] text-muted/75">
+                      <span>Reply style</span>
+                      <span>{accountPreferredTemperature.toFixed(1)}</span>
+                    </div>
+                    <input
+                      className="mt-3 w-full accent-[var(--accent)]"
+                      type="range"
+                      min="0"
+                      max="1.5"
+                      step="0.1"
+                      value={accountPreferredTemperature}
+                      onChange={(event) => setAccountPreferredTemperature(Number(event.target.value))}
+                    />
+                    <p className="mt-2 text-xs leading-6 text-muted">
+                      Lower stays more focused. Higher feels more flexible and creative.
+                    </p>
+                  </div>
+                  <label className="block text-xs font-semibold uppercase tracking-[0.16em] text-muted/75">
                     Assistant style
                     <textarea
                       className="mt-2 min-h-36 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm font-normal leading-7 text-foreground outline-none"
@@ -1464,8 +1505,8 @@ export function UserAccessPanel({ compact = false, onSessionChange, session, sur
                 </div>
                 <p className="mt-3 text-xs leading-6 text-muted">
                   {session.user.authProvider === "google"
-                    ? "Google-managed accounts keep their provider email. You can still change the display name and default assistant style used for new chats."
-                    : "Local accounts can leave email blank or store one address for identification and future recovery workflows. The assistant style becomes your per-user default for new chats."}
+                    ? "Google-managed accounts keep their provider email. You can still change the display name plus the defaults used when you start a new chat."
+                    : "Local accounts can leave email blank or store one address for identification and future recovery workflows. Model, reply style, and assistant style become your per-user defaults for new chats."}
                 </p>
                 <button
                   className="ui-button ui-button-primary mt-4 w-full px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"

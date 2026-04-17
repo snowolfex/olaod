@@ -15,6 +15,8 @@ export async function PATCH(request: Request) {
     const payload = (await request.json()) as {
       displayName?: string;
       email?: string;
+      preferredModel?: string;
+      preferredTemperature?: number;
       preferredSystemPrompt?: string;
     };
 
@@ -22,6 +24,8 @@ export async function PATCH(request: Request) {
       id: currentUser.id,
       displayName: payload.displayName ?? currentUser.displayName,
       email: payload.email,
+      preferredModel: payload.preferredModel,
+      preferredTemperature: payload.preferredTemperature,
       preferredSystemPrompt: payload.preferredSystemPrompt,
     });
 

@@ -11,6 +11,8 @@ export type StoredUser = {
   role: UserRole;
   authProvider: AuthProvider;
   email?: string;
+  preferredModel?: string;
+  preferredTemperature?: number;
   preferredSystemPrompt?: string;
   providerSubject?: string;
   avatarUrl?: string;
@@ -25,7 +27,7 @@ export type ManagedUser = PublicUser & {
   savedConversationCount: number;
 };
 
-export type SessionUser = Pick<PublicUser, "id" | "username" | "displayName" | "role" | "authProvider" | "email" | "preferredSystemPrompt">;
+export type SessionUser = Pick<PublicUser, "id" | "username" | "displayName" | "role" | "authProvider" | "email" | "preferredModel" | "preferredTemperature" | "preferredSystemPrompt">;
 
 export type UserSessionStatus = {
   authAvailable: boolean;

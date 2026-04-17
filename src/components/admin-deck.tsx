@@ -246,7 +246,7 @@ export function AdminDeck({
 
       <div className={isPageSurface ? "mt-4 pr-1" : "min-h-0 flex-1 overflow-y-auto pr-1"}>
         {activeTab === "access" ? (
-          <UserAccessPanel onSessionChange={onSessionChange} session={userSession} surface={isPageSurface ? "page" : "embedded"} />
+          <UserAccessPanel availableModels={status.models} onSessionChange={onSessionChange} session={userSession} surface={isPageSurface ? "page" : "embedded"} />
         ) : (
           <ModelOperationsPanel
             cli={status.cli}

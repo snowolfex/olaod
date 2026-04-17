@@ -13,7 +13,7 @@ import type {
   StoredConversation,
 } from "@/lib/conversation-types";
 import type { OllamaChatMessage, OllamaModel } from "@/lib/ollama";
-import { DEFAULT_USER_SYSTEM_PROMPT } from "@/lib/system-prompt";
+import { DEFAULT_USER_CHAT_TEMPERATURE, DEFAULT_USER_SYSTEM_PROMPT } from "@/lib/system-prompt";
 import type { SessionUser } from "@/lib/user-types";
 
 type ChatWorkspaceProps = {
@@ -45,7 +45,6 @@ const PROMPT_PRESETS = [
 ] as const;
 
 const CHAT_WORKSPACE_SIDEBAR_STORAGE_KEY = "oload:chat:workspace-sidebar";
-const CHAT_DESKTOP_LAYOUT_STORAGE_KEY = "oload:chat:desktop-layout";
 const CHAT_PROMPT_PRESETS_STORAGE_KEY = "oload:chat:prompt-presets";
 const CHAT_PINNED_CONVERSATIONS_STORAGE_KEY = "oload:chat:pinned-conversations";
 const CHAT_PINNED_ONLY_FILTER_STORAGE_KEY = "oload:chat:pinned-only-filter";
@@ -57,14 +56,9 @@ const ARCHIVED_RETENTION_DAYS = 30;
 const ARCHIVED_RETENTION_OPTIONS = [7, 14, 30, 90] as const;
 type ArchivedConversationFilter = "all" | "empty" | "old";
 type ArchivedConversationSort = "archived-newest" | "archived-oldest" | "recent-activity";
-type DesktopChatLayoutMode = "chat-first" | "controls-first";
 
 function getWorkspaceSidebarStorageKey(userId?: string) {
   return `${CHAT_WORKSPACE_SIDEBAR_STORAGE_KEY}:${userId ?? "guest"}`;
-}
-
-function getDesktopLayoutStorageKey(userId?: string) {
-  return `${CHAT_DESKTOP_LAYOUT_STORAGE_KEY}:${userId ?? "guest"}`;
 }
 
 function getPromptPresetsStorageKey(userId?: string) {
@@ -101,10 +95,6 @@ function parseWorkspaceSidebarPreference(value: string | null) {
   }
 
   return value === "true";
-}
-
-function parseDesktopLayoutPreference(value: string | null): DesktopChatLayoutMode {
-  return value === "controls-first" ? "controls-first" : "chat-first";
 }
 
 function parsePromptPresetsPreference(value: string | null, fallback: boolean) {
@@ -421,33 +411,6 @@ function DisclosureChevronIcon({ open }: { open: boolean }) {
   );
 }
 
-function DesktopLayoutSwapIcon({ reversed }: { reversed: boolean }) {
-  return (
-    <svg aria-hidden="true" className="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="none">
-      <rect x="2.5" y={reversed ? "11.5" : "2.5"} width="15" height="4" rx="2" stroke="currentColor" strokeWidth="1.4" />
-      <rect x="5" y={reversed ? "4.5" : "13.5"} width="10" height="2.8" rx="1.4" stroke="currentColor" strokeWidth="1.4" />
-      <path
-        d={reversed ? "M16 8.25H7.75M7.75 8.25L10.25 10.75M7.75 8.25L10.25 5.75" : "M4 11.75H12.25M12.25 11.75L9.75 14.25M12.25 11.75L9.75 9.25"}
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.4"
-      />
-    </svg>
-  );
-}
-
-function SparkGridIcon() {
-  return (
-    <svg aria-hidden="true" className="h-4 w-4 shrink-0" viewBox="0 0 16 16" fill="none">
-      <rect x="2" y="2" width="5" height="5" rx="1.4" stroke="currentColor" strokeWidth="1.2" />
-      <rect x="9" y="2" width="5" height="3" rx="1.4" stroke="currentColor" strokeWidth="1.2" />
-      <rect x="9" y="7" width="5" height="7" rx="1.4" stroke="currentColor" strokeWidth="1.2" />
-      <rect x="2" y="9" width="5" height="5" rx="1.4" stroke="currentColor" strokeWidth="1.2" />
-    </svg>
-  );
-}
-
 export function ChatWorkspace({
   currentUser,
   isReachable,
@@ -456,7 +419,6 @@ export function ChatWorkspace({
   models,
 }: ChatWorkspaceProps) {
   const workspaceSidebarStorageKey = getWorkspaceSidebarStorageKey(currentUser?.id);
-  const desktopLayoutStorageKey = getDesktopLayoutStorageKey(currentUser?.id);
   const promptPresetsStorageKey = getPromptPresetsStorageKey(currentUser?.id);
   const pinnedConversationsStorageKey = getPinnedConversationsStorageKey(currentUser?.id);
   const pinnedOnlyFilterStorageKey = getPinnedOnlyFilterStorageKey(currentUser?.id);
@@ -487,10 +449,7 @@ export function ChatWorkspace({
   const [selectedArchivedConversationIds, setSelectedArchivedConversationIds] = useState<string[]>([]);
   const [showWorkspaceSidebar, setShowWorkspaceSidebar] = useState(true);
   const [loadedWorkspaceSidebarKey, setLoadedWorkspaceSidebarKey] = useState<string | null>(null);
-  const [desktopLayoutMode, setDesktopLayoutMode] = useState<DesktopChatLayoutMode>("chat-first");
-  const [loadedDesktopLayoutKey, setLoadedDesktopLayoutKey] = useState<string | null>(null);
   const [showSavedChatsPanel, setShowSavedChatsPanel] = useState(true);
-  const [showModelControlsPanel, setShowModelControlsPanel] = useState(true);
   const [showPromptPresets, setShowPromptPresets] = useState(
     (initialConversation?.messages?.length ?? 0) === 0,
   );
@@ -503,10 +462,10 @@ export function ChatWorkspace({
   const [loadedArchivedFilterKey, setLoadedArchivedFilterKey] = useState<string | null>(null);
   const [loadedArchivedSortKey, setLoadedArchivedSortKey] = useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useState(
-    initialConversation?.settings.model || models[0]?.name || "",
+    initialConversation?.settings.model || currentUser?.preferredModel || models[0]?.name || "",
   );
   const [temperature, setTemperature] = useState(
-    initialConversation?.settings.temperature ?? 0.7,
+    initialConversation?.settings.temperature ?? currentUser?.preferredTemperature ?? DEFAULT_USER_CHAT_TEMPERATURE,
   );
   const [systemPrompt, setSystemPrompt] = useState(
     initialConversation?.settings.systemPrompt ||
@@ -530,23 +489,33 @@ export function ChatWorkspace({
   const recentlyUpdatedConversationTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!selectedModel && models[0]?.name) {
-      setSelectedModel(models[0].name);
+    const fallbackModel = currentUser?.preferredModel && models.some((model) => model.name === currentUser.preferredModel)
+      ? currentUser.preferredModel
+      : models[0]?.name;
+
+    if (!selectedModel && fallbackModel) {
+      setSelectedModel(fallbackModel);
       return;
     }
 
     if (selectedModel && !models.some((model) => model.name === selectedModel)) {
-      setSelectedModel(models[0]?.name ?? "");
+      setSelectedModel(fallbackModel ?? "");
     }
-  }, [models, selectedModel]);
+  }, [currentUser?.preferredModel, models, selectedModel]);
 
   useEffect(() => {
     if (activeConversationId || messages.length > 0) {
       return;
     }
 
+    setSelectedModel(
+      currentUser?.preferredModel && models.some((model) => model.name === currentUser.preferredModel)
+        ? currentUser.preferredModel
+        : models[0]?.name ?? "",
+    );
+    setTemperature(currentUser?.preferredTemperature ?? DEFAULT_USER_CHAT_TEMPERATURE);
     setSystemPrompt(currentUser?.preferredSystemPrompt || DEFAULT_USER_SYSTEM_PROMPT);
-  }, [activeConversationId, currentUser?.preferredSystemPrompt, messages.length]);
+  }, [activeConversationId, currentUser?.preferredModel, currentUser?.preferredSystemPrompt, currentUser?.preferredTemperature, messages.length, models]);
 
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -573,17 +542,6 @@ export function ChatWorkspace({
   }, [workspaceSidebarStorageKey]);
 
   useEffect(() => {
-    try {
-      const storedValue = window.localStorage.getItem(desktopLayoutStorageKey);
-      setDesktopLayoutMode(parseDesktopLayoutPreference(storedValue));
-    } catch {
-      setDesktopLayoutMode("chat-first");
-    } finally {
-      setLoadedDesktopLayoutKey(desktopLayoutStorageKey);
-    }
-  }, [desktopLayoutStorageKey]);
-
-  useEffect(() => {
     if (loadedWorkspaceSidebarKey !== workspaceSidebarStorageKey) {
       return;
     }
@@ -594,18 +552,6 @@ export function ChatWorkspace({
       // Ignore storage failures and keep the in-memory rail state.
     }
   }, [loadedWorkspaceSidebarKey, showWorkspaceSidebar, workspaceSidebarStorageKey]);
-
-  useEffect(() => {
-    if (loadedDesktopLayoutKey !== desktopLayoutStorageKey) {
-      return;
-    }
-
-    try {
-      window.localStorage.setItem(desktopLayoutStorageKey, desktopLayoutMode);
-    } catch {
-      // Ignore storage failures and keep the in-memory layout state.
-    }
-  }, [desktopLayoutMode, desktopLayoutStorageKey, loadedDesktopLayoutKey]);
 
   useEffect(() => {
     try {
@@ -969,9 +915,15 @@ export function ChatWorkspace({
       setActiveConversationId(conversation.id);
       setConversationTitle(conversation.title);
       setMessages(conversation.messages);
-      setSelectedModel(conversation.settings.model || models[0]?.name || "");
+      setSelectedModel(
+        conversation.settings.model
+          || (currentUser?.preferredModel && models.some((model) => model.name === currentUser.preferredModel)
+            ? currentUser.preferredModel
+            : models[0]?.name)
+          || "",
+      );
       setSystemPrompt(conversation.settings.systemPrompt || currentUser?.preferredSystemPrompt || DEFAULT_USER_SYSTEM_PROMPT);
-      setTemperature(conversation.settings.temperature);
+      setTemperature(conversation.settings.temperature ?? currentUser?.preferredTemperature ?? DEFAULT_USER_CHAT_TEMPERATURE);
       setDraft("");
       setLastLatency(null);
     } catch (loadError) {
@@ -1050,9 +1002,13 @@ export function ChatWorkspace({
     setLastLatency(null);
     setIsStreaming(false);
     setMessages([]);
-    setSelectedModel(models[0]?.name ?? selectedModel);
+    setSelectedModel(
+      (currentUser?.preferredModel && models.some((model) => model.name === currentUser.preferredModel)
+        ? currentUser.preferredModel
+        : models[0]?.name) ?? selectedModel,
+    );
     setSystemPrompt(currentUser?.preferredSystemPrompt || DEFAULT_USER_SYSTEM_PROMPT);
-    setTemperature(0.7);
+    setTemperature(currentUser?.preferredTemperature ?? DEFAULT_USER_CHAT_TEMPERATURE);
   }
 
   async function deleteConversationRecord(id: string) {
@@ -1140,9 +1096,15 @@ export function ChatWorkspace({
       setConversationTitle(payload.conversation.title);
       setConversationTitleDraft(payload.conversation.title);
       setMessages(payload.conversation.messages);
-      setSelectedModel(payload.conversation.settings.model || models[0]?.name || "");
+      setSelectedModel(
+        payload.conversation.settings.model
+          || (currentUser?.preferredModel && models.some((model) => model.name === currentUser.preferredModel)
+            ? currentUser.preferredModel
+            : models[0]?.name)
+          || "",
+      );
       setSystemPrompt(payload.conversation.settings.systemPrompt || currentUser?.preferredSystemPrompt || DEFAULT_USER_SYSTEM_PROMPT);
-      setTemperature(payload.conversation.settings.temperature);
+      setTemperature(payload.conversation.settings.temperature ?? currentUser?.preferredTemperature ?? DEFAULT_USER_CHAT_TEMPERATURE);
     } catch (archiveError) {
       setError(
         archiveError instanceof Error
@@ -1563,11 +1525,9 @@ export function ChatWorkspace({
       ),
     }))
     .filter((group) => group.conversations.length > 0);
-  const controlsFirst = desktopLayoutMode === "controls-first";
   const savedChatsSummary = currentUser
     ? `${visibleConversations.length} in view / ${pinnedConversationIds.length} pinned`
     : "Sign in to save and reopen chats";
-  const modelControlsSummary = `${selectedModel || "No model"} / temp ${temperature.toFixed(1)}`;
   const hasLocalAiAvailable = isReachable && models.length > 0;
   const localAiStatusLabel = hasLocalAiAvailable ? "Local AI ready" : "No local AI";
   const accountSystemPrompt = currentUser?.preferredSystemPrompt?.trim() || DEFAULT_USER_SYSTEM_PROMPT;
@@ -1580,9 +1540,6 @@ export function ChatWorkspace({
     : "Using the current system prompt defaults.";
   const isUsingAccountPrompt = systemPrompt.trim() === accountSystemPrompt;
   const assistantStyleBadgeLabel = isUsingAccountPrompt ? "Account style" : "Saved thread style";
-  const desktopControlBodyMaxHeightClass = controlsFirst
-    ? "lg:max-h-[min(26dvh,18rem)] xl:max-h-[min(28dvh,20rem)] 2xl:max-h-[min(30dvh,22rem)]"
-    : "lg:max-h-[min(36dvh,26rem)] xl:max-h-[min(38dvh,29rem)] 2xl:max-h-[min(40dvh,31rem)]";
   const disclosureHeaderBaseClass = "group relative flex w-full items-start justify-between gap-4 overflow-hidden rounded-[24px] border px-4 py-4 text-left shadow-[0_18px_44px_rgba(83,53,31,0.1)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_24px_56px_rgba(83,53,31,0.14)]";
   const disclosureIndicatorClass = "theme-surface-chip inline-flex h-10 w-10 items-center justify-center rounded-full text-foreground";
 
@@ -1730,7 +1687,7 @@ export function ChatWorkspace({
       </button>
 
       {showSavedChatsPanel ? (
-        <div id="saved-chats-panel-body" className={`mt-3 space-y-4 overflow-y-auto pr-1 ${desktopControlBodyMaxHeightClass}`}>
+        <div id="saved-chats-panel-body" className="mt-3 space-y-4 overflow-y-auto pr-1 lg:max-h-[32rem]">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-xs text-muted sm:text-sm">
@@ -2442,151 +2399,6 @@ export function ChatWorkspace({
     </div>
   );
 
-  const modelControlsPanel = (
-    <div className="theme-surface-soft overflow-hidden rounded-[28px] p-3 sm:p-4">
-      <button
-        aria-controls="model-controls-panel-body"
-        aria-expanded={showModelControlsPanel}
-        className={`${disclosureHeaderBaseClass} theme-surface-feature-cool`}
-        type="button"
-        onClick={() => setShowModelControlsPanel((current) => !current)}
-      >
-        <span className="min-w-0">
-          <span className="eyebrow text-muted">AI controls</span>
-          <span className="mt-2 block text-base font-semibold text-foreground sm:text-lg">
-            Model, response, and assistant style
-          </span>
-          <span className="mt-2 block text-[11px] font-semibold uppercase tracking-[0.2em] text-[color:color-mix(in_srgb,var(--accent-strong)_56%,#245d7b_44%)]">
-            Expand to tune replies
-          </span>
-          <span className="theme-surface-chip mt-3 inline-flex max-w-full rounded-full px-3 py-1 text-xs font-medium text-muted">
-            {modelControlsSummary}
-          </span>
-        </span>
-        <span className="mt-1 hidden flex-col items-end gap-2 sm:inline-flex">
-          <span className="theme-surface-chip rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">
-            {showModelControlsPanel ? "Collapse" : "Expand"}
-          </span>
-          <span className={disclosureIndicatorClass}>
-            <DisclosureChevronIcon open={showModelControlsPanel} />
-          </span>
-        </span>
-        <span className={`${disclosureIndicatorClass} mt-1 sm:hidden`}>
-          <DisclosureChevronIcon open={showModelControlsPanel} />
-        </span>
-      </button>
-
-      {showModelControlsPanel ? (
-        <div id="model-controls-panel-body" className={`mt-3 space-y-3 overflow-y-auto pr-1 ${desktopControlBodyMaxHeightClass}`}>
-          <div className="theme-surface-soft rounded-[28px] p-4 sm:p-5">
-            <label className="eyebrow text-muted" htmlFor="model-select">
-              Active model
-            </label>
-            <select
-              id="model-select"
-              className="mt-3 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
-              disabled={models.length === 0 || isStreaming}
-              value={selectedModel}
-              onChange={(event) => setSelectedModel(event.target.value)}
-            >
-              {models.length === 0 ? (
-                <option value="">No Ollama models detected</option>
-              ) : null}
-              {models.map((model) => (
-                <option key={model.name} value={model.name}>
-                  {model.name} · {formatBytes(model.size)}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="theme-surface-soft rounded-[28px] p-4 sm:p-5">
-            <div className="flex items-center justify-between gap-4">
-              <label className="eyebrow text-muted" htmlFor="temperature-range">
-                Temperature
-              </label>
-              <span className="text-sm font-semibold text-foreground">
-                {temperature.toFixed(1)}
-              </span>
-            </div>
-            <input
-              id="temperature-range"
-              className="mt-4 w-full accent-[var(--accent)]"
-              type="range"
-              min="0"
-              max="1.5"
-              step="0.1"
-              value={temperature}
-              onChange={(event) => setTemperature(Number(event.target.value))}
-            />
-            <p className="mt-3 text-sm leading-6 text-muted">
-              Lower values keep replies tighter. Higher values allow more variation.
-            </p>
-          </div>
-
-          <div className="theme-surface-soft rounded-[28px] p-4 sm:p-5">
-            <p className="eyebrow text-muted">Assistant style</p>
-            <p className="mt-3 text-sm font-semibold text-foreground">
-              {isUsingAccountPrompt ? "Using your account default" : "Using a saved thread style"}
-            </p>
-            <p className="mt-3 text-sm leading-7 text-muted">{systemPromptPreview}</p>
-            <p className="mt-3 text-xs leading-6 text-muted">
-              Change the default in Admin / Access. Older saved chats keep any thread-specific assistant style already stored with them.
-            </p>
-          </div>
-
-          <div className="theme-surface-panel rounded-[28px] border-dashed p-4 text-sm leading-7 text-muted">
-            {lastLatency
-              ? `Last response streamed in ${lastLatency} ms.`
-              : "Run a prompt to measure live response latency through the gateway."}
-            <br />
-            {isSavingConversation
-              ? "Saving conversation..."
-              : isLoadingConversation
-                ? "Opening saved conversation..."
-                : currentUser
-                  ? "Conversation state persists per signed-in user."
-                  : "Signed-out sessions can chat live, but conversation history is not persisted."}
-          </div>
-        </div>
-      ) : (
-        <div className="theme-surface-panel mt-3 grid gap-3 rounded-[24px] px-4 py-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className={`rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] ${
-                isReachable
-                  ? "bg-emerald-100 text-emerald-900"
-                  : "bg-amber-100 text-amber-900"
-              }`}>
-                {isReachable ? "Gateway online" : "Gateway offline"}
-              </span>
-            </div>
-            <p className="text-sm font-semibold text-foreground">
-              {selectedModel || "No model selected"}
-            </p>
-            <p className="text-xs leading-5 text-muted">
-              Choose a model here. Your assistant style default now lives in Admin / Access.
-            </p>
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-            <div className="theme-surface-strong rounded-[18px] px-3 py-2">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">Temperature</p>
-              <p className="mt-1 text-sm font-semibold text-foreground">{temperature.toFixed(1)}</p>
-            </div>
-            <div className="theme-surface-strong rounded-[18px] px-3 py-2">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">Latency</p>
-              <p className="mt-1 text-sm font-semibold text-foreground">{lastLatency ? `${lastLatency} ms` : "Pending"}</p>
-            </div>
-          </div>
-          <div className="theme-surface-strong lg:col-span-2 rounded-[18px] px-3 py-2">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">Assistant style</p>
-            <p className="mt-1 text-xs leading-5 text-muted">{systemPromptPreview}</p>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-
   const chatStage = (
     <div className="theme-surface-stage relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[32px] border border-line/80 p-4 sm:p-5 lg:px-6 xl:px-7">
       <div className="pointer-events-none absolute inset-x-8 top-0 h-24 rounded-b-[40px] bg-[radial-gradient(circle_at_top,rgba(213,122,66,0.12),transparent_70%)]" />
@@ -2629,30 +2441,6 @@ export function ChatWorkspace({
         ref={scrollContainerRef}
         className="theme-surface-transcript min-h-0 flex-1 space-y-4 overflow-y-auto rounded-[28px] border border-line/50 px-3 py-3 pr-2 sm:px-4 sm:py-4"
       >
-        {messages.length === 0 ? (
-          <div className="theme-surface-feature rounded-[28px] border-dashed p-5 sm:p-6">
-            <p className="eyebrow text-muted">Chat box ready</p>
-            <h3 className="mt-3 text-xl font-semibold tracking-tight text-foreground">
-              Type a message to start the conversation.
-            </h3>
-            <p className="mt-3 text-sm leading-7 text-muted">
-              This is the chat area. Ask for code help, drafting, troubleshooting, or model comparisons and the reply will stream here.
-            </p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {PROMPT_PRESETS.map((preset) => (
-                <button
-                  key={preset.label}
-                  className="rounded-full border border-line bg-white px-3 py-2 text-xs font-semibold text-foreground"
-                  type="button"
-                  onClick={() => applyPromptPreset(preset.prompt)}
-                >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : null}
-
         {messages.map((message, index) => {
           const isAssistant = message.role === "assistant";
 
@@ -2692,16 +2480,7 @@ export function ChatWorkspace({
       </div>
 
       <form ref={composerFormRef} className="theme-surface-panel mt-4 overflow-hidden rounded-[32px] border border-line/80 px-4 py-4 shadow-[0_20px_54px_rgba(83,53,31,0.1)] sm:px-5 sm:py-5" onSubmit={handleSubmit}>
-        <div className="mb-1 flex flex-wrap items-start justify-between gap-3">
-          <div className="max-w-2xl">
-            <p className="eyebrow text-muted">Message box</p>
-            <h3 className="mt-2 text-lg font-semibold tracking-tight text-foreground sm:text-xl">
-              Talk to the model from here.
-            </h3>
-            <p className="mt-2 text-sm leading-6 text-muted">
-              Use this box for the actual request. Your default assistant style now lives in Admin / Access, while saved chats keep any older thread-specific style.
-            </p>
-          </div>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
             <span className="theme-surface-chip rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground">
               {selectedModel || "No model selected"}
@@ -2722,11 +2501,8 @@ export function ChatWorkspace({
               type="button"
               onClick={() => setShowPromptPresets((current) => !current)}
             >
-              {showPromptPresets ? "Hide prompt presets" : "Show prompt presets"}
+              {showPromptPresets ? "Hide ideas" : "Show ideas"}
             </button>
-            <p className="text-xs text-muted">
-              Quick starts for mobile and repeat tasks.
-            </p>
           </div>
           {showPromptPresets ? (
             <div className="flex flex-wrap gap-2">
@@ -2746,7 +2522,7 @@ export function ChatWorkspace({
         <textarea
           ref={draftInputRef}
           className="min-h-36 w-full rounded-[30px] border border-line bg-white px-4 py-4 text-sm leading-7 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.72)] outline-none sm:px-5 sm:py-5 lg:min-h-40"
-          placeholder="Ask Ollama something useful..."
+          placeholder="Type your message..."
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={handleDraftKeyDown}
@@ -2763,7 +2539,7 @@ export function ChatWorkspace({
               disabled={!draft.trim() || !selectedModel || isStreaming}
               type="submit"
             >
-              {isStreaming ? "Streaming..." : "Send prompt"}
+              {isStreaming ? "Sending..." : "Send"}
             </button>
             <button
               className="rounded-full border border-line bg-white px-5 py-3 text-sm font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50"
@@ -2781,9 +2557,6 @@ export function ChatWorkspace({
               Clear
             </button>
           </div>
-          <p className="text-xs text-muted">
-            Requests are sent through `/api/ollama/chat`. Press Ctrl+Enter or Cmd+Enter to send.
-          </p>
         </div>
       </form>
     </div>
@@ -2793,17 +2566,12 @@ export function ChatWorkspace({
     <section className="glass-panel flex min-h-0 flex-col overflow-hidden rounded-[36px] p-3 sm:p-5 lg:h-auto lg:overflow-visible lg:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="section-label text-xs font-semibold">Live chat</p>
-          <h2 className="mt-3 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-            Conversation cockpit
+          <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+            Chat
           </h2>
-          <p className="mt-3 max-w-2xl text-sm leading-7 text-muted sm:text-base">
-            Chats now persist locally. You can resume recent sessions, keep model
-            settings per conversation, and continue through the server gateway.
-          </p>
           {activeConversationIsArchived ? (
             <p className="mt-2 max-w-2xl text-xs leading-6 text-muted sm:text-sm">
-              This active conversation is archived and stays out of the main saved-chat flow until restored.
+              This chat is archived until you restore it.
             </p>
           ) : null}
         </div>
@@ -2836,35 +2604,16 @@ export function ChatWorkspace({
           >
             {isReachable ? "Gateway online" : "Gateway offline"}
           </div>
-          <button
-            className="theme-surface-feature hidden shrink-0 items-center gap-3 rounded-[20px] px-3 py-2 text-left transition duration-200 hover:-translate-y-0.5 lg:inline-flex"
-            type="button"
-            onClick={() => setDesktopLayoutMode((current) => current === "chat-first" ? "controls-first" : "chat-first")}
-          >
-            <span className="theme-surface-chip inline-flex h-10 w-10 items-center justify-center rounded-[14px] text-[color:var(--accent-strong)]">
-              <SparkGridIcon />
-            </span>
-            <span className="flex flex-col">
-              <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">Layout flow</span>
-              <span className="mt-1 inline-flex items-center gap-2 text-sm font-semibold text-foreground">
-                <DesktopLayoutSwapIcon reversed={controlsFirst} />
-                {controlsFirst ? "Move controls below" : "Move controls above"}
-              </span>
-            </span>
-          </button>
         </div>
       </div>
 
       <div className="mt-4 flex min-h-0 flex-1 flex-col gap-3 lg:flex-none lg:items-center">
-        <div className={`${showWorkspaceSidebar ? "block" : "hidden"} order-1 lg:block lg:w-full lg:max-w-[92rem] xl:max-w-[96rem] lg:flex-none ${controlsFirst ? "lg:order-1" : "lg:order-2"}`}>
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)] lg:items-start">
-            {savedChatsPanel}
-            {modelControlsPanel}
-          </div>
+        <div className="order-1 min-h-0 flex-1 lg:w-full lg:max-w-[98rem] lg:flex-none xl:max-w-[104rem]">
+          {chatStage}
         </div>
 
-        <div className={`order-2 min-h-0 flex-1 lg:w-full lg:max-w-[98rem] lg:flex-none xl:max-w-[104rem] ${controlsFirst ? "lg:order-2" : "lg:order-1"}`}>
-          {chatStage}
+        <div className={`${showWorkspaceSidebar ? "block" : "hidden"} order-2 lg:block lg:w-full lg:max-w-[92rem] xl:max-w-[96rem] lg:flex-none`}>
+          {savedChatsPanel}
         </div>
       </div>
     </section>

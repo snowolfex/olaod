@@ -3,7 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { getDataStorePath } from "@/lib/data-store";
-import { normalizeSystemPrompt } from "@/lib/system-prompt";
+import { normalizeModelName, normalizeSystemPrompt, normalizeTemperature } from "@/lib/system-prompt";
 import type { AuthProvider, PublicUser, SessionUser, StoredUser } from "@/lib/user-types";
 
 const STORE_PATH = getDataStorePath("users.json");
@@ -49,6 +49,8 @@ function normalizeStoredUser(user: StoredUser): StoredUser {
     role: user.role,
     authProvider: isAuthProvider(user.authProvider) ? user.authProvider : "local",
     email: normalizeOptionalString(user.email),
+    preferredModel: normalizeModelName(user.preferredModel),
+    preferredTemperature: normalizeTemperature(user.preferredTemperature),
     preferredSystemPrompt: normalizeSystemPrompt(user.preferredSystemPrompt),
     providerSubject: normalizeOptionalString(user.providerSubject),
     avatarUrl: normalizeOptionalString(user.avatarUrl),
@@ -81,6 +83,8 @@ export function toPublicUser(user: StoredUser): PublicUser {
     role: user.role,
     authProvider: user.authProvider,
     email: user.email,
+    preferredModel: user.preferredModel,
+    preferredTemperature: user.preferredTemperature,
     preferredSystemPrompt: user.preferredSystemPrompt,
     providerSubject: user.providerSubject,
     avatarUrl: user.avatarUrl,
@@ -96,6 +100,8 @@ export function toSessionUser(user: StoredUser): SessionUser {
     role: user.role,
     authProvider: user.authProvider,
     email: user.email,
+    preferredModel: user.preferredModel,
+    preferredTemperature: user.preferredTemperature,
     preferredSystemPrompt: user.preferredSystemPrompt,
   };
 }
@@ -165,6 +171,8 @@ export async function updateUserProfile(input: {
   displayName: string;
   email?: string;
   id: string;
+  preferredModel?: string;
+  preferredTemperature?: number;
   preferredSystemPrompt?: string;
 }) {
   const users = await readStore();
@@ -203,6 +211,8 @@ export async function updateUserProfile(input: {
     ...currentUser,
     displayName: nextDisplayName,
     email: currentUser.authProvider === "google" ? currentUser.email : nextEmail,
+    preferredModel: normalizeModelName(input.preferredModel),
+    preferredTemperature: normalizeTemperature(input.preferredTemperature),
     preferredSystemPrompt: normalizeSystemPrompt(input.preferredSystemPrompt),
   };
 
