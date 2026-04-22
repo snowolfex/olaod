@@ -16,7 +16,18 @@ export type PendingEmailVerification = {
   requestedAt: string;
 };
 
-export type VoiceTranscriptionLanguage = "auto" | "english" | "spanish" | "chinese";
+export type VoiceTranscriptionLanguage =
+  | "auto"
+  | "arabic"
+  | "bengali"
+  | "chinese"
+  | "english"
+  | "french"
+  | "hindi"
+  | "japanese"
+  | "portuguese"
+  | "russian"
+  | "spanish";
 
 export type StoredUser = {
   id: string;

@@ -2,9 +2,16 @@ import type { VoiceTranscriptionLanguage } from "@/lib/user-types";
 
 export const VOICE_TRANSCRIPTION_LANGUAGE_OPTIONS = [
   "auto",
-  "english",
-  "spanish",
+  "arabic",
+  "bengali",
   "chinese",
+  "english",
+  "french",
+  "hindi",
+  "japanese",
+  "portuguese",
+  "russian",
+  "spanish",
 ] as const;
 
 export type { VoiceTranscriptionLanguage } from "@/lib/user-types";

@@ -56,9 +56,16 @@ const PROMPT_PRESETS = [
 
 const VOICE_LANGUAGE_LABELS: Record<VoiceTranscriptionLanguage, string> = {
   auto: "Auto",
-  english: "English",
-  spanish: "Spanish",
+  arabic: "Arabic",
+  bengali: "Bengali",
   chinese: "Chinese",
+  english: "English",
+  french: "French",
+  hindi: "Hindi",
+  japanese: "Japanese",
+  portuguese: "Portuguese",
+  russian: "Russian",
+  spanish: "Spanish",
 };
 
 async function updatePreferredVoiceLanguage(
