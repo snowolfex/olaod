@@ -23,6 +23,10 @@ function getVerificationPurposeLabel(purpose: EmailVerificationPurpose) {
     return "finish signing in";
   }
 
+  if (purpose === "password-reset") {
+    return "authorize a password reset";
+  }
+
   return "confirm your email change";
 }
 
@@ -57,15 +61,30 @@ export async function sendLocalVerificationCode(input: {
   requestedAt: string;
 }) {
   const purposeLabel = getVerificationPurposeLabel(input.purpose);
-  const subject = `oload verification code: ${input.code}`;
-  const text = [
-    `Hello ${input.displayName},`,
-    "",
-    `Use this 6-digit code to ${purposeLabel}: ${input.code}`,
-    "",
-    `This code expires at ${input.expiresAt}.`,
-    "If you did not request this code, you can ignore this email.",
-  ].join("\n");
+  const subject = input.purpose === "password-reset"
+    ? `oload password reset authorization: ${input.code}`
+    : `oload verification code: ${input.code}`;
+  const text = input.purpose === "password-reset"
+    ? [
+      `Hello ${input.displayName},`,
+      "",
+      "A password reset sequence has been initiated for your local oload account.",
+      `Enter the following 6-digit authorization code to ${purposeLabel}: ${input.code}`,
+      "",
+      `Reset transaction window: ${input.expiresAt}`,
+      "Request context: local account credential rotation",
+      "Delivery channel: email challenge fallback / offline-safe numeric token",
+      "",
+      "If you did not initiate this request, no password change will occur unless this code is submitted before the window expires.",
+    ].join("\n")
+    : [
+      `Hello ${input.displayName},`,
+      "",
+      `Use this 6-digit code to ${purposeLabel}: ${input.code}`,
+      "",
+      `This code expires at ${input.expiresAt}.`,
+      "If you did not request this code, you can ignore this email.",
+    ].join("\n");
   const smtpConfig = getSmtpConfig();
 
   if (!smtpConfig.configured || process.env.PLAYWRIGHT_TEST === "1") {

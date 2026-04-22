@@ -9,6 +9,8 @@ $envFile = Join-Path $scriptRoot ".env.runtime"
 $appDir = Join-Path $scriptRoot "app"
 $embeddedNode = Join-Path $scriptRoot "runtime\node\node.exe"
 
+[Environment]::SetEnvironmentVariable("OLOAD_INSTALL_ROOT", $scriptRoot)
+
 if (Test-Path $envFile) {
   Get-Content $envFile | ForEach-Object {
     if ([string]::IsNullOrWhiteSpace($_) -or $_.StartsWith("#")) {

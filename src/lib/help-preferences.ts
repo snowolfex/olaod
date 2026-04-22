@@ -1,10 +1,9 @@
 export const QUICK_HELP_ENABLED_STORAGE_KEY = "oload:quick-help:enabled";
 export const QUICK_HELP_PREFERENCE_CHANGED_EVENT = "oload:quick-help:changed";
-export const QUICK_HELP_AUTO_DISMISS_MS = 5000;
+export const QUICK_HELP_AUTO_DISMISS_MS = 2000;
 export const QUICK_HELP_MUTED_HINT_IDS_STORAGE_KEY = "oload:quick-help:muted-hints";
 export const QUICK_HELP_SEEN_HINT_IDS_STORAGE_KEY = "oload:quick-help:seen-hints";
 export const QUICK_HELP_SESSION_DISMISSED_STORAGE_KEY = "oload:quick-help:session-dismissed";
-export const QUICK_HELP_FIRST_POPUP_DISMISSED_STORAGE_KEY = "oload:quick-help:first-popup-dismissed";
 
 export function readQuickHelpEnabled() {
   if (typeof window === "undefined") {
@@ -80,27 +79,6 @@ export function clearQuickHelpMutedHintIds() {
   window.localStorage.removeItem(QUICK_HELP_MUTED_HINT_IDS_STORAGE_KEY);
 }
 
-export function readQuickHelpFirstPopupDismissed() {
-  if (typeof window === "undefined") {
-    return false;
-  }
-
-  return window.sessionStorage.getItem(QUICK_HELP_FIRST_POPUP_DISMISSED_STORAGE_KEY) === "true";
-}
-
-export function writeQuickHelpFirstPopupDismissed(dismissed: boolean) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  if (dismissed) {
-    window.sessionStorage.setItem(QUICK_HELP_FIRST_POPUP_DISMISSED_STORAGE_KEY, "true");
-    return;
-  }
-
-  window.sessionStorage.removeItem(QUICK_HELP_FIRST_POPUP_DISMISSED_STORAGE_KEY);
-}
-
 export function clearLegacyQuickHelpSessionState() {
   if (typeof window === "undefined") {
     return;
@@ -108,4 +86,5 @@ export function clearLegacyQuickHelpSessionState() {
 
   window.sessionStorage.removeItem(QUICK_HELP_SEEN_HINT_IDS_STORAGE_KEY);
   window.sessionStorage.removeItem(QUICK_HELP_SESSION_DISMISSED_STORAGE_KEY);
+  window.sessionStorage.removeItem("oload:quick-help:first-popup-dismissed");
 }

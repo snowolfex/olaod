@@ -55,6 +55,18 @@ export function InteractionSurface({
   const canOpenAdmin = Boolean(userSession.user);
   const canAccessAdminSubsections = userSession.user?.role === "admin";
   const adminAvailability = !canOpenAdmin ? "none" : canAccessAdminSubsections ? "full" : "access";
+  const chatModels = Array.from(
+    new Set(
+      status.running.flatMap((runtime) => [runtime.model, runtime.name].filter((value): value is string => Boolean(value))),
+    ),
+  ).map((modelName) => {
+    const installedMatch = status.models.find((model) => model.name === modelName);
+
+    return installedMatch ?? {
+      name: modelName,
+      size: 0,
+    };
+  });
   const effectiveActiveMobileTab = adminAvailability === "none" && activeMobileTab === "admin"
     ? "chat"
     : activeMobileTab;
@@ -197,7 +209,7 @@ export function InteractionSurface({
         initialConversation={initialConversation}
         initialConversations={initialConversations}
         isReachable={status.isReachable}
-        models={status.models}
+        models={chatModels}
       />
     </div>
   ) : activeDesktopPage === "admin" ? adminPanel : helpPanel;
@@ -237,7 +249,7 @@ export function InteractionSurface({
               initialConversation={initialConversation}
               initialConversations={initialConversations}
               isReachable={status.isReachable}
-              models={status.models}
+              models={chatModels}
             />
           ) : effectiveActiveMobileTab === "admin" && canOpenAdmin ? (
             adminPanel

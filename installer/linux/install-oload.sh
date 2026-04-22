@@ -224,14 +224,18 @@ write_runtime_env() {
   local hostname="$2"
   local port="$3"
   local ollama_base_url="$4"
-  local admin_password="$5"
-  local session_secret="$6"
+  local update_manifest_url="$5"
+  local update_channel="$6"
+  local admin_password="$7"
+  local session_secret="$8"
 
   cat >"$target_root/.env.runtime" <<EOF
 HOSTNAME=$hostname
 PORT=$port
 NODE_ENV=production
 OLLAMA_BASE_URL=$ollama_base_url
+OLOAD_UPDATE_MANIFEST_URL=$update_manifest_url
+OLOAD_UPDATE_CHANNEL=$update_channel
 OLOAD_ADMIN_PASSWORD=$admin_password
 OLOAD_SESSION_SECRET=$session_secret
 EOF
@@ -246,6 +250,8 @@ else
   hostname='127.0.0.1'
 fi
 ollama_base_url="$(prompt_value 'Ollama base URL' 'http://127.0.0.1:11434')"
+update_manifest_url="$(prompt_value 'Optional update manifest URL (leave blank to disable live updates)')"
+update_channel="$(prompt_value 'Update channel' 'stable')"
 admin_password="$(prompt_value 'Optional bootstrap admin password (leave blank to skip)')"
 session_secret="$(prompt_value 'Session secret (leave blank to auto-generate)')"
 if [[ -z "$session_secret" ]]; then
@@ -257,7 +263,7 @@ node_path="$(ensure_node_runtime "$runtime_root")"
 ollama_path="$(ensure_ollama_installed)"
 ensure_ollama_running "$ollama_path" "$ollama_base_url"
 copy_app_payload "$install_root"
-write_runtime_env "$install_root" "$hostname" "$port" "$ollama_base_url" "$admin_password" "$session_secret"
+write_runtime_env "$install_root" "$hostname" "$port" "$ollama_base_url" "$update_manifest_url" "$update_channel" "$admin_password" "$session_secret"
 
 if prompt_yes_no 'Start Oload after install' 'yes'; then
   "$install_root/start-oload.sh" --detach

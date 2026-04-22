@@ -1,5 +1,14 @@
 # Session Log
 
+## 2026-04-22
+- Added manifest-driven app version checks plus admin-triggered live patching: the app now checks for updates on load, installers can persist an update manifest URL and channel, the server can download and apply platform patch bundles in place, and `cmd /c npm run bundle:updates` now emits validated Windows/Linux patch artifacts and a publishable manifest.
+- Fixed the remaining Google Identity warning on the signed-out access gate by moving the GIS initialization guard from a component-local ref to a module-scoped page-lifetime flag, then reloaded the sign-in screen repeatedly to confirm the old `google.accounts.id.initialize()` warning no longer surfaced.
+- Added a local password reset recovery flow from failed sign-in: invalid email or password attempts now open a confirmation popup with a reset option, nonexistent accounts branch into a continue-or-dismiss account-creation popup, and existing local users can complete an offline-safe 6-digit email reset challenge and choose a new password without any inbound link requirement.
+- Simplified the signed-out access gate by removing the large Google sign-in promo area and moving the Google sign-in control onto the bottom action row beside the regular Sign in button, while keeping Create account focused on local registration only.
+- Fixed the direct Google sign-in button setup so the GIS `initialize()` call is gated per rendered sign-in surface instead of re-running on ordinary access-panel rerenders, then reloaded the access gate twice to confirm the Google button remounted without the earlier repeated-initialize warning surfacing in page events.
+- Removed the last stale quick-help copy that still described a first-session sticky popup, including the operator manual summary used by the Access quick-help preference row, and live-verified the updated wording in the admin access panel.
+- Re-ran the running-model chat regression pass by stopping `deepseek-r1:1.5b` from the Runtime Models admin view, confirming `/api/ollama/status` returned `runningCount: 0`, and reloading the workspace to verify chat returned to the `No model available` and `No local AI` empty state.
+
 ## 2026-04-17
 - Added signed-in self-service account management to the Access page so regular users can update display name, manage a local email address, toggle quick-help popovers, and rotate local passwords without seeing admin-only controls.
 - Added authenticated self-service profile and password API routes plus user-store helpers, expanded session user payloads to include email, and kept Google-managed accounts read-only for provider-owned email and password behavior.

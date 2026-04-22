@@ -258,6 +258,15 @@ For Android or other LAN devices, prefer `cmd /c npm run dev:lan` so Next.js bin
 ## Installer bundles
 
 1. Build fresh installer bundles with `cmd /c npm run bundle:installers`.
+
+## Live updates
+
+1. Build patch artifacts with `cmd /c npm run bundle:updates`.
+2. Host `dist/updates/manifest.json` plus the referenced Windows and Linux patch archives at a stable URL.
+3. Configure the installed app with `OLOAD_UPDATE_MANIFEST_URL` and optionally `OLOAD_UPDATE_CHANNEL`.
+4. Admin sessions check the configured manifest on load and will surface a live-update card when a newer version is published.
+5. Applying the live patch downloads the platform archive, replaces the installed `app/` payload, and restarts the local server automatically.
+6. Development mode can still check the manifest, but it will not patch itself in place unless it is running from an installed bundle with a visible install root.
 2. The generated outputs land in `dist/installers/windows` and `dist/installers/linux`.
 3. Each bundle includes a standalone production app payload plus an OS-specific installer that checks Node, installs a current Node runtime when needed, checks Ollama, installs Ollama when needed, prompts for runtime settings, and starts the app.
 4. The Windows entry point is `dist/installers/windows/install-oload.ps1`.

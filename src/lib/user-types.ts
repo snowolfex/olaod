@@ -4,7 +4,7 @@ export type AuthProvider = "local" | "google";
 
 export type GoogleAuthMode = "none" | "broker" | "direct" | "redirect";
 
-export type EmailVerificationPurpose = "register" | "login" | "email-change";
+export type EmailVerificationPurpose = "register" | "login" | "email-change" | "password-reset";
 
 export type PendingEmailVerification = {
   codeHash: string;

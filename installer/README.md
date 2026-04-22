@@ -2,6 +2,7 @@
 
 Run `npm run bundle:installers` from the repository root to generate fresh standalone installer bundles under `dist/installers`.
 Run `npm run package:installers` to generate the standalone bundles plus native-style installer outputs under `dist/native`.
+Run `npm run bundle:updates` to build live-patch packages plus a manifest under `dist/updates`.
 
 Each bundle contains:
 
@@ -9,6 +10,19 @@ Each bundle contains:
 - a clean first-run `data/` set with no local users or chat history
 - an OS-specific installer that checks for Node and Ollama, installs what is missing, prompts for runtime settings, and starts Oload
 - an OS-specific start script you can use later after installation
+
+Live update artifacts:
+
+- `dist/updates/manifest.json`
+- `dist/updates/windows/oload-update-<version>.zip`
+- `dist/updates/linux/oload-update-<version>.tar.gz`
+
+Live update configuration:
+
+- set `OLOAD_UPDATE_MANIFEST_URL` to a hosted copy of `manifest.json`
+- set `OLOAD_UPDATE_CHANNEL` if you want a value other than `stable`
+- the installer now prompts for both values and writes them into `.env.runtime`
+- on load, admin sessions check the manifest and can apply a live patch that restarts the local server automatically
 
 Bundle targets:
 

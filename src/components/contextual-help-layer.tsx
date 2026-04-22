@@ -8,10 +8,8 @@ import {
   muteQuickHelpHint,
   QUICK_HELP_AUTO_DISMISS_MS,
   QUICK_HELP_PREFERENCE_CHANGED_EVENT,
-  readQuickHelpFirstPopupDismissed,
   readQuickHelpEnabled,
   readQuickHelpMutedHintIds,
-  writeQuickHelpFirstPopupDismissed,
 } from "@/lib/help-preferences";
 
 type ContextualHelpLayerProps = {
@@ -146,7 +144,6 @@ export function ContextualHelpLayer({ canUseHoverHelp, onOpenHelpSection }: Cont
   const [overlay, setOverlay] = useState<OverlayState | null>(null);
   const [isQuickHelpEnabled, setIsQuickHelpEnabled] = useState(readQuickHelpEnabled);
   const [mutedHintIds, setMutedHintIds] = useState<string[]>(readQuickHelpMutedHintIds);
-  const [isFirstPopupDismissed, setIsFirstPopupDismissed] = useState(readQuickHelpFirstPopupDismissed);
   const popupRef = useRef<HTMLDivElement | null>(null);
   const activeTargetRef = useRef<HTMLElement | null>(null);
   const hideTimerRef = useRef<number | null>(null);
@@ -157,7 +154,6 @@ export function ContextualHelpLayer({ canUseHoverHelp, onOpenHelpSection }: Cont
   const isPopupInteractionPinnedRef = useRef(false);
 
   const position = useMemo(() => computePosition(overlay), [overlay]);
-  const isSessionIntroOverlay = overlay !== null && !isFirstPopupDismissed;
   const clearHideTimer = useCallback(() => {
     if (hideTimerRef.current) {
       window.clearTimeout(hideTimerRef.current);
@@ -179,21 +175,16 @@ export function ContextualHelpLayer({ canUseHoverHelp, onOpenHelpSection }: Cont
     }
   }, []);
 
-  const dismissOverlay = useCallback((options?: { acknowledgeFirstPopup?: boolean }) => {
+  const dismissOverlay = useCallback(() => {
     clearHideTimer();
     clearLongPressTimer();
     clearAutoDismissTimer();
     isPopupInteractionPinnedRef.current = false;
 
-    if (options?.acknowledgeFirstPopup && !isFirstPopupDismissed) {
-      writeQuickHelpFirstPopupDismissed(true);
-      setIsFirstPopupDismissed(true);
-    }
-
     activeTargetRef.current = null;
     minimumVisibleUntilRef.current = 0;
     setOverlay(null);
-  }, [clearAutoDismissTimer, clearHideTimer, clearLongPressTimer, isFirstPopupDismissed]);
+  }, [clearAutoDismissTimer, clearHideTimer, clearLongPressTimer]);
 
   const scheduleDesktopDismiss = useCallback((delayMs = DESKTOP_MIN_VISIBLE_MS) => {
     clearHideTimer();
@@ -206,6 +197,15 @@ export function ContextualHelpLayer({ canUseHoverHelp, onOpenHelpSection }: Cont
 
   const showOverlayForTarget = useCallback((target: HTMLElement) => {
     if (!isQuickHelpEnabled || !isVisibleTarget(target)) {
+      return;
+    }
+
+    if (
+      canUseHoverHelp
+      && overlay
+      && activeTargetRef.current
+      && activeTargetRef.current !== target
+    ) {
       return;
     }
 
@@ -224,7 +224,7 @@ export function ContextualHelpLayer({ canUseHoverHelp, onOpenHelpSection }: Cont
     }
 
     activeTargetRef.current = target;
-    isPopupInteractionPinnedRef.current = canUseHoverHelp;
+    isPopupInteractionPinnedRef.current = false;
     minimumVisibleUntilRef.current = canUseHoverHelp ? Date.now() + DESKTOP_MIN_VISIBLE_MS : 0;
     const rect = target.getBoundingClientRect();
     setOverlay({
@@ -232,7 +232,7 @@ export function ContextualHelpLayer({ canUseHoverHelp, onOpenHelpSection }: Cont
       placement: computePlacement(rect),
       rect,
     });
-  }, [canUseHoverHelp, dismissOverlay, isQuickHelpEnabled, mutedHintIds]);
+  }, [canUseHoverHelp, dismissOverlay, isQuickHelpEnabled, mutedHintIds, overlay]);
 
   useEffect(() => {
     clearLegacyQuickHelpSessionState();
@@ -241,7 +241,6 @@ export function ContextualHelpLayer({ canUseHoverHelp, onOpenHelpSection }: Cont
       const enabled = readQuickHelpEnabled();
       setIsQuickHelpEnabled(enabled);
       setMutedHintIds(readQuickHelpMutedHintIds());
-      setIsFirstPopupDismissed(readQuickHelpFirstPopupDismissed());
 
       if (!enabled) {
         dismissOverlay();
@@ -287,7 +286,6 @@ export function ContextualHelpLayer({ canUseHoverHelp, onOpenHelpSection }: Cont
     if (
       !overlay
       || !isQuickHelpEnabled
-      || isSessionIntroOverlay
       || isPopupInteractionPinnedRef.current
     ) {
       clearAutoDismissTimer();
@@ -301,7 +299,7 @@ export function ContextualHelpLayer({ canUseHoverHelp, onOpenHelpSection }: Cont
     return () => {
       clearAutoDismissTimer();
     };
-  }, [clearAutoDismissTimer, dismissOverlay, isQuickHelpEnabled, isSessionIntroOverlay, overlay]);
+  }, [clearAutoDismissTimer, dismissOverlay, isQuickHelpEnabled, overlay]);
 
   useEffect(() => {
     const handlePointerOver = (event: PointerEvent) => {
@@ -344,10 +342,6 @@ export function ContextualHelpLayer({ canUseHoverHelp, onOpenHelpSection }: Cont
         return;
       }
 
-      if (isSessionIntroOverlay) {
-        return;
-      }
-
       scheduleDesktopDismiss();
     };
 
@@ -380,10 +374,6 @@ export function ContextualHelpLayer({ canUseHoverHelp, onOpenHelpSection }: Cont
       const nextTarget = event.relatedTarget instanceof Node ? event.relatedTarget : null;
 
       if (nextTarget && popupRef.current?.contains(nextTarget)) {
-        return;
-      }
-
-      if (isSessionIntroOverlay) {
         return;
       }
 
@@ -448,7 +438,7 @@ export function ContextualHelpLayer({ canUseHoverHelp, onOpenHelpSection }: Cont
       document.removeEventListener("pointermove", cancelLongPress, true);
       document.removeEventListener("click", handleClickCapture, true);
     };
-  }, [canUseHoverHelp, clearHideTimer, clearLongPressTimer, dismissOverlay, isQuickHelpEnabled, isSessionIntroOverlay, scheduleDesktopDismiss, showOverlayForTarget]);
+  }, [canUseHoverHelp, clearHideTimer, clearLongPressTimer, dismissOverlay, isQuickHelpEnabled, scheduleDesktopDismiss, showOverlayForTarget]);
 
   useEffect(() => {
     if (!overlay) {
@@ -469,7 +459,7 @@ export function ContextualHelpLayer({ canUseHoverHelp, onOpenHelpSection }: Cont
         return;
       }
 
-      dismissOverlay({ acknowledgeFirstPopup: true });
+      dismissOverlay();
     };
 
     document.addEventListener("pointerdown", handlePointerDown, true);
@@ -493,21 +483,11 @@ export function ContextualHelpLayer({ canUseHoverHelp, onOpenHelpSection }: Cont
       }}
       onClick={() => {
         if (!canUseHoverHelp) {
-          dismissOverlay({ acknowledgeFirstPopup: true });
+          dismissOverlay();
         }
       }}
       onPointerEnter={() => {
         clearHideTimer();
-
-        if (canUseHoverHelp) {
-          isPopupInteractionPinnedRef.current = true;
-          clearAutoDismissTimer();
-        }
-      }}
-      onPointerLeave={() => {
-        if (canUseHoverHelp && !isSessionIntroOverlay) {
-          scheduleDesktopDismiss();
-        }
       }}
     >
       <p className="eyebrow text-muted">Quick orientation</p>
@@ -523,11 +503,6 @@ export function ContextualHelpLayer({ canUseHoverHelp, onOpenHelpSection }: Cont
       >
         {overlay.hint.summary}
       </p>
-      {isSessionIntroOverlay ? (
-        <p className={`${canUseHoverHelp ? "mt-2 text-[10px]" : "mt-3 text-[11px]"} font-medium uppercase tracking-[0.18em] text-muted/80`}>
-          This first help card stays open until you dismiss it or turn quick help off.
-        </p>
-      ) : null}
       {canUseHoverHelp ? (
         <label className={`${canUseHoverHelp ? "mt-2 gap-2 px-3 py-2" : "mt-3 gap-3 px-3 py-3"} theme-surface-soft flex items-start rounded-[18px] text-sm text-foreground`}>
           <input
@@ -540,7 +515,7 @@ export function ContextualHelpLayer({ canUseHoverHelp, onOpenHelpSection }: Cont
 
               muteQuickHelpHint(overlay.hint.id);
               setMutedHintIds((current) => current.includes(overlay.hint.id) ? current : [...current, overlay.hint.id]);
-              dismissOverlay({ acknowledgeFirstPopup: true });
+              dismissOverlay();
             }}
           />
           <span>
@@ -554,7 +529,7 @@ export function ContextualHelpLayer({ canUseHoverHelp, onOpenHelpSection }: Cont
           type="button"
           onClick={(event) => {
             event.stopPropagation();
-            dismissOverlay({ acknowledgeFirstPopup: true });
+            dismissOverlay();
             onOpenHelpSection(overlay.hint.sectionId);
           }}
         >
@@ -565,7 +540,7 @@ export function ContextualHelpLayer({ canUseHoverHelp, onOpenHelpSection }: Cont
           type="button"
           onClick={(event) => {
             event.stopPropagation();
-            dismissOverlay({ acknowledgeFirstPopup: true });
+            dismissOverlay();
           }}
         >
           Dismiss

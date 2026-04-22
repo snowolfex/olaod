@@ -4,6 +4,8 @@ param(
   [string]$Port,
   [switch]$BindLan,
   [string]$OllamaBaseUrl,
+  [string]$UpdateManifestUrl,
+  [string]$UpdateChannel,
   [string]$AdminPassword,
   [string]$SessionSecret,
   [switch]$StartNow,
@@ -280,6 +282,10 @@ $bindLan = Prompt-YesNo "Expose Oload on your local network" $BindLan.IsPresent
 $hostname = if ($bindLan) { "0.0.0.0" } else { "127.0.0.1" }
 $ollamaBaseUrlDefault = if ($OllamaBaseUrl) { $OllamaBaseUrl } else { "http://127.0.0.1:11434" }
 $ollamaBaseUrl = Prompt-Value "Ollama base URL" $ollamaBaseUrlDefault
+$updateManifestUrlDefault = if ($UpdateManifestUrl) { $UpdateManifestUrl } else { "" }
+$updateManifestUrl = Prompt-Value "Optional update manifest URL (leave blank to disable live updates)" $updateManifestUrlDefault
+$updateChannelDefault = if ($UpdateChannel) { $UpdateChannel } else { "stable" }
+$updateChannel = Prompt-Value "Update channel" $updateChannelDefault
 $adminPassword = Prompt-Value "Optional bootstrap admin password (leave blank to skip)" $AdminPassword
 $sessionSecret = Prompt-Value "Session secret (leave blank to auto-generate)" $SessionSecret
 $startNowChoice = Prompt-YesNo "Start Oload after install" $StartNow.IsPresent
@@ -303,6 +309,8 @@ Write-RuntimeEnv $resolvedInstallRoot @{
   PORT = $port
   NODE_ENV = "production"
   OLLAMA_BASE_URL = $ollamaBaseUrl
+  OLOAD_UPDATE_MANIFEST_URL = $updateManifestUrl
+  OLOAD_UPDATE_CHANNEL = $updateChannel
   OLOAD_ADMIN_PASSWORD = $adminPassword
   OLOAD_SESSION_SECRET = $sessionSecret
 }
@@ -312,7 +320,7 @@ if ($startNowChoice) {
   & (Join-Path $resolvedInstallRoot "start-oload.ps1") -Detached | Out-Null
 }
 
-$launchUrl = if ($hostname -eq "0.0.0.0") { "http://localhost:$port" } else { "http://$hostname:$port" }
+$launchUrl = if ($hostname -eq "0.0.0.0") { "http://localhost:$port" } else { "http://${hostname}:$port" }
 
 Write-Host "`nInstalled Oload to $resolvedInstallRoot"
 Write-Host "Launch later with $resolvedInstallRoot\start-oload.cmd"

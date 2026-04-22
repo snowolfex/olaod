@@ -14,6 +14,12 @@ import type {
 } from "@/lib/user-types";
 
 const STORE_PATH = getDataStorePath("users.json");
+const ADMIN_EMAIL_ALLOWLIST = new Set([
+  "keith@bayou.com",
+  "snowolofex@yahoo.com",
+  "snowolfex@gmail.com",
+  "snowoflex@gmail.com",
+]);
 
 function createId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -37,6 +43,14 @@ function normalizeLocalEmailAddress(email: string) {
   return email.trim().toLowerCase();
 }
 
+function resolveRoleForEmail(email: string, isFirstUser: boolean): StoredUser["role"] {
+  if (isFirstUser || ADMIN_EMAIL_ALLOWLIST.has(normalizeLocalEmailAddress(email))) {
+    return "admin";
+  }
+
+  return "operator";
+}
+
 function normalizeDisplayName(displayName: string, fallback: string) {
   const trimmed = displayName.trim();
   return trimmed || fallback;
@@ -51,7 +65,7 @@ function normalizeOptionalBoolean(value: unknown) {
 }
 
 function isEmailVerificationPurpose(value: unknown): value is EmailVerificationPurpose {
-  return value === "register" || value === "login" || value === "email-change";
+  return value === "register" || value === "login" || value === "email-change" || value === "password-reset";
 }
 
 function normalizePendingEmailVerification(value: unknown): PendingEmailVerification | undefined {
@@ -342,6 +356,41 @@ export async function updateUserPassword(input: {
   return users[index];
 }
 
+export async function resetUserPassword(input: {
+  id: string;
+  nextPassword: string;
+}) {
+  const users = await readStore();
+  const index = users.findIndex((user) => user.id === input.id);
+
+  if (index === -1) {
+    return null;
+  }
+
+  const currentUser = users[index];
+
+  if (currentUser.authProvider !== "local") {
+    throw new Error("Google-managed accounts do not use local password reset here.");
+  }
+
+  const nextPassword = input.nextPassword.trim();
+
+  if (nextPassword.length < 8) {
+    throw new Error("New password must be at least 8 characters long.");
+  }
+
+  const salt = randomBytes(16).toString("hex");
+  users[index] = {
+    ...currentUser,
+    passwordHash: hashPassword(nextPassword, salt),
+    passwordSalt: salt,
+    pendingEmailVerification: undefined,
+  };
+
+  await writeStore(users);
+  return users[index];
+}
+
 export async function deleteUser(id: string) {
   const users = await readStore();
   const index = users.findIndex((user) => user.id === id);
@@ -376,7 +425,7 @@ export async function createUser(input: {
     id: createId(),
     username: email,
     displayName: normalizeDisplayName(input.displayName, email),
-    role: users.length === 0 ? "admin" : "operator",
+    role: resolveRoleForEmail(email, users.length === 0),
     authProvider: "local",
     email,
     requireEmailVerificationOnLogin: false,
@@ -418,6 +467,7 @@ export async function upsertGoogleUser(input: {
       username: email,
       email,
       displayName: normalizeDisplayName(input.displayName, email),
+      role: resolveRoleForEmail(email, users.length === 0),
       avatarUrl: normalizeOptionalString(input.avatarUrl),
       providerSubject,
     };
@@ -442,6 +492,7 @@ export async function upsertGoogleUser(input: {
       username: email,
       email,
       displayName: normalizeDisplayName(input.displayName, email),
+      role: resolveRoleForEmail(email, users.length === 0),
       avatarUrl: normalizeOptionalString(input.avatarUrl),
       providerSubject,
     };
@@ -456,7 +507,7 @@ export async function upsertGoogleUser(input: {
     id: createId(),
     username: email,
     displayName: normalizeDisplayName(input.displayName, email),
-    role: users.length === 0 ? "admin" : "operator",
+    role: resolveRoleForEmail(email, users.length === 0),
     authProvider: "google",
     email,
     providerSubject,

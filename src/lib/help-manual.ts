@@ -421,7 +421,7 @@ export const helpHints: Record<string, HelpHint> = {
     id: "command.quick-help-toggle",
     sectionId: "mobile-gesture-help",
     title: "Toggle quick help popovers",
-    summary: "Enables or disables the short contextual help cards shown on desktop hover and mobile long-press. The first quick-help card in each session stays open until you dismiss it or turn quick help off; after that, desktop cards remain briefly visible and can be muted per control, while mobile long-press help remains available whenever quick help is enabled.",
+    summary: "Enables or disables the short contextual help cards shown on desktop hover and mobile long-press. Desktop cards auto-dismiss after a short pause and can be muted per control, while mobile long-press help remains available whenever quick help is enabled.",
   },
   "command.theme-select": {
     id: "command.theme-select",

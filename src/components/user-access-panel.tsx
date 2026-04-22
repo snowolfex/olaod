@@ -37,6 +37,11 @@ type VerificationChallenge = {
   purpose: "login" | "register";
 };
 
+type PasswordResetChallenge = {
+  email: string;
+  expiresAt: string;
+};
+
 function GoogleMark() {
   return (
     <svg aria-hidden="true" className="h-5 w-5 shrink-0" viewBox="0 0 24 24">
@@ -57,50 +62,6 @@ function GoogleMark() {
         fill="#EA4335"
       />
     </svg>
-  );
-}
-
-type GoogleAuthButtonProps = {
-  busyLabel: string;
-  disabled?: boolean;
-  helperText?: string;
-  label: string;
-  onClick?: () => void;
-  status?: string | null;
-};
-
-function GoogleAuthButton({ busyLabel, disabled = false, helperText, label, onClick, status }: GoogleAuthButtonProps) {
-  return (
-    <div className="theme-surface-soft rounded-[28px] border border-line/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.98),rgba(248,243,237,0.96))] px-4 py-4 shadow-[0_18px_44px_rgba(83,53,31,0.08)]">
-      <button
-        className="group flex w-full items-center justify-between gap-4 rounded-[22px] border border-line bg-white px-4 py-4 text-left shadow-[0_14px_28px_rgba(15,23,42,0.06)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_20px_36px_rgba(15,23,42,0.1)] disabled:cursor-not-allowed disabled:opacity-60"
-        disabled={disabled}
-        type="button"
-        onClick={onClick}
-      >
-        <span className="flex items-center gap-3">
-          <span className="flex h-11 w-11 items-center justify-center rounded-2xl border border-line bg-white shadow-[0_10px_22px_rgba(15,23,42,0.08)]">
-            <GoogleMark />
-          </span>
-          <span className="flex flex-col">
-            <span className="text-sm font-semibold text-foreground">{label}</span>
-            <span className="text-xs leading-5 text-muted">Use your Google account to enter with one secure step.</span>
-          </span>
-        </span>
-        <span className="rounded-full border border-line/80 bg-[rgba(15,23,42,0.04)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted transition group-hover:bg-[rgba(15,23,42,0.07)]">
-          Google
-        </span>
-      </button>
-      {status ? (
-        <p className="mt-3 text-center text-sm text-muted">{status}</p>
-      ) : null}
-      {helperText ? (
-        <p className="mt-3 text-sm leading-6 text-muted">{helperText}</p>
-      ) : null}
-      {disabled && !status ? (
-        <p className="mt-3 text-sm leading-6 text-muted">{busyLabel}</p>
-      ) : null}
-    </div>
   );
 }
 
@@ -143,6 +104,7 @@ function formatKnowledgeOverlapScope(scopeOverlap: "exact" | "partial" | "global
 }
 
 let googleScriptLoadPromise: Promise<void> | null = null;
+let googleIdentityInitialized = false;
 
 type WorkspaceBackupSnapshot = {
   version: number;
@@ -279,6 +241,16 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
   const [verificationCode, setVerificationCode] = useState("");
   const [verificationChallenge, setVerificationChallenge] = useState<VerificationChallenge | null>(null);
   const [verificationSecondsRemaining, setVerificationSecondsRemaining] = useState(0);
+  const [passwordResetChallenge, setPasswordResetChallenge] = useState<PasswordResetChallenge | null>(null);
+  const [passwordResetSecondsRemaining, setPasswordResetSecondsRemaining] = useState(0);
+  const [resetCode, setResetCode] = useState("");
+  const [resetPasswordDraft, setResetPasswordDraft] = useState("");
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [isCompletingPasswordReset, setIsCompletingPasswordReset] = useState(false);
+  const [authDialogMode, setAuthDialogMode] = useState<null | "invalid-login" | "user-missing" | "password-reset">(null);
+  const [authDialogMessage, setAuthDialogMessage] = useState<string | null>(null);
+  const [authSummary, setAuthSummary] = useState<string | null>(null);
+  const [authSummaryTone, setAuthSummaryTone] = useState<"success" | "warning">("success");
   const [accountDisplayName, setAccountDisplayName] = useState("");
   const [accountEmail, setAccountEmail] = useState("");
   const [accountPreferredModel, setAccountPreferredModel] = useState("");
@@ -355,12 +327,39 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
   }, [verificationChallenge]);
 
   useEffect(() => {
+    if (!passwordResetChallenge) {
+      setPasswordResetSecondsRemaining(0);
+      return;
+    }
+
+    const updateRemaining = () => {
+      const remainingMs = Math.max(0, Date.parse(passwordResetChallenge.expiresAt) - Date.now());
+      setPasswordResetSecondsRemaining(Math.ceil(remainingMs / 1000));
+    };
+
+    updateRemaining();
+
+    const intervalId = window.setInterval(updateRemaining, 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [passwordResetChallenge]);
+
+  useEffect(() => {
     if (!session.user) {
       return;
     }
 
     setVerificationChallenge(null);
     setVerificationCode("");
+    setPasswordResetChallenge(null);
+    setPasswordResetSecondsRemaining(0);
+    setResetCode("");
+    setResetPasswordDraft("");
+    setAuthDialogMode(null);
+    setAuthDialogMessage(null);
+    setAuthSummary(null);
   }, [session.user]);
   const backupImportInputRef = useRef<HTMLInputElement | null>(null);
   const hasOfficialGoogleSignIn = GOOGLE_CLIENT_ID.trim().length > 0;
@@ -599,6 +598,12 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
   }
 
   useEffect(() => {
+    if (googleButtonRef.current && session.user) {
+      googleButtonRef.current.innerHTML = "";
+    }
+  }, [session.user]);
+
+  useEffect(() => {
     if (!showGoogleAuthUi || !hasDirectGoogleSignIn || !googleScriptReady || !googleButtonRef.current || session.user) {
       return;
     }
@@ -610,26 +615,31 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
     }
 
     googleButtonRef.current.innerHTML = "";
-    googleIdentity.initialize({
-      client_id: GOOGLE_CLIENT_ID,
-      callback: (response) => {
-        if (!response.credential) {
-          setError("Google sign-in did not return a credential.");
-          return;
-        }
 
-        void completeGoogleSignIn(response.credential);
-      },
-      auto_select: false,
-      cancel_on_tap_outside: true,
-      ux_mode: "popup",
-    });
+    if (!googleIdentityInitialized) {
+      googleIdentity.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: (response) => {
+          if (!response.credential) {
+            setError("Google sign-in did not return a credential.");
+            return;
+          }
+
+          void completeGoogleSignIn(response.credential);
+        },
+        auto_select: false,
+        cancel_on_tap_outside: true,
+        ux_mode: "popup",
+      });
+      googleIdentityInitialized = true;
+    }
+
     googleIdentity.renderButton(googleButtonRef.current, {
       theme: "outline",
-      size: "large",
+      size: "medium",
       shape: "pill",
-      text: session.userCount === 0 ? "continue_with" : "signin_with",
-      width: 320,
+      text: "signin",
+      width: 200,
       logo_alignment: "left",
     });
   }, [googleScriptReady, hasDirectGoogleSignIn, session.user, session.userCount, showGoogleAuthUi]);
@@ -1089,6 +1099,9 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
 
     setIsSubmitting(true);
     setError(null);
+    setAuthSummary(null);
+    setAuthDialogMode(null);
+    setAuthDialogMessage(null);
 
     try {
       const response = await fetch(
@@ -1109,7 +1122,15 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
       );
 
       if (!response.ok) {
-        throw new Error(await readErrorMessage(response));
+        const message = await readErrorMessage(response);
+
+        if (mode === "login" && message === "Invalid email address or password.") {
+          setAuthDialogMode("invalid-login");
+          setAuthDialogMessage("That sign-in attempt did not match our local credential record. If this was your account, you can start a password reset sequence.");
+          return;
+        }
+
+        throw new Error(message);
       }
 
       const payload = (await response.json()) as {
@@ -1148,6 +1169,137 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
       );
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  function dismissAuthDialog() {
+    setAuthDialogMode(null);
+    setAuthDialogMessage(null);
+  }
+
+  async function requestPasswordReset() {
+    if (!localEmail.trim()) {
+      setError("Enter your email address first so the reset code goes to the right account.");
+      dismissAuthDialog();
+      return;
+    }
+
+    setIsResettingPassword(true);
+    setError(null);
+    setAuthSummary(null);
+
+    try {
+      const response = await fetch("/api/users/password/reset/request", {
+        credentials: "same-origin",
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: localEmail,
+        }),
+      });
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        expiresAt?: string;
+        resetTarget?: string;
+      };
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          setPasswordResetChallenge(null);
+          setAuthDialogMode("user-missing");
+          setAuthDialogMessage(payload.error ?? "No local account matched that email address.");
+          return;
+        }
+
+        throw new Error(payload.error ?? "Unable to start password reset.");
+      }
+
+      if (!payload.expiresAt || !payload.resetTarget) {
+        throw new Error("Password reset started, but no verification target was returned.");
+      }
+
+      setPasswordResetChallenge({
+        email: payload.resetTarget,
+        expiresAt: payload.expiresAt,
+      });
+      setResetCode("");
+      setResetPasswordDraft("");
+      setPassword("");
+      setAuthDialogMode("password-reset");
+      setAuthDialogMessage("A password reset authorization code has been sent. Enter the code and your new password below.");
+    } catch (resetError) {
+      setError(
+        resetError instanceof Error
+          ? resetError.message
+          : "Unable to start password reset.",
+      );
+    } finally {
+      setIsResettingPassword(false);
+    }
+  }
+
+  async function completePasswordReset() {
+    if (!passwordResetChallenge) {
+      return;
+    }
+
+    if (!resetCode.trim()) {
+      setError("Enter the 6-digit password reset code from your email.");
+      return;
+    }
+
+    if (passwordResetSecondsRemaining <= 0) {
+      setError("That password reset code has expired. Request another code and try again.");
+      return;
+    }
+
+    if (resetPasswordDraft.trim().length < 8) {
+      setError("New password must be at least 8 characters long.");
+      return;
+    }
+
+    setIsCompletingPasswordReset(true);
+    setError(null);
+    setAuthSummary(null);
+
+    try {
+      const response = await fetch("/api/users/password/reset/complete", {
+        credentials: "same-origin",
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          code: resetCode,
+          email: passwordResetChallenge.email,
+          nextPassword: resetPasswordDraft,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+
+      setMode("login");
+      setPassword(resetPasswordDraft);
+      setPasswordResetChallenge(null);
+      setResetCode("");
+      setResetPasswordDraft("");
+      setAuthDialogMode(null);
+      setAuthDialogMessage(null);
+      setAuthSummary("Password reset complete. Sign in with your new password.");
+      setAuthSummaryTone("success");
+    } catch (resetError) {
+      setError(
+        resetError instanceof Error
+          ? resetError.message
+          : "Unable to reset the password.",
+      );
+    } finally {
+      setIsCompletingPasswordReset(false);
     }
   }
 
@@ -1767,7 +1919,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
                         {quickHelpPreferenceSummary}
                       </span>
                       <span className="mt-1 block text-[11px] leading-5 text-muted/85">
-                        {quickHelpHint?.summary ?? "The first card in a session stays open until dismissed or turned off."}
+                        {quickHelpHint?.summary ?? "Hover or long-press for quick help cards that auto-dismiss after a short pause."}
                       </span>
                     </span>
                   </label>
@@ -1835,7 +1987,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
         <form className={`${compact ? "space-y-4" : "mt-5 space-y-4 sm:mt-6"}`} onSubmit={submit}>
           <div className="grid grid-cols-2 gap-3">
             <button
-              className={`ui-button min-h-[3.5rem] justify-center px-4 py-3 text-sm ${
+              className={`ui-button min-h-[3.5rem] justify-center px-4 py-3 text-sm whitespace-nowrap ${
                 mode === "login"
                   ? "ui-button-primary"
                   : "ui-button-secondary"
@@ -1844,7 +1996,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
               type="button"
               onClick={() => setMode("login")}
             >
-              Sign in
+              Sign In
             </button>
             <button
               className={`ui-button min-h-[3.5rem] justify-center px-4 py-3 text-sm ${
@@ -1858,71 +2010,6 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
             >
               Create account
             </button>
-          </div>
-          <div className="flex items-center gap-3 pt-1 text-xs uppercase tracking-[0.18em] text-muted/70">
-            <span className="h-px flex-1 bg-line" />
-            <span>Or continue with</span>
-            <span className="h-px flex-1 bg-line" />
-          </div>
-          {showGoogleAuthUi ? (
-            isBrokerGoogleSignIn ? (
-              <GoogleAuthButton
-                busyLabel="Waiting for the hosted Google sign-in window to finish."
-                disabled={isGoogleSubmitting}
-                helperText="This build uses a hosted auth broker. Users choose a Gmail account in the broker window and the app completes sign-in locally after approval."
-                label={isGoogleSubmitting ? "Waiting for Google sign-in..." : googleActionLabel}
-                status={isGoogleSubmitting ? "Still working: the Google broker popup is open and the app is polling for approval." : null}
-                onClick={() => {
-                  void startBrokerGoogleSignIn();
-                }}
-              />
-            ) : hasDirectGoogleSignIn ? (
-              <div className="theme-surface-soft rounded-[28px] border border-line/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.98),rgba(248,243,237,0.96))] px-4 py-4 shadow-[0_18px_44px_rgba(83,53,31,0.08)]">
-                <div className="flex items-center gap-3 rounded-[22px] border border-line bg-white px-4 py-4 shadow-[0_14px_28px_rgba(15,23,42,0.06)]">
-                  <span className="flex h-11 w-11 items-center justify-center rounded-2xl border border-line bg-white shadow-[0_10px_22px_rgba(15,23,42,0.08)]">
-                    <GoogleMark />
-                  </span>
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="text-sm font-semibold text-foreground">{googleActionLabel}</span>
-                    <span className="text-xs leading-5 text-muted">Choose a Google account in the secure popup to start immediately.</span>
-                  </span>
-                  <span className="rounded-full border border-line/80 bg-[rgba(15,23,42,0.04)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">
-                    Secure popup
-                  </span>
-                </div>
-                <div className="mt-4 flex items-center justify-center">
-                  <div ref={googleButtonRef} className="min-h-[44px] w-full max-w-[360px] overflow-hidden rounded-full" />
-                </div>
-                <p className="mt-3 text-sm leading-6 text-muted">
-                  This build includes publisher-configured Google sign-in. Users can choose a Gmail account and continue without local Google setup.
-                </p>
-                {isGoogleSubmitting ? (
-                  <p className="mt-3 text-center text-sm text-muted">Signing in with Google...</p>
-                ) : null}
-              </div>
-            ) : hasLegacyGoogleRedirect ? (
-              <GoogleAuthButton
-                busyLabel="Redirecting to Google sign-in."
-                helperText="This app is using the older redirect-based Google OAuth flow for this deployment."
-                label={googleActionLabel}
-                onClick={() => {
-                  const rememberFlag = rememberSession ? "1" : "0";
-                  window.location.href = `/api/users/google/start?rememberSession=${rememberFlag}`;
-                }}
-              />
-            ) : (
-              <GoogleAuthButton
-                busyLabel="Google sign-in is not configured for this build yet."
-                disabled
-                helperText="Google sign-in becomes available when the deployment is configured with a broker, a direct client ID, or redirect-based OAuth credentials."
-                label={googleActionLabel}
-              />
-            )
-          ) : null}
-          <div className="flex items-center gap-3 pt-1 text-xs uppercase tracking-[0.18em] text-muted/70">
-            <span className="h-px flex-1 bg-line" />
-            <span>Local account</span>
-            <span className="h-px flex-1 bg-line" />
           </div>
           <input
             className="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
@@ -1966,6 +2053,17 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
               </span>
             </span>
           </label>
+          {authSummary ? (
+            <div
+              className={`rounded-2xl px-4 py-3 text-sm ${
+                authSummaryTone === "warning"
+                  ? "bg-amber-50 text-amber-900"
+                  : "bg-emerald-50 text-emerald-900"
+              }`}
+            >
+              {authSummary}
+            </div>
+          ) : null}
           {error ? (
             <div className="rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-900">
               {error}
@@ -2006,27 +2104,180 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
               ? "The first account becomes admin. Later accounts start as operators. Local accounts sign in with email addresses."
               : "Sign in with your email address to access saved conversations and role-based controls."}
           </p>
-          {showGoogleAuthUi ? (
-            <p className="text-xs leading-6 text-muted">
-              This stay-logged-in choice also applies to Google sign-in.
-            </p>
-          ) : null}
-          <button
-            className="ui-button ui-button-primary px-5 py-3 text-sm disabled:cursor-not-allowed disabled:opacity-50"
-            data-help-id="access.submit"
-            disabled={isSubmitting}
-            type="submit"
-          >
-            {isSubmitting
-              ? mode === "login"
-                ? "Signing in..."
-                : "Creating account..."
-              : mode === "login"
-                ? "Sign in"
-                : "Create account"}
-          </button>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <button
+              className="ui-button ui-button-primary min-h-[44px] w-full whitespace-nowrap px-5 py-3 text-sm disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+              data-help-id="access.submit"
+              disabled={isSubmitting}
+              type="submit"
+            >
+              {isSubmitting
+                ? mode === "login"
+                  ? "Signing In..."
+                  : "Creating account..."
+                : mode === "login"
+                  ? "Sign In"
+                  : "Create account"}
+            </button>
+            {mode === "login" && showGoogleAuthUi ? (
+              isBrokerGoogleSignIn ? (
+                <button
+                  className="ui-button ui-button-secondary min-h-[44px] w-full justify-center gap-2 whitespace-nowrap px-4 py-3 text-sm disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                  disabled={isGoogleSubmitting}
+                  type="button"
+                  onClick={() => {
+                    void startBrokerGoogleSignIn();
+                  }}
+                >
+                  <GoogleMark />
+                  <span>{isGoogleSubmitting ? "Waiting for Google..." : googleActionLabel}</span>
+                </button>
+              ) : hasDirectGoogleSignIn ? (
+                <div className="w-full sm:w-auto">
+                  <div ref={googleButtonRef} className="flex min-h-[44px] items-center overflow-hidden rounded-full sm:min-w-[200px]" />
+                </div>
+              ) : hasLegacyGoogleRedirect ? (
+                <button
+                  className="ui-button ui-button-secondary min-h-[44px] w-full justify-center gap-2 whitespace-nowrap px-4 py-3 text-sm sm:w-auto"
+                  type="button"
+                  onClick={() => {
+                    const rememberFlag = rememberSession ? "1" : "0";
+                    window.location.href = `/api/users/google/start?rememberSession=${rememberFlag}`;
+                  }}
+                >
+                  <GoogleMark />
+                  <span>{googleActionLabel}</span>
+                </button>
+              ) : (
+                <button
+                  className="ui-button ui-button-secondary min-h-[44px] w-full justify-center gap-2 whitespace-nowrap px-4 py-3 text-sm disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                  disabled
+                  type="button"
+                >
+                  <GoogleMark />
+                  <span>{googleActionLabel}</span>
+                </button>
+              )
+            ) : null}
+          </div>
         </form>
       )}
+
+      {!session.user && authDialogMode ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,42,0.45)] px-4">
+          <div className="theme-surface-panel w-full max-w-md rounded-[28px] border border-line/80 p-6 shadow-[0_24px_64px_rgba(15,23,42,0.18)]">
+            {authDialogMode === "invalid-login" ? (
+              <>
+                <p className="eyebrow text-muted">Credential check</p>
+                <h2 className="mt-2 text-xl font-semibold text-foreground">Are you sure that was the right password?</h2>
+                <p className="mt-3 text-sm leading-6 text-muted">
+                  {authDialogMessage ?? "That password did not match the local account record."}
+                </p>
+                <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
+                  <button className="ui-button ui-button-secondary px-4 py-2 text-sm" type="button" onClick={dismissAuthDialog}>
+                    Dismiss
+                  </button>
+                  <button
+                    className="ui-button ui-button-primary px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={isResettingPassword}
+                    type="button"
+                    onClick={() => {
+                      void requestPasswordReset();
+                    }}
+                  >
+                    {isResettingPassword ? "Starting reset..." : "Reset password"}
+                  </button>
+                </div>
+              </>
+            ) : null}
+
+            {authDialogMode === "user-missing" ? (
+              <>
+                <p className="eyebrow text-muted">Account lookup</p>
+                <h2 className="mt-2 text-xl font-semibold text-foreground">That user does not exist</h2>
+                <p className="mt-3 text-sm leading-6 text-muted">
+                  {authDialogMessage ?? "No local account matched that email address."} Continue to account creation if this was a new user, or dismiss if it was just a typo.
+                </p>
+                <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
+                  <button className="ui-button ui-button-secondary px-4 py-2 text-sm" type="button" onClick={dismissAuthDialog}>
+                    Dismiss
+                  </button>
+                  <button
+                    className="ui-button ui-button-primary px-4 py-2 text-sm"
+                    type="button"
+                    onClick={() => {
+                      setMode("register");
+                      dismissAuthDialog();
+                    }}
+                  >
+                    Continue
+                  </button>
+                </div>
+              </>
+            ) : null}
+
+            {authDialogMode === "password-reset" ? (
+              <>
+                <p className="eyebrow text-muted">Password reset</p>
+                <h2 className="mt-2 text-xl font-semibold text-foreground">Authorize a new password</h2>
+                <p className="mt-3 text-sm leading-6 text-muted">
+                  {authDialogMessage ?? "Enter the reset code from your email and choose a new password."}
+                </p>
+                {passwordResetChallenge ? (
+                  <p className="mt-2 text-sm leading-6 text-muted">
+                    Code target: {passwordResetChallenge.email}. {passwordResetSecondsRemaining > 0
+                      ? `This code expires in ${passwordResetSecondsRemaining} second${passwordResetSecondsRemaining === 1 ? "" : "s"}.`
+                      : "This code has expired. Send another one to continue."}
+                  </p>
+                ) : null}
+                <div className="mt-4 space-y-3">
+                  <input
+                    className="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
+                    inputMode="numeric"
+                    maxLength={6}
+                    placeholder="6-digit reset code"
+                    value={resetCode}
+                    onChange={(event) => setResetCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                  />
+                  <input
+                    className="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
+                    autoComplete="new-password"
+                    placeholder="New password"
+                    type="password"
+                    value={resetPasswordDraft}
+                    onChange={(event) => setResetPasswordDraft(event.target.value)}
+                  />
+                </div>
+                <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:justify-end">
+                  <button className="ui-button ui-button-secondary px-4 py-2 text-sm" type="button" onClick={dismissAuthDialog}>
+                    Dismiss
+                  </button>
+                  <button
+                    className="ui-button ui-button-secondary px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={isResettingPassword}
+                    type="button"
+                    onClick={() => {
+                      void requestPasswordReset();
+                    }}
+                  >
+                    {isResettingPassword ? "Sending..." : "Send another code"}
+                  </button>
+                  <button
+                    className="ui-button ui-button-primary px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={isCompletingPasswordReset}
+                    type="button"
+                    onClick={() => {
+                      void completePasswordReset();
+                    }}
+                  >
+                    {isCompletingPasswordReset ? "Changing password..." : "Change password"}
+                  </button>
+                </div>
+              </>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       {backupSummary ? (
         <div

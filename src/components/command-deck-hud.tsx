@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
-import { APP_THEMES, APP_THEME_STORAGE_KEY, isAppThemeId } from "@/lib/theme";
+import { APP_THEME_COOKIE_NAME, APP_THEMES, APP_THEME_STORAGE_KEY, isAppThemeId } from "@/lib/theme";
 import type { AppThemeId } from "@/lib/theme";
 import type { SessionUser } from "@/lib/user-types";
 import type { DesktopWorkspacePage } from "@/lib/workspace-page";
@@ -135,6 +135,7 @@ export function CommandDeckHud({
     document.documentElement.dataset.theme = nextTheme;
     document.documentElement.style.colorScheme = nextTheme === "light" ? "light" : "dark";
     window.localStorage.setItem(APP_THEME_STORAGE_KEY, nextTheme);
+    document.cookie = `${APP_THEME_COOKIE_NAME}=${encodeURIComponent(nextTheme)}; path=/; max-age=31536000; samesite=lax`;
     setTheme(nextTheme);
   };
 

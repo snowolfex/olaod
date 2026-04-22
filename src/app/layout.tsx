@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, Sora } from "next/font/google";
-import Script from "next/script";
+import { cookies } from "next/headers";
 
-import { APP_THEME_STORAGE_KEY } from "@/lib/theme";
+import { APP_THEME_COOKIE_NAME, parseAppTheme } from "@/lib/theme";
 
 import "./globals.css";
 
@@ -23,32 +23,23 @@ export const metadata: Metadata = {
     "Premium mobile-first control plane for Ollama chat, models, and administration.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const cookieStore = await cookies();
+  const theme = parseAppTheme(cookieStore.get(APP_THEME_COOKIE_NAME)?.value);
+
   return (
     <html
       lang="en"
-      data-theme="light"
+      data-theme={theme}
       className={`${sora.variable} ${ibmPlexMono.variable} h-full antialiased lg:h-auto`}
+      style={{ colorScheme: theme === "light" ? "light" : "dark" }}
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col lg:block lg:min-h-screen">
-        <Script id="theme-init" strategy="beforeInteractive">
-          {`(() => {
-            try {
-              const storedTheme = window.localStorage.getItem(${JSON.stringify(APP_THEME_STORAGE_KEY)});
-              const theme = storedTheme === "dark" || storedTheme === "tech" ? storedTheme : "light";
-              document.documentElement.dataset.theme = theme;
-              document.documentElement.style.colorScheme = theme === "light" ? "light" : "dark";
-            } catch {
-              document.documentElement.dataset.theme = "light";
-              document.documentElement.style.colorScheme = "light";
-            }
-          })();`}
-        </Script>
         {children}
       </body>
     </html>

@@ -11,6 +11,8 @@ env_file="$script_dir/.env.runtime"
 app_dir="$script_dir/app"
 embedded_node="$script_dir/runtime/node/bin/node"
 
+export OLOAD_INSTALL_ROOT="$script_dir"
+
 if [[ -f "$env_file" ]]; then
   while IFS= read -r line || [[ -n "$line" ]]; do
     [[ -z "$line" || "$line" == \#* ]] && continue
