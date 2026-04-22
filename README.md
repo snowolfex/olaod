@@ -195,7 +195,7 @@ Free references surfaced in Help:
 2. For a hosted auth-broker release, set `AUTH_BROKER_BASE_URL` to your broker domain so the app uses the brokered Google flow.
 3. For a publisher-owned zero-config Google sign-in release without a broker, build the app with `NEXT_PUBLIC_GOOGLE_CLIENT_ID` set so the official Google button is active for every downloader.
 4. If you still need the older redirect-based Google OAuth flow for a custom deployment, also set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and optionally `GOOGLE_REDIRECT_URI`.
-5. The current UI keeps Google sign-in hidden unless `NEXT_PUBLIC_ENABLE_GOOGLE_AUTH_UI=1` is set; the implementation remains in place behind that flag.
+5. The auth screen always shows the Google sign-in entry and automatically activates the correct mode when broker, direct-popup, or redirect OAuth configuration is present.
 6. Start Ollama locally or make sure the configured host is reachable.
 7. Run `npm run dev` or use the `dev server` VS Code task.
 8. Open `http://localhost:3000`.
@@ -289,7 +289,6 @@ OLLAMA_BASE_URL=http://127.0.0.1:11434
 OLOAD_ADMIN_PASSWORD=
 OLOAD_SESSION_SECRET=
 AUTH_BROKER_BASE_URL=
-NEXT_PUBLIC_ENABLE_GOOGLE_AUTH_UI=
 NEXT_PUBLIC_GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=

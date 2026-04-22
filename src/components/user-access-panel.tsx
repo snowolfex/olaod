@@ -19,7 +19,6 @@ import type { ManagedUser, PublicUser, SessionUser, UserSessionStatus } from "@/
 
 const AI_PROVIDER_CONFIG_CHANGED_EVENT = "oload:ai-provider-config-changed";
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
-const GOOGLE_AUTH_UI_ENABLED = process.env.NEXT_PUBLIC_ENABLE_GOOGLE_AUTH_UI === "1";
 const GOOGLE_GSI_SCRIPT_ID = "oload-google-gsi-script";
 const KNOWLEDGE_PROVIDER_OPTIONS: Array<{ id: AiProviderId; label: string }> = [
   { id: "ollama", label: "Ollama" },
@@ -37,6 +36,73 @@ type VerificationChallenge = {
   expiresAt: string;
   purpose: "login" | "register";
 };
+
+function GoogleMark() {
+  return (
+    <svg aria-hidden="true" className="h-5 w-5 shrink-0" viewBox="0 0 24 24">
+      <path
+        d="M21.8 12.23c0-.72-.06-1.25-.19-1.8H12v3.71h5.64c-.11.92-.74 2.3-2.15 3.23l-.02.12 3.02 2.29.21.02c1.93-1.75 3.1-4.31 3.1-7.57Z"
+        fill="#4285F4"
+      />
+      <path
+        d="M12 22c2.76 0 5.07-.89 6.76-2.4l-3.22-2.43c-.86.59-2.01 1-3.54 1-2.7 0-4.98-1.75-5.79-4.17l-.12.01-3.14 2.38-.04.11C4.59 19.77 8.02 22 12 22Z"
+        fill="#34A853"
+      />
+      <path
+        d="M6.21 14c-.21-.6-.33-1.24-.33-1.9s.12-1.3.31-1.9l-.01-.13-3.18-2.42-.1.04A9.82 9.82 0 0 0 2 12.1c0 1.58.38 3.07 1.05 4.39L6.21 14Z"
+        fill="#FBBC05"
+      />
+      <path
+        d="M12 5.83c1.93 0 3.23.82 3.97 1.5l2.9-2.78C17.06 2.9 14.76 2 12 2 8.02 2 4.59 4.23 2.9 7.6l3.29 2.51C7.01 7.58 9.29 5.83 12 5.83Z"
+        fill="#EA4335"
+      />
+    </svg>
+  );
+}
+
+type GoogleAuthButtonProps = {
+  busyLabel: string;
+  disabled?: boolean;
+  helperText?: string;
+  label: string;
+  onClick?: () => void;
+  status?: string | null;
+};
+
+function GoogleAuthButton({ busyLabel, disabled = false, helperText, label, onClick, status }: GoogleAuthButtonProps) {
+  return (
+    <div className="theme-surface-soft rounded-[28px] border border-line/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.98),rgba(248,243,237,0.96))] px-4 py-4 shadow-[0_18px_44px_rgba(83,53,31,0.08)]">
+      <button
+        className="group flex w-full items-center justify-between gap-4 rounded-[22px] border border-line bg-white px-4 py-4 text-left shadow-[0_14px_28px_rgba(15,23,42,0.06)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_20px_36px_rgba(15,23,42,0.1)] disabled:cursor-not-allowed disabled:opacity-60"
+        disabled={disabled}
+        type="button"
+        onClick={onClick}
+      >
+        <span className="flex items-center gap-3">
+          <span className="flex h-11 w-11 items-center justify-center rounded-2xl border border-line bg-white shadow-[0_10px_22px_rgba(15,23,42,0.08)]">
+            <GoogleMark />
+          </span>
+          <span className="flex flex-col">
+            <span className="text-sm font-semibold text-foreground">{label}</span>
+            <span className="text-xs leading-5 text-muted">Use your Google account to enter with one secure step.</span>
+          </span>
+        </span>
+        <span className="rounded-full border border-line/80 bg-[rgba(15,23,42,0.04)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted transition group-hover:bg-[rgba(15,23,42,0.07)]">
+          Google
+        </span>
+      </button>
+      {status ? (
+        <p className="mt-3 text-center text-sm text-muted">{status}</p>
+      ) : null}
+      {helperText ? (
+        <p className="mt-3 text-sm leading-6 text-muted">{helperText}</p>
+      ) : null}
+      {disabled && !status ? (
+        <p className="mt-3 text-sm leading-6 text-muted">{busyLabel}</p>
+      ) : null}
+    </div>
+  );
+}
 
 function formatKnowledgeProviderScope(providerIds: AiProviderId[]) {
   if (providerIds.length === 0) {
@@ -301,9 +367,10 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
   const isBrokerGoogleSignIn = session.googleAuthMode === "broker";
   const hasDirectGoogleSignIn = session.googleAuthMode === "direct" && hasOfficialGoogleSignIn;
   const hasLegacyGoogleRedirect = session.googleAuthMode === "redirect";
-  const showGoogleAuthUi = GOOGLE_AUTH_UI_ENABLED;
+  const showGoogleAuthUi = true;
   const quickHelpHint = getHelpHint("command.quick-help-toggle");
   const quickHelpPreferenceSummary = "Show short contextual help cards on desktop hover and mobile long-press.";
+  const googleActionLabel = session.userCount === 0 ? "Continue with Google" : "Sign in with Google";
 
   useEffect(() => {
     setAccountDisplayName(session.user?.displayName ?? "");
@@ -1792,64 +1859,65 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
               Create account
             </button>
           </div>
+          <div className="flex items-center gap-3 pt-1 text-xs uppercase tracking-[0.18em] text-muted/70">
+            <span className="h-px flex-1 bg-line" />
+            <span>Or continue with</span>
+            <span className="h-px flex-1 bg-line" />
+          </div>
           {showGoogleAuthUi ? (
             isBrokerGoogleSignIn ? (
-              <button
-                className="ui-button ui-button-secondary flex w-full items-center justify-center gap-3 px-5 py-3 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+              <GoogleAuthButton
+                busyLabel="Waiting for the hosted Google sign-in window to finish."
                 disabled={isGoogleSubmitting}
-                type="button"
+                helperText="This build uses a hosted auth broker. Users choose a Gmail account in the broker window and the app completes sign-in locally after approval."
+                label={isGoogleSubmitting ? "Waiting for Google sign-in..." : googleActionLabel}
+                status={isGoogleSubmitting ? "Still working: the Google broker popup is open and the app is polling for approval." : null}
                 onClick={() => {
                   void startBrokerGoogleSignIn();
                 }}
-              >
-                <span className="text-base leading-none">G</span>
-                <span>{isGoogleSubmitting ? "Waiting for Google sign-in..." : session.userCount === 0 ? "Continue with Google" : "Sign in with Google"}</span>
-              </button>
+              />
             ) : hasDirectGoogleSignIn ? (
-              <div className="theme-surface-soft rounded-[24px] px-4 py-4">
-                <div className="flex items-center justify-center">
-                  <div ref={googleButtonRef} className="min-h-[44px] w-full max-w-[320px]" />
+              <div className="theme-surface-soft rounded-[28px] border border-line/80 bg-[linear-gradient(145deg,rgba(255,255,255,0.98),rgba(248,243,237,0.96))] px-4 py-4 shadow-[0_18px_44px_rgba(83,53,31,0.08)]">
+                <div className="flex items-center gap-3 rounded-[22px] border border-line bg-white px-4 py-4 shadow-[0_14px_28px_rgba(15,23,42,0.06)]">
+                  <span className="flex h-11 w-11 items-center justify-center rounded-2xl border border-line bg-white shadow-[0_10px_22px_rgba(15,23,42,0.08)]">
+                    <GoogleMark />
+                  </span>
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="text-sm font-semibold text-foreground">{googleActionLabel}</span>
+                    <span className="text-xs leading-5 text-muted">Choose a Google account in the secure popup to start immediately.</span>
+                  </span>
+                  <span className="rounded-full border border-line/80 bg-[rgba(15,23,42,0.04)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">
+                    Secure popup
+                  </span>
                 </div>
+                <div className="mt-4 flex items-center justify-center">
+                  <div ref={googleButtonRef} className="min-h-[44px] w-full max-w-[360px] overflow-hidden rounded-full" />
+                </div>
+                <p className="mt-3 text-sm leading-6 text-muted">
+                  This build includes publisher-configured Google sign-in. Users can choose a Gmail account and continue without local Google setup.
+                </p>
                 {isGoogleSubmitting ? (
-                  <p className="mt-3 text-center text-sm text-muted">
-                    Signing in with Google...
-                  </p>
+                  <p className="mt-3 text-center text-sm text-muted">Signing in with Google...</p>
                 ) : null}
               </div>
             ) : hasLegacyGoogleRedirect ? (
-              <button
-                className="ui-button ui-button-secondary flex w-full items-center justify-center gap-3 px-5 py-3 text-sm"
-                type="button"
+              <GoogleAuthButton
+                busyLabel="Redirecting to Google sign-in."
+                helperText="This app is using the older redirect-based Google OAuth flow for this deployment."
+                label={googleActionLabel}
                 onClick={() => {
                   const rememberFlag = rememberSession ? "1" : "0";
                   window.location.href = `/api/users/google/start?rememberSession=${rememberFlag}`;
                 }}
-              >
-                <span className="text-base leading-none">G</span>
-                <span>{session.userCount === 0 ? "Continue with Google" : "Sign in with Google"}</span>
-              </button>
+              />
             ) : (
-              <button
-                aria-disabled="true"
-                className="ui-button ui-button-secondary flex w-full items-center justify-center gap-3 px-5 py-3 text-sm opacity-50"
+              <GoogleAuthButton
+                busyLabel="Google sign-in is not configured for this build yet."
                 disabled
-                type="button"
-              >
-                <span className="text-base leading-none">G</span>
-                <span>{session.userCount === 0 ? "Continue with Google" : "Sign in with Google"}</span>
-              </button>
+                helperText="Google sign-in becomes available when the deployment is configured with a broker, a direct client ID, or redirect-based OAuth credentials."
+                label={googleActionLabel}
+              />
             )
-          ) : null}
-          {showGoogleAuthUi ? (
-            <p className="text-sm leading-6 text-muted">
-              {isBrokerGoogleSignIn
-                ? "This build uses a hosted auth broker. Users choose a Gmail account in the broker window and the app completes sign-in locally after approval."
-                : hasDirectGoogleSignIn
-                ? "This build includes publisher-configured Google sign-in. Users can choose a Gmail account and continue without local Google setup."
-                  : hasLegacyGoogleRedirect
-                  ? "This app is still using the older redirect-based Google OAuth flow for this deployment."
-                  : "Google sign-in becomes one-click when the release is built with NEXT_PUBLIC_GOOGLE_CLIENT_ID."}
-            </p>
           ) : null}
           <div className="flex items-center gap-3 pt-1 text-xs uppercase tracking-[0.18em] text-muted/70">
             <span className="h-px flex-1 bg-line" />
