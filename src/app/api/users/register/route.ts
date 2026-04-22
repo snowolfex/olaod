@@ -1,55 +1,64 @@
 import { NextResponse } from "next/server";
 
+import { sendLocalVerificationCode } from "@/lib/local-auth-email";
 import { recordActivity } from "@/lib/activity";
-import { createUserSessionCookie } from "@/lib/auth";
-import { createUser, toPublicUser, toSessionUser } from "@/lib/users";
+import { createUser, issueEmailVerificationChallenge, toPublicUser } from "@/lib/users";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   try {
     const payload = (await request.json()) as {
-      username?: string;
+      email?: string;
       displayName?: string;
       password?: string;
       rememberSession?: boolean;
     };
 
-    if (!payload.username?.trim() || !payload.password?.trim()) {
+    if (!payload.email?.trim() || !payload.password?.trim()) {
       return Response.json(
-        { error: "Username and password are required." },
+        { error: "Email address and password are required." },
         { status: 400 },
       );
     }
 
     const user = await createUser({
-      username: payload.username,
-      displayName: payload.displayName ?? payload.username,
+      email: payload.email,
+      displayName: payload.displayName ?? payload.email,
       password: payload.password,
     });
-    const cookie = createUserSessionCookie(toSessionUser(user), {
-      persistent: payload.rememberSession === true,
+    const challenge = await issueEmailVerificationChallenge({
+      purpose: "register",
+      rememberSession: payload.rememberSession === true,
+      userId: user.id,
     });
-    const response = NextResponse.json({ user: toPublicUser(user) });
+
+    if (!challenge) {
+      throw new Error("Unable to start email verification.");
+    }
+
+    await sendLocalVerificationCode({
+      code: challenge.code,
+      displayName: user.displayName,
+      email: challenge.user.email ?? payload.email.trim().toLowerCase(),
+      expiresAt: challenge.expiresAt,
+      purpose: "register",
+      requestedAt: challenge.user.pendingEmailVerification?.requestedAt ?? new Date().toISOString(),
+    });
 
     await recordActivity({
       level: "info",
       summary: `User registered: ${user.displayName}`,
-      details: `Role assigned: ${user.role}.`,
+      details: `Role assigned: ${user.role}. Verification code sent to ${user.email ?? payload.email.trim().toLowerCase()}.`,
       type: "user.registered",
     });
 
-    response.cookies.set({
-      name: cookie.name,
-      value: cookie.value,
-      httpOnly: true,
-      ...(typeof cookie.maxAge === "number" ? { maxAge: cookie.maxAge } : {}),
-      path: "/",
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
+    return NextResponse.json({
+      expiresAt: challenge.expiresAt,
+      user: toPublicUser(user),
+      verificationRequired: true,
+      verificationTarget: user.email,
     });
-
-    return response;
   } catch (error) {
     return Response.json(
       {

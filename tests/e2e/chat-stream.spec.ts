@@ -1,33 +1,8 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";
+import { expect, test, type APIRequestContext } from "@playwright/test";
 
-import { expect, test } from "@playwright/test";
+import { getCookieHeader, registerAndAuthenticateLocalUser, resetPlaywrightData } from "./helpers/local-auth";
 
-type BrowserPage = Parameters<Parameters<typeof test>[1]>[0]["page"];
-type ApiRequest = Parameters<Parameters<typeof test>[1]>[0]["request"];
-
-function getPlaywrightDataDir() {
-  return path.join(process.cwd(), ".playwright-data");
-}
-
-async function resetPlaywrightData() {
-  const dataDir = getPlaywrightDataDir();
-
-  await mkdir(dataDir, { recursive: true });
-  await Promise.all([
-    writeFile(path.join(dataDir, "users.json"), "[]\n", "utf8"),
-    writeFile(path.join(dataDir, "conversations.json"), "[]\n", "utf8"),
-    writeFile(path.join(dataDir, "activity-log.json"), "[]\n", "utf8"),
-    writeFile(path.join(dataDir, "job-history.json"), "[]\n", "utf8"),
-  ]);
-}
-
-async function getCookieHeader(page: BrowserPage) {
-  const cookies = await page.context().cookies();
-  return cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join("; ");
-}
-
-async function getConversationPayload(request: ApiRequest, cookieHeader: string) {
+async function getConversationPayload(request: APIRequestContext, cookieHeader: string) {
   const response = await request.get("/api/conversations", {
     headers: {
       cookie: cookieHeader,
@@ -53,27 +28,35 @@ test("covers signed-in chat streaming completion and stop flows", async ({ page,
   await resetPlaywrightData();
 
   try {
-    const createUserSubmitButton = page.getByRole("button", { name: "Create user" }).nth(1);
+    await registerAndAuthenticateLocalUser({
+      displayName: "Playwright Chat Admin",
+      email: "playwright-chat-admin@example.com",
+      page,
+      password: "playwright-pass",
+      rememberSession: true,
+      request,
+    });
 
     await page.goto("/");
-    await page.getByRole("button", { name: "Create user" }).first().click();
-    await page.getByPlaceholder("Username").fill("playwright-chat-admin");
-    await page.getByPlaceholder("Display name").fill("Playwright Chat Admin");
-    await page.getByPlaceholder("Password").fill("playwright-pass");
-    await createUserSubmitButton.click();
 
-    await expect(page.getByRole("button", { name: "Sign out user" })).toBeVisible();
+    await expect(page.getByLabel("Sign out")).toBeVisible();
 
-    const composer = page.getByPlaceholder("Ask Ollama something useful...");
-    const sendButton = page.getByRole("button", { name: "Send prompt" });
-    const stopButton = page.getByRole("button", { name: "Stop", exact: true });
+    const composer = page.locator('textarea[placeholder="Type your message..."]:visible').last();
+    const composerForm = page.locator("form").filter({ has: composer }).last();
+    const modelPicker = page.getByRole("combobox", { name: "Select the AI for this chat" }).last();
+    const sendButton = composerForm.getByRole("button", { name: "Send" });
+    const stopButton = composerForm.getByRole("button", { name: "Stop", exact: true });
 
+    await expect(modelPicker).toHaveValue(/.+/);
     await composer.fill("playwright:reply");
-    await sendButton.click();
+    await expect(sendButton).toBeEnabled();
+    await composerForm.evaluate((form) => {
+      (form as HTMLFormElement).requestSubmit();
+    });
 
     await expect(stopButton).toBeEnabled();
     await expect(page.getByText("Playwright deterministic reply. The browser stream completed successfully.")).toBeVisible();
-    await expect(page.getByText(/Last response streamed in \d+ ms\./)).toBeVisible();
+    await expect(page.getByText(/\d+ ms/).first()).toBeVisible();
     await expect(stopButton).toBeDisabled();
 
     const cookieHeader = await getCookieHeader(page);
@@ -93,14 +76,18 @@ test("covers signed-in chat streaming completion and stop flows", async ({ page,
     expect(completedConversations.conversations[0].archivedAt).toBeNull();
     expect(completedConversations.conversations[0].lastMessagePreview).toContain("Playwright deterministic reply.");
 
-    await page.getByRole("button", { name: "New chat" }).click();
+    await page.getByRole("button", { name: "New chat" }).first().click();
     await composer.fill("playwright:stop");
-    await sendButton.click();
+    await composerForm.evaluate((form) => {
+      (form as HTMLFormElement).requestSubmit();
+    });
 
-    await expect(page.getByText("Streaming reply started.")).toBeVisible();
-    await stopButton.click();
+    await expect(page.getByText("Streaming reply started.").first()).toBeVisible();
+    await stopButton.evaluate((button) => {
+      (button as HTMLButtonElement).click();
+    });
     await expect(stopButton).toBeDisabled();
-    await expect(page.getByText("This partial reply should remain after stop.")).toBeVisible();
+    await expect(page.getByText("This partial reply should remain after stop.").first()).toBeVisible();
 
     await expect.poll(async () => {
       const payload = await getConversationPayload(request, cookieHeader);

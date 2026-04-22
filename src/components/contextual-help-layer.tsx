@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getHelpHint, type HelpContext, type HelpHint } from "@/lib/help-manual";
 import {
@@ -158,37 +158,28 @@ export function ContextualHelpLayer({ canUseHoverHelp, onOpenHelpSection }: Cont
 
   const position = useMemo(() => computePosition(overlay), [overlay]);
   const isSessionIntroOverlay = overlay !== null && !isFirstPopupDismissed;
-  const clearHideTimer = () => {
+  const clearHideTimer = useCallback(() => {
     if (hideTimerRef.current) {
       window.clearTimeout(hideTimerRef.current);
       hideTimerRef.current = null;
     }
-  };
+  }, []);
 
-  const clearLongPressTimer = () => {
+  const clearLongPressTimer = useCallback(() => {
     if (longPressTimerRef.current) {
       window.clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
-  };
+  }, []);
 
-  const clearAutoDismissTimer = () => {
+  const clearAutoDismissTimer = useCallback(() => {
     if (autoDismissTimerRef.current) {
       window.clearTimeout(autoDismissTimerRef.current);
       autoDismissTimerRef.current = null;
     }
-  };
+  }, []);
 
-  const scheduleDesktopDismiss = (delayMs = DESKTOP_MIN_VISIBLE_MS) => {
-    clearHideTimer();
-    clearAutoDismissTimer();
-    isPopupInteractionPinnedRef.current = false;
-    hideTimerRef.current = window.setTimeout(() => {
-      dismissOverlay();
-    }, delayMs);
-  };
-
-  const dismissOverlay = (options?: { acknowledgeFirstPopup?: boolean }) => {
+  const dismissOverlay = useCallback((options?: { acknowledgeFirstPopup?: boolean }) => {
     clearHideTimer();
     clearLongPressTimer();
     clearAutoDismissTimer();
@@ -202,9 +193,18 @@ export function ContextualHelpLayer({ canUseHoverHelp, onOpenHelpSection }: Cont
     activeTargetRef.current = null;
     minimumVisibleUntilRef.current = 0;
     setOverlay(null);
-  };
+  }, [clearAutoDismissTimer, clearHideTimer, clearLongPressTimer, isFirstPopupDismissed]);
 
-  const showOverlayForTarget = (target: HTMLElement) => {
+  const scheduleDesktopDismiss = useCallback((delayMs = DESKTOP_MIN_VISIBLE_MS) => {
+    clearHideTimer();
+    clearAutoDismissTimer();
+    isPopupInteractionPinnedRef.current = false;
+    hideTimerRef.current = window.setTimeout(() => {
+      dismissOverlay();
+    }, delayMs);
+  }, [clearAutoDismissTimer, clearHideTimer, dismissOverlay]);
+
+  const showOverlayForTarget = useCallback((target: HTMLElement) => {
     if (!isQuickHelpEnabled || !isVisibleTarget(target)) {
       return;
     }
@@ -232,7 +232,7 @@ export function ContextualHelpLayer({ canUseHoverHelp, onOpenHelpSection }: Cont
       placement: computePlacement(rect),
       rect,
     });
-  };
+  }, [canUseHoverHelp, dismissOverlay, isQuickHelpEnabled, mutedHintIds]);
 
   useEffect(() => {
     clearLegacyQuickHelpSessionState();
@@ -265,7 +265,7 @@ export function ContextualHelpLayer({ canUseHoverHelp, onOpenHelpSection }: Cont
       window.removeEventListener(QUICK_HELP_PREFERENCE_CHANGED_EVENT, syncQuickHelpPreference);
       window.removeEventListener("storage", handleStorage);
     };
-  }, []);
+  }, [dismissOverlay]);
 
   useEffect(() => {
     const handleResizeOrScroll = () => {
@@ -281,7 +281,7 @@ export function ContextualHelpLayer({ canUseHoverHelp, onOpenHelpSection }: Cont
       window.removeEventListener("resize", handleResizeOrScroll);
       window.removeEventListener("scroll", handleResizeOrScroll, true);
     };
-  }, []);
+  }, [showOverlayForTarget]);
 
   useEffect(() => {
     if (
@@ -301,7 +301,7 @@ export function ContextualHelpLayer({ canUseHoverHelp, onOpenHelpSection }: Cont
     return () => {
       clearAutoDismissTimer();
     };
-  }, [isQuickHelpEnabled, isSessionIntroOverlay, overlay]);
+  }, [clearAutoDismissTimer, dismissOverlay, isQuickHelpEnabled, isSessionIntroOverlay, overlay]);
 
   useEffect(() => {
     const handlePointerOver = (event: PointerEvent) => {
@@ -448,7 +448,7 @@ export function ContextualHelpLayer({ canUseHoverHelp, onOpenHelpSection }: Cont
       document.removeEventListener("pointermove", cancelLongPress, true);
       document.removeEventListener("click", handleClickCapture, true);
     };
-  }, [canUseHoverHelp, isFirstPopupDismissed, isQuickHelpEnabled, isSessionIntroOverlay, mutedHintIds]);
+  }, [canUseHoverHelp, clearHideTimer, clearLongPressTimer, dismissOverlay, isQuickHelpEnabled, isSessionIntroOverlay, scheduleDesktopDismiss, showOverlayForTarget]);
 
   useEffect(() => {
     if (!overlay) {
@@ -477,7 +477,7 @@ export function ContextualHelpLayer({ canUseHoverHelp, onOpenHelpSection }: Cont
     return () => {
       document.removeEventListener("pointerdown", handlePointerDown, true);
     };
-  }, [isFirstPopupDismissed, overlay]);
+  }, [dismissOverlay, overlay]);
 
   if (!isQuickHelpEnabled || !overlay || !position) {
     return null;

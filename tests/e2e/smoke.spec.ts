@@ -1,55 +1,63 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";
-
 import { expect, test } from "@playwright/test";
+import { getCookieHeader, registerAndAuthenticateLocalUser, resetPlaywrightData } from "./helpers/local-auth";
 
-type BrowserPage = Parameters<Parameters<typeof test>[1]>[0]["page"];
+async function hideCommandDeckIfVisible(page: Parameters<Parameters<typeof test>[1]>[0]["page"]) {
+  const hideButton = page.getByRole("button", { name: "Hide command deck" });
 
-function getPlaywrightDataDir() {
-  return path.join(process.cwd(), ".playwright-data");
-}
-
-async function getCookieHeader(page: BrowserPage) {
-  const cookies = await page.context().cookies();
-  return cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join("; ");
-}
-
-async function resetPlaywrightData() {
-  const dataDir = getPlaywrightDataDir();
-
-  await mkdir(dataDir, { recursive: true });
-  await Promise.all([
-    writeFile(path.join(dataDir, "users.json"), "[]\n", "utf8"),
-    writeFile(path.join(dataDir, "conversations.json"), "[]\n", "utf8"),
-    writeFile(path.join(dataDir, "activity-log.json"), "[]\n", "utf8"),
-    writeFile(path.join(dataDir, "job-history.json"), "[]\n", "utf8"),
-  ]);
+  if (await hideButton.isVisible()) {
+    await hideButton.click();
+  }
 }
 
 test.describe("oload smoke coverage", () => {
-  test("renders the core control-plane sections", async ({ page }) => {
-    await page.goto("/");
+  test("renders the core control-plane sections", async ({ page, request }) => {
+    await resetPlaywrightData();
+    await registerAndAuthenticateLocalUser({
+      displayName: "Playwright Smoke Admin",
+      email: "playwright-smoke-admin@example.com",
+      page,
+      password: "playwright-pass",
+      rememberSession: true,
+      request,
+    });
 
-    await expect(
-      page.getByRole("heading", {
-        name: "One surface for chat, model operations, and Ollama administration.",
-      }),
-    ).toBeVisible();
-    await expect(page.locator("h2", { hasText: "Conversation cockpit" }).first()).toBeVisible();
-    await expect(page.locator("h2", { hasText: "Local users" }).first()).toBeVisible();
-    await expect(page.locator("h2", { hasText: "Library control" }).first()).toBeVisible();
-    await expect(page.locator("h2", { hasText: "Recent job history" }).first()).toBeVisible();
+    await page.goto("/");
+    await expect(page.getByLabel("Sign out")).toBeVisible();
+
+    await expect(page.getByRole("heading", { name: "Chat" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Admin" })).toBeVisible();
+    await page.getByRole("button", { name: "Admin" }).click();
+    await hideCommandDeckIfVisible(page);
+
+    await expect(page.getByText("Role management", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Runtime Models Library and ready/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Execution Jobs Queue and detail/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Audit Activity Audit trail/i })).toBeVisible();
   });
 
-  test("persists model-library filter and sort controls", async ({ page }) => {
+  test("persists model-library filter and sort controls", async ({ page, request }) => {
+    await resetPlaywrightData();
+    await registerAndAuthenticateLocalUser({
+      displayName: "Playwright Library Admin",
+      email: "playwright-library-admin@example.com",
+      page,
+      password: "playwright-pass",
+      rememberSession: true,
+      request,
+    });
+
     await page.goto("/");
+    await expect(page.getByLabel("Sign out")).toBeVisible();
+    await page.getByRole("button", { name: "Admin" }).click();
+    await hideCommandDeckIfVisible(page);
+    await page.getByRole("button", { name: /Runtime Models Library and ready/i }).click();
 
     const runningOnlyButton = page.getByRole("button", { name: /show only models with active runtimes/i });
-    const allInstalledButton = page.getByRole("button", { name: /show all installed models/i });
+    const allInstalledButton = page.getByRole("button", { name: /show installed models only/i });
     const sortSelect = page.getByLabel("Sort installed models");
-    const searchInput = page.getByLabel("Search installed models");
+    const searchInput = page.getByLabel("Choose a model from the library");
 
-    await expect(allInstalledButton).toHaveAttribute("aria-pressed", "true");
+    await expect(allInstalledButton).toHaveAttribute("aria-pressed", "false");
     await expect(searchInput).toBeVisible();
 
     await runningOnlyButton.click();
@@ -60,6 +68,8 @@ test.describe("oload smoke coverage", () => {
     await expect(sortSelect).toHaveValue("name");
 
     await page.reload();
+    await hideCommandDeckIfVisible(page);
+    await page.getByRole("button", { name: /Runtime Models Library and ready/i }).click();
 
     await expect(runningOnlyButton).toHaveAttribute("aria-pressed", "true");
     await expect(sortSelect).toHaveValue("name");
@@ -88,18 +98,20 @@ test.describe("oload smoke coverage", () => {
   });
 
   test("records failed direct model deletion attempts in jobs and activity", async ({ page, request }) => {
-    const createUserSubmitButton = page.getByRole("button", { name: "Create user" }).nth(1);
     const missingModelName = "playwright:delete-fail-missing";
 
     await resetPlaywrightData();
-    await page.goto("/");
-    await page.getByRole("button", { name: "Create user" }).first().click();
-    await page.getByPlaceholder("Username").fill("playwright-delete-admin");
-    await page.getByPlaceholder("Display name").fill("Playwright Delete Admin");
-    await page.getByPlaceholder("Password").fill("playwright-pass");
-    await createUserSubmitButton.click();
+    await registerAndAuthenticateLocalUser({
+      displayName: "Playwright Delete Admin",
+      email: "playwright-delete-admin@example.com",
+      page,
+      password: "playwright-pass",
+      rememberSession: true,
+      request,
+    });
 
-    await expect(page.getByRole("button", { name: "Sign out user" })).toBeVisible();
+    await page.goto("/");
+    await expect(page.getByLabel("Sign out")).toBeVisible();
 
     const cookieHeader = await getCookieHeader(page);
     const deleteResponse = await request.delete("/api/ollama/models", {
@@ -162,18 +174,20 @@ test.describe("oload smoke coverage", () => {
   });
 
   test("records successful direct model deletion attempts in jobs and activity", async ({ page, request }) => {
-    const createUserSubmitButton = page.getByRole("button", { name: "Create user" }).nth(1);
     const deletedModelName = "playwright:delete-success-demo";
 
     await resetPlaywrightData();
-    await page.goto("/");
-    await page.getByRole("button", { name: "Create user" }).first().click();
-    await page.getByPlaceholder("Username").fill("playwright-delete-success-admin");
-    await page.getByPlaceholder("Display name").fill("Playwright Delete Success Admin");
-    await page.getByPlaceholder("Password").fill("playwright-pass");
-    await createUserSubmitButton.click();
+    await registerAndAuthenticateLocalUser({
+      displayName: "Playwright Delete Success Admin",
+      email: "playwright-delete-success-admin@example.com",
+      page,
+      password: "playwright-pass",
+      rememberSession: true,
+      request,
+    });
 
-    await expect(page.getByRole("button", { name: "Sign out user" })).toBeVisible();
+    await page.goto("/");
+    await expect(page.getByLabel("Sign out")).toBeVisible();
 
     const cookieHeader = await getCookieHeader(page);
     const deleteResponse = await request.delete("/api/ollama/models", {

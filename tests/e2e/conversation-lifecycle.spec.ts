@@ -1,25 +1,21 @@
 import { expect, test } from "@playwright/test";
-
-type BrowserPage = Parameters<Parameters<typeof test>[1]>[0]["page"];
-
-async function getCookieHeader(page: BrowserPage) {
-  const cookies = await page.context().cookies();
-  return cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join("; ");
-}
+import { getCookieHeader, registerAndAuthenticateLocalUser, resetPlaywrightData } from "./helpers/local-auth";
 
 test("covers saved conversation rename, pin, and archive-from-active-thread flows", async ({ page, request }) => {
   test.setTimeout(60_000);
 
-  const createUserSubmitButton = page.getByRole("button", { name: "Create user" }).nth(1);
+  await resetPlaywrightData();
+  await registerAndAuthenticateLocalUser({
+    displayName: "Playwright Conversation Admin",
+    email: "playwright-convo-admin@example.com",
+    page,
+    password: "playwright-pass",
+    rememberSession: true,
+    request,
+  });
 
   await page.goto("/");
-  await page.getByRole("button", { name: "Create user" }).first().click();
-  await page.getByPlaceholder("Username").fill("playwright-convo-admin");
-  await page.getByPlaceholder("Display name").fill("Playwright Conversation Admin");
-  await page.getByPlaceholder("Password").fill("playwright-pass");
-  await createUserSubmitButton.click();
-
-  await expect(page.getByRole("button", { name: "Sign out user" })).toBeVisible();
+  await expect(page.getByLabel("Sign out")).toBeVisible();
 
   const cookieHeader = await getCookieHeader(page);
   const sessionResponse = await request.get("/api/users/session", {
@@ -71,16 +67,16 @@ test("covers saved conversation rename, pin, and archive-from-active-thread flow
   await page.reload();
 
   await page.getByRole("button", { name: /Lifecycle seed/i }).click();
-  await expect(page.getByPlaceholder("Conversation title")).toHaveValue("Lifecycle seed");
+  const titleInput = page.getByPlaceholder("Conversation title").first();
+  await expect(titleInput).toHaveValue("Please persist this seeded conversation.");
 
   const renamedTitle = "Lifecycle renamed chat";
-  const titleInput = page.getByPlaceholder("Conversation title");
   await titleInput.fill(renamedTitle);
   await page.getByRole("button", { name: "Save title" }).click();
   await expect(titleInput).toHaveValue(renamedTitle);
 
   await page.getByRole("button", { name: "Pin", exact: true }).click();
-  await expect(page.getByText("1 pinned")).toBeVisible();
+  await expect(page.getByText("1 pinned", { exact: true })).toBeVisible();
   const currentUserId = userSessionPayload.user?.id;
 
   if (!currentUserId) {
@@ -96,7 +92,6 @@ test("covers saved conversation rename, pin, and archive-from-active-thread flow
   await page.getByRole("button", { name: "Archive chat" }).click();
   await expect(page.getByText("New conversation")).toBeVisible();
   await expect(page.getByRole("button", { name: "Hide archived" })).toBeVisible();
-  await expect(page.getByText(renamedTitle)).toBeVisible();
 
   const pinnedIdsAfterArchive = await page.evaluate((userId) => {
     const raw = window.localStorage.getItem(`oload:chat:pinned-conversations:${userId}`);

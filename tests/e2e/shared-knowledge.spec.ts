@@ -1,33 +1,28 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { expect, test } from "@playwright/test";
+import { registerAndAuthenticateLocalUser, resetPlaywrightData } from "./helpers/local-auth";
 
 function getPlaywrightDataDir() {
   return path.join(process.cwd(), ".playwright-data");
 }
 
-async function resetPlaywrightData() {
-  const dataDir = getPlaywrightDataDir();
-
-  await mkdir(dataDir, { recursive: true });
-  await Promise.all([
-    writeFile(path.join(dataDir, "users.json"), "[]\n", "utf8"),
-    writeFile(path.join(dataDir, "conversations.json"), "[]\n", "utf8"),
-    writeFile(path.join(dataDir, "activity-log.json"), "[]\n", "utf8"),
-    writeFile(path.join(dataDir, "job-history.json"), "[]\n", "utf8"),
-    writeFile(path.join(dataDir, "ai-knowledge.json"), "[]\n", "utf8"),
-  ]);
+function getPlaywrightDataDirCandidates() {
+  return [
+    getPlaywrightDataDir(),
+    path.join(process.cwd(), ".next", "standalone", ".playwright-data"),
+  ];
 }
 
 async function seedKnowledgeEntries() {
-  const dataDir = getPlaywrightDataDir();
   const now = new Date().toISOString();
 
-  await mkdir(dataDir, { recursive: true });
-  await writeFile(
-    path.join(dataDir, "ai-knowledge.json"),
-    `${JSON.stringify([
+  await Promise.all(getPlaywrightDataDirCandidates().map(async (dataDir) => {
+    await mkdir(dataDir, { recursive: true });
+    await writeFile(
+      path.join(dataDir, "ai-knowledge.json"),
+      `${JSON.stringify([
       {
         id: "knowledge-baseline",
         title: "Dedup retrieval baseline",
@@ -61,19 +56,20 @@ async function seedKnowledgeEntries() {
         content:
           "Retrieval validation contrast note. Use this different angle to confirm the ranked set keeps a more diverse shared knowledge result available when the top two notes overlap heavily.",
       },
-    ], null, 2)}\n`,
-    "utf8",
-  );
+      ], null, 2)}\n`,
+      "utf8",
+    );
+  }));
 }
 
 async function seedCitationKnowledgeEntries() {
-  const dataDir = getPlaywrightDataDir();
   const now = new Date().toISOString();
 
-  await mkdir(dataDir, { recursive: true });
-  await writeFile(
-    path.join(dataDir, "ai-knowledge.json"),
-    `${JSON.stringify([
+  await Promise.all(getPlaywrightDataDirCandidates().map(async (dataDir) => {
+    await mkdir(dataDir, { recursive: true });
+    await writeFile(
+      path.join(dataDir, "ai-knowledge.json"),
+      `${JSON.stringify([
       {
         id: "citation-baseline",
         title: "Citation dedupe baseline",
@@ -96,19 +92,20 @@ async function seedCitationKnowledgeEntries() {
         content:
           "playwright reply citation dedupe baseline. Use this note to verify that overlapping shared knowledge sources do not render repeated source cards or duplicate footer entries with slightly different wording.",
       },
-    ], null, 2)}\n`,
-    "utf8",
-  );
+      ], null, 2)}\n`,
+      "utf8",
+    );
+  }));
 }
 
 async function seedOverlapEditKnowledgeEntry() {
-  const dataDir = getPlaywrightDataDir();
   const now = new Date().toISOString();
 
-  await mkdir(dataDir, { recursive: true });
-  await writeFile(
-    path.join(dataDir, "ai-knowledge.json"),
-    `${JSON.stringify([
+  await Promise.all(getPlaywrightDataDirCandidates().map(async (dataDir) => {
+    await mkdir(dataDir, { recursive: true });
+    await writeFile(
+      path.join(dataDir, "ai-knowledge.json"),
+      `${JSON.stringify([
       {
         id: "overlap-edit-baseline",
         title: "Overlap edit baseline",
@@ -120,15 +117,36 @@ async function seedOverlapEditKnowledgeEntry() {
         content:
           "Use this temporary note to validate the overlap warning edit action. The existing note should open directly in the editor when selected from the warning card.",
       },
-    ], null, 2)}\n`,
-    "utf8",
-  );
+      ], null, 2)}\n`,
+      "utf8",
+    );
+  }));
+}
+
+async function getLatestVerificationCode(email: string) {
+  const normalizedEmail = email.trim().toLowerCase();
+
+  for (const dataDir of getPlaywrightDataDirCandidates()) {
+    try {
+      const raw = await readFile(path.join(dataDir, "email-outbox.json"), "utf8");
+      const outbox = JSON.parse(raw) as Array<{ code: string; email: string }>;
+      const match = outbox.find((entry) => entry.email === normalizedEmail);
+
+      if (match) {
+        return match.code;
+      }
+    } catch {
+      // Try the next runtime data directory.
+    }
+  }
+
+  throw new Error(`No verification code found for ${normalizedEmail}.`);
 }
 
 async function registerAdmin(request: Parameters<Parameters<typeof test>[1]>[0]["request"]) {
   const registerResponse = await request.post("/api/users/register", {
     data: {
-      username: "playwright-knowledge-admin",
+      email: "playwright-knowledge-admin@example.com",
       displayName: "Playwright Knowledge Admin",
       password: "playwright-pass",
       rememberSession: true,
@@ -137,7 +155,15 @@ async function registerAdmin(request: Parameters<Parameters<typeof test>[1]>[0][
 
   expect(registerResponse.ok()).toBeTruthy();
 
-  const cookieHeader = registerResponse.headers()["set-cookie"]?.split(";")[0] ?? "";
+  const verifyResponse = await request.post("/api/users/verify", {
+    data: {
+      code: await getLatestVerificationCode("playwright-knowledge-admin@example.com"),
+      email: "playwright-knowledge-admin@example.com",
+    },
+  });
+  expect(verifyResponse.ok()).toBeTruthy();
+
+  const cookieHeader = verifyResponse.headers()["set-cookie"]?.split(";")[0] ?? "";
   expect(cookieHeader).toContain("=");
 
   return cookieHeader;
@@ -230,18 +256,23 @@ test("deduplicates overlapping shared-knowledge citations in grounded chat respo
   expect(reply).not.toContain("Sources: Citation dedupe baseline; Citation dedupe follow-up");
 });
 
-test("opens the existing knowledge entry from the overlap warning card", async ({ page }) => {
+test("opens the existing knowledge entry from the overlap warning card", async ({ page, request }) => {
   await resetPlaywrightData();
   await seedOverlapEditKnowledgeEntry();
 
-  const createUserSubmitButton = page.getByRole("button", { name: "Create user" }).nth(1);
+  await registerAndAuthenticateLocalUser({
+    displayName: "Playwright Overlap Edit Admin",
+    email: "playwright-overlap-edit-admin@example.com",
+    page,
+    password: "playwright-pass",
+    rememberSession: true,
+    request,
+  });
 
   await page.goto("/");
-  await page.getByRole("button", { name: "Create user" }).first().click();
-  await page.getByPlaceholder("Username").fill("playwright-overlap-edit-admin");
-  await page.getByPlaceholder("Display name").fill("Playwright Overlap Edit Admin");
-  await page.getByPlaceholder("Password").fill("playwright-pass");
-  await createUserSubmitButton.click();
+  await expect(page.getByLabel("Sign out")).toBeVisible();
+  await page.getByRole("button", { name: "Admin" }).click();
+  await page.getByRole("button", { name: "Hide command deck" }).click();
 
   await expect(page.getByRole("button", { name: "Refresh knowledge" })).toBeVisible();
 

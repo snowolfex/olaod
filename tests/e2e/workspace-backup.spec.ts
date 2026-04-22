@@ -1,9 +1,8 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { expect, test } from "@playwright/test";
-
-type BrowserPage = Parameters<Parameters<typeof test>[1]>[0]["page"];
+import { getCookieHeader, registerAndAuthenticateLocalUser, resetPlaywrightData } from "./helpers/local-auth";
 
 type WorkspaceBackupSnapshot = {
   version: 1;
@@ -11,6 +10,7 @@ type WorkspaceBackupSnapshot = {
   users: Array<{
     id: string;
     username: string;
+    email?: string;
     displayName: string;
     role: "viewer" | "operator" | "admin";
     passwordHash: string;
@@ -22,21 +22,31 @@ type WorkspaceBackupSnapshot = {
   jobHistory: Array<{ id: string; target: string }>;
 };
 
-async function getCookieHeader(page: BrowserPage) {
-  const cookies = await page.context().cookies();
-  return cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join("; ");
+function getPlaywrightDataDirCandidates() {
+  return [
+    path.join(process.cwd(), ".playwright-data"),
+    path.join(process.cwd(), ".next", "standalone", ".playwright-data"),
+  ];
 }
 
-async function resetPlaywrightData() {
-  const dataDir = path.join(process.cwd(), ".playwright-data");
+async function getLatestVerificationCode(email: string) {
+  const normalizedEmail = email.trim().toLowerCase();
 
-  await mkdir(dataDir, { recursive: true });
-  await Promise.all([
-    writeFile(path.join(dataDir, "users.json"), "[]\n", "utf8"),
-    writeFile(path.join(dataDir, "conversations.json"), "[]\n", "utf8"),
-    writeFile(path.join(dataDir, "activity-log.json"), "[]\n", "utf8"),
-    writeFile(path.join(dataDir, "job-history.json"), "[]\n", "utf8"),
-  ]);
+  for (const dataDir of getPlaywrightDataDirCandidates()) {
+    try {
+      const raw = await readFile(path.join(dataDir, "email-outbox.json"), "utf8");
+      const outbox = JSON.parse(raw) as Array<{ code: string; email: string }>;
+      const match = outbox.find((entry) => entry.email === normalizedEmail);
+
+      if (match) {
+        return match.code;
+      }
+    } catch {
+      // Try the next runtime data directory.
+    }
+  }
+
+  throw new Error(`No verification code found for ${normalizedEmail}.`);
 }
 
 test("exports and restores workspace backups, including invalidating stale user sessions", async ({
@@ -45,17 +55,22 @@ test("exports and restores workspace backups, including invalidating stale user 
 }) => {
   test.setTimeout(60_000);
 
-  const createUserSubmitButton = page.getByRole("button", { name: "Create user" }).nth(1);
-
   await resetPlaywrightData();
 
   try {
+    await registerAndAuthenticateLocalUser({
+      displayName: "Playwright Backup Admin",
+      email: "playwright-backup-admin@example.com",
+      page,
+      password: "playwright-pass",
+      rememberSession: true,
+      request,
+    });
+
     await page.goto("/");
-    await page.getByRole("button", { name: "Create user" }).first().click();
-    await page.getByPlaceholder("Username").fill("playwright-backup-admin");
-    await page.getByPlaceholder("Display name").fill("Playwright Backup Admin");
-    await page.getByPlaceholder("Password").fill("playwright-pass");
-    await createUserSubmitButton.click();
+    await expect(page.getByLabel("Sign out")).toBeVisible();
+    await page.getByRole("button", { name: "Admin" }).click();
+    await page.getByRole("button", { name: "Hide command deck" }).click();
 
     await expect(page.getByText("Workspace backup")).toBeVisible();
 
@@ -115,7 +130,7 @@ test("exports and restores workspace backups, including invalidating stale user 
     expect(originalSnapshot.version).toBe(1);
     expect(originalSnapshot.users).toHaveLength(1);
     expect(originalSnapshot.conversations).toHaveLength(1);
-    expect(originalSnapshot.users[0]?.username).toBe("playwright-backup-admin");
+    expect(originalSnapshot.users[0]?.username).toBe("playwright-backup-admin@example.com");
     expect(originalSnapshot.conversations[0]?.title).toBe("Backup Seed Conversation");
 
     const extraUserResponse = await request.post("/api/users/register", {
@@ -124,12 +139,20 @@ test("exports and restores workspace backups, including invalidating stale user 
         "Content-Type": "application/json",
       },
       data: {
-        username: "playwright-backup-operator",
+        email: "playwright-backup-operator@example.com",
         displayName: "Playwright Backup Operator",
         password: "playwright-pass",
       },
     });
     expect(extraUserResponse.ok()).toBeTruthy();
+
+    const verifyExtraUserResponse = await request.post("/api/users/verify", {
+      data: {
+        code: await getLatestVerificationCode("playwright-backup-operator@example.com"),
+        email: "playwright-backup-operator@example.com",
+      },
+    });
+    expect(verifyExtraUserResponse.ok()).toBeTruthy();
 
     const extraConversationResponse = await request.post("/api/conversations", {
       headers: {
@@ -156,8 +179,8 @@ test("exports and restores workspace backups, including invalidating stale user 
     expect(mutatedUsersResponse.ok()).toBeTruthy();
     await expect.soft(mutatedUsersResponse.json()).resolves.toMatchObject({
       users: expect.arrayContaining([
-        expect.objectContaining({ username: "playwright-backup-admin" }),
-        expect.objectContaining({ username: "playwright-backup-operator" }),
+        expect.objectContaining({ email: "playwright-backup-admin@example.com" }),
+        expect.objectContaining({ email: "playwright-backup-operator@example.com" }),
       ]),
     });
 
@@ -202,7 +225,7 @@ test("exports and restores workspace backups, including invalidating stale user 
     });
     expect(restoredUsersResponse.ok()).toBeTruthy();
     await expect.soft(restoredUsersResponse.json()).resolves.toMatchObject({
-      users: [expect.objectContaining({ username: "playwright-backup-admin" })],
+      users: [expect.objectContaining({ email: "playwright-backup-admin@example.com" })],
     });
 
     const restoredConversationsResponse = await request.get("/api/conversations", {
@@ -256,7 +279,7 @@ test("exports and restores workspace backups, including invalidating stale user 
     await page.getByRole("checkbox", { name: /i understand this restore overwrites/i }).check();
     await page.getByRole("button", { name: "Confirm restore workspace backup" }).click();
     await expect(page.getByText("Workspace backup restored. Your previous session was cleared because the restored workspace no longer includes any local users.")).toBeVisible();
-    await expect(page.getByRole("button", { name: "Create user" }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Create account" }).first()).toBeVisible();
 
     const sessionResponse = await request.get("/api/users/session", {
       headers: {
@@ -273,18 +296,22 @@ test("exports and restores workspace backups, including invalidating stale user 
 test("recovers cleanly when a restore downgrades the current user's access", async ({ page, request }) => {
   test.setTimeout(60_000);
 
-  const createUserSubmitButton = page.getByRole("button", { name: "Create user" }).nth(1);
-
   await resetPlaywrightData();
 
   try {
+    await registerAndAuthenticateLocalUser({
+      displayName: "Playwright Restore Role Admin",
+      email: "playwright-restore-role-admin@example.com",
+      page,
+      password: "playwright-pass",
+      rememberSession: true,
+      request,
+    });
+
     await page.goto("/");
-    await page.getByRole("button", { name: "Create user" }).first().click();
-    await page.getByPlaceholder("Username").fill("playwright-restore-role-admin");
-    await page.getByPlaceholder("Display name").fill("Playwright Restore Role Admin");
-    await page.getByPlaceholder("Password").fill("playwright-pass");
-    await createUserSubmitButton.click();
-    await expect(page.getByRole("button", { name: "Sign out user" })).toBeVisible();
+    await expect(page.getByLabel("Sign out")).toBeVisible();
+    await page.getByRole("button", { name: "Admin" }).click();
+    await page.getByRole("button", { name: "Hide command deck" }).click();
 
     const adminCookieHeader = await getCookieHeader(page);
 

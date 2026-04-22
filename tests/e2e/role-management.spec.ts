@@ -1,10 +1,9 @@
 import { createHmac } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { expect, test } from "@playwright/test";
-
-type BrowserPage = Parameters<Parameters<typeof test>[1]>[0]["page"];
+import { getCookieHeader, registerAndAuthenticateLocalUser, resetPlaywrightData } from "./helpers/local-auth";
 
 function createSignedUserCookie(user: {
   id: string;
@@ -23,35 +22,50 @@ function createSignedUserCookie(user: {
   return `oload_user_session=${payload}.${signature}`;
 }
 
-async function getCookieHeader(page: BrowserPage) {
-  const cookies = await page.context().cookies();
-  return cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join("; ");
+function getPlaywrightDataDirCandidates() {
+  return [
+    path.join(process.cwd(), ".playwright-data"),
+    path.join(process.cwd(), ".next", "standalone", ".playwright-data"),
+  ];
 }
 
-async function resetPlaywrightData() {
-  const dataDir = path.join(process.cwd(), ".playwright-data");
+async function getLatestVerificationCode(email: string) {
+  const normalizedEmail = email.trim().toLowerCase();
 
-  await mkdir(dataDir, { recursive: true });
-  await Promise.all([
-    writeFile(path.join(dataDir, "users.json"), "[]\n", "utf8"),
-    writeFile(path.join(dataDir, "conversations.json"), "[]\n", "utf8"),
-    writeFile(path.join(dataDir, "activity-log.json"), "[]\n", "utf8"),
-    writeFile(path.join(dataDir, "job-history.json"), "[]\n", "utf8"),
-  ]);
+  for (const dataDir of getPlaywrightDataDirCandidates()) {
+    try {
+      const raw = await readFile(path.join(dataDir, "email-outbox.json"), "utf8");
+      const outbox = JSON.parse(raw) as Array<{ code: string; email: string }>;
+      const match = [...outbox].reverse().find((entry) => entry.email === normalizedEmail);
+
+      if (match) {
+        return match.code;
+      }
+    } catch {
+      // Try the next runtime data directory.
+    }
+  }
+
+  throw new Error(`No verification code found for ${normalizedEmail}.`);
 }
 
 test("covers role management refresh, role updates, deletion, and session guardrails", async ({ page, request }) => {
   test.setTimeout(60_000);
 
-  const createUserSubmitButton = page.getByRole("button", { name: "Create user" }).nth(1);
-
   await resetPlaywrightData();
+  await registerAndAuthenticateLocalUser({
+    displayName: "Playwright Role Admin",
+    email: "playwright-role-admin@example.com",
+    page,
+    password: "playwright-pass",
+    rememberSession: true,
+    request,
+  });
+
   await page.goto("/");
-  await page.getByRole("button", { name: "Create user" }).first().click();
-  await page.getByPlaceholder("Username").fill("playwright-role-admin");
-  await page.getByPlaceholder("Display name").fill("Playwright Role Admin");
-  await page.getByPlaceholder("Password").fill("playwright-pass");
-  await createUserSubmitButton.click();
+  await expect(page.getByLabel("Sign out")).toBeVisible();
+  await page.getByRole("button", { name: "Admin" }).click();
+  await page.getByRole("button", { name: "Hide command deck" }).click();
 
   await expect(page.getByRole("button", { name: "Refresh users" })).toBeVisible();
   await expect(page.getByText("Your own role is locked in this panel.")).toBeVisible();
@@ -80,29 +94,63 @@ test("covers role management refresh, role updates, deletion, and session guardr
       "Content-Type": "application/json",
     },
     data: {
-      username: "playwright-role-operator",
+      email: "playwright-role-operator@example.com",
       displayName: "Playwright Role Operator",
       password: "playwright-pass",
     },
   });
   expect(operatorResponse.ok()).toBeTruthy();
 
-  const operatorPayload = (await operatorResponse.json()) as {
-    user: {
+  const operatorCode = await getLatestVerificationCode("playwright-role-operator@example.com");
+  const verifyOperatorResponse = await request.post("/api/users/verify", {
+    headers: {
+      "Content-Type": "application/json",
+    },
+    data: {
+      code: operatorCode,
+      email: "playwright-role-operator@example.com",
+    },
+  });
+  expect(verifyOperatorResponse.ok()).toBeTruthy();
+
+  const usersResponse = await request.get("/api/users", {
+    headers: {
+      cookie: adminCookieHeader,
+    },
+  });
+  expect(usersResponse.ok()).toBeTruthy();
+  const usersPayload = (await usersResponse.json()) as {
+    users: Array<{
       id: string;
       username: string;
+      email?: string;
       displayName: string;
       role: string;
-    };
+    }>;
   };
-  expect(operatorPayload.user.role).toBe("operator");
+  const operatorPayload = usersPayload.users.find((user) => user.email === "playwright-role-operator@example.com");
 
-  const operatorCookieHeader = createSignedUserCookie({
-    id: operatorPayload.user.id,
-    username: operatorPayload.user.username,
-    displayName: operatorPayload.user.displayName,
-    role: "operator",
+  if (!operatorPayload) {
+    throw new Error("Expected the verified operator user to be available for role management coverage.");
+  }
+
+  expect(operatorPayload.role).toBe("operator");
+
+  const operatorLoginResponse = await request.post("/api/users/login", {
+    headers: {
+      "Content-Type": "application/json",
+    },
+    data: {
+      email: "playwright-role-operator@example.com",
+      password: "playwright-pass",
+      rememberSession: true,
+    },
   });
+  expect(operatorLoginResponse.ok()).toBeTruthy();
+
+  const operatorCookieHeader = operatorLoginResponse.headers()["set-cookie"]?.split(";")[0] ?? "";
+  expect(operatorCookieHeader).toContain("oload_user_session=");
+
   const operatorConversationResponse = await request.post("/api/conversations", {
     headers: {
       cookie: operatorCookieHeader,
@@ -125,12 +173,18 @@ test("covers role management refresh, role updates, deletion, and session guardr
   const operatorCard = page.getByText("Playwright Role Operator").locator("xpath=ancestor::div[contains(@class, 'rounded-[24px]')]").first();
   await expect(operatorCard).toBeVisible();
   const viewerRoleButton = operatorCard.getByRole("button", { name: "viewer", exact: true });
-  await viewerRoleButton.click();
+  await viewerRoleButton.evaluate((button) => {
+    (button as HTMLButtonElement).click();
+  });
   await expect(viewerRoleButton).toBeDisabled();
 
-  await operatorCard.getByRole("button", { name: "Delete user" }).click();
+  await operatorCard.getByRole("button", { name: "Delete user" }).evaluate((button) => {
+    (button as HTMLButtonElement).click();
+  });
   await expect(operatorCard.getByText("This removes the local account and permanently deletes 1 saved conversation for this user on this machine.")).toBeVisible();
-  await operatorCard.getByRole("button", { name: "Confirm delete" }).click();
+  await operatorCard.getByRole("button", { name: "Confirm delete" }).evaluate((button) => {
+    (button as HTMLButtonElement).click();
+  });
   await expect(page.getByText("Playwright Role Operator was deleted. Removed 1 saved conversation.")).toBeVisible();
 
   const updatedUsersResponse = await request.get("/api/users", {
@@ -148,7 +202,7 @@ test("covers role management refresh, role updates, deletion, and session guardr
   expect(updatedUsersPayload.users).not.toEqual(
     expect.arrayContaining([
       expect.objectContaining({
-        id: operatorPayload.user.id,
+        id: operatorPayload.id,
       }),
     ]),
   );

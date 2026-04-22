@@ -28,7 +28,7 @@ export default defineConfig({
   ],
   ...(skipWebServer ? {} : {
     webServer: {
-      command: "cmd /c \"npm run build && npm run test:e2e:server\"",
+      command: "cmd /c \"npm run build && set HOSTNAME=127.0.0.1&& set PORT=3101&& node scripts/run-standalone-server.mjs\"",
       url: baseURL,
       reuseExistingServer: false,
       timeout: 240_000,

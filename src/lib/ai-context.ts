@@ -474,7 +474,17 @@ export async function searchAiKnowledge(
   options?: { providerId?: AiProviderId; modelId?: string },
 ): Promise<AiKnowledgeSearchResult[]> {
   const results = await debugAiKnowledgeSearch(query, limit, options);
-  return results.map(({ breakdown: _breakdown, ...entry }) => entry);
+  return results.map((entry) => ({
+    id: entry.id,
+    title: entry.title,
+    content: entry.content,
+    source: entry.source,
+    tags: entry.tags,
+    providerIds: entry.providerIds,
+    modelIds: entry.modelIds,
+    updatedAt: entry.updatedAt,
+    score: entry.score,
+  }));
 }
 
 export async function debugAiKnowledgeSearch(

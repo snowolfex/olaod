@@ -32,6 +32,12 @@ type AiModelsResponse = {
   providerId: AiProviderId;
 };
 
+type VerificationChallenge = {
+  email: string;
+  expiresAt: string;
+  purpose: "login" | "register";
+};
+
 function formatKnowledgeProviderScope(providerIds: AiProviderId[]) {
   if (providerIds.length === 0) {
     return "all providers";
@@ -199,11 +205,14 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
   const currentUserId = session.user?.id ?? null;
   const isPageSurface = surface === "page" && !compact;
   const isAdminSession = session.user?.role === "admin";
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const [mode, setMode] = useState<"login" | "register">(() => session.userCount === 0 ? "register" : "login");
   const [managedUsers, setManagedUsers] = useState<ManagedUser[]>([]);
-  const [username, setUsername] = useState("");
+  const [localEmail, setLocalEmail] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
+  const [verificationChallenge, setVerificationChallenge] = useState<VerificationChallenge | null>(null);
+  const [verificationSecondsRemaining, setVerificationSecondsRemaining] = useState(0);
   const [accountDisplayName, setAccountDisplayName] = useState("");
   const [accountEmail, setAccountEmail] = useState("");
   const [accountPreferredModel, setAccountPreferredModel] = useState("");
@@ -258,6 +267,35 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
   const [knowledgeDebugResults, setKnowledgeDebugResults] = useState<AiKnowledgeDebugResult[]>([]);
   const [isRunningKnowledgeDebug, setIsRunningKnowledgeDebug] = useState(false);
   const configuredProviderCount = providerConfigs.filter((provider) => provider.configured).length;
+
+  useEffect(() => {
+    if (!verificationChallenge) {
+      setVerificationSecondsRemaining(0);
+      return;
+    }
+
+    const updateRemaining = () => {
+      const remainingMs = Math.max(0, Date.parse(verificationChallenge.expiresAt) - Date.now());
+      setVerificationSecondsRemaining(Math.ceil(remainingMs / 1000));
+    };
+
+    updateRemaining();
+
+    const intervalId = window.setInterval(updateRemaining, 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [verificationChallenge]);
+
+  useEffect(() => {
+    if (!session.user) {
+      return;
+    }
+
+    setVerificationChallenge(null);
+    setVerificationCode("");
+  }, [session.user]);
   const backupImportInputRef = useRef<HTMLInputElement | null>(null);
   const hasOfficialGoogleSignIn = GOOGLE_CLIENT_ID.trim().length > 0;
   const isBrokerGoogleSignIn = session.googleAuthMode === "broker";
@@ -277,6 +315,12 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
     setNextPasswordDraft("");
     setAccountSummary(null);
   }, [session.user?.displayName, session.user?.email, session.user?.id, session.user?.preferredModel, session.user?.preferredSystemPrompt, session.user?.preferredTemperature]);
+
+  useEffect(() => {
+    if (!session.user) {
+      setMode(session.userCount === 0 ? "register" : "login");
+    }
+  }, [session.user, session.userCount]);
 
   useEffect(() => {
     setIsQuickHelpEnabled(readQuickHelpEnabled());
@@ -356,7 +400,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
       }
 
       onSessionChange(nextSession);
-      setUsername("");
+      setLocalEmail("");
       setDisplayName("");
       setPassword("");
     } catch (googleError) {
@@ -370,7 +414,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
     }
   });
 
-  const startBrokerGoogleSignIn = useEffectEvent(async () => {
+  async function startBrokerGoogleSignIn() {
     setIsGoogleSubmitting(true);
     setError(null);
 
@@ -461,7 +505,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
           }
 
           onSessionChange(nextSession);
-          setUsername("");
+          setLocalEmail("");
           setDisplayName("");
           setPassword("");
           setIsGoogleSubmitting(false);
@@ -485,7 +529,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
           : "Unable to start broker Google sign-in.",
       );
     }
-  });
+  }
 
   useEffect(() => {
     if (!showGoogleAuthUi || !hasDirectGoogleSignIn || !googleScriptReady || !googleButtonRef.current || session.user) {
@@ -521,7 +565,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
       width: 320,
       logo_alignment: "left",
     });
-  }, [completeGoogleSignIn, googleScriptReady, hasDirectGoogleSignIn, session.user, session.userCount, showGoogleAuthUi]);
+  }, [googleScriptReady, hasDirectGoogleSignIn, session.user, session.userCount, showGoogleAuthUi]);
 
   function clearPendingBackupSelection() {
     setPendingBackupSnapshot(null);
@@ -967,12 +1011,12 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
     event.preventDefault();
 
     const formData = new FormData(event.currentTarget);
-    const submittedUsername = String(formData.get("username") ?? "").trim();
+    const submittedEmail = String(formData.get("email") ?? "").trim();
     const submittedDisplayName = String(formData.get("displayName") ?? "");
     const submittedPassword = String(formData.get("password") ?? "");
 
-    if (!submittedUsername || !submittedPassword) {
-      setError("Username and password are required.");
+    if (!submittedEmail || !submittedPassword) {
+      setError("Email address and password are required.");
       return;
     }
 
@@ -989,7 +1033,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            username: submittedUsername,
+            email: submittedEmail,
             displayName: submittedDisplayName,
             password: submittedPassword,
             rememberSession,
@@ -1001,15 +1045,32 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
         throw new Error(await readErrorMessage(response));
       }
 
-      const payload = (await response.json()) as { user: PublicUser };
+      const payload = (await response.json()) as {
+        expiresAt?: string;
+        user?: PublicUser;
+        verificationRequired?: boolean;
+        verificationTarget?: string;
+      };
+
+      if (payload.verificationRequired && payload.expiresAt && payload.verificationTarget) {
+        setVerificationChallenge({
+          email: payload.verificationTarget,
+          expiresAt: payload.expiresAt,
+          purpose: mode,
+        });
+        setVerificationCode("");
+        setError(null);
+        return;
+      }
+
       const nextSession = await fetchCurrentSession();
 
-      if (!nextSession.user || nextSession.user.id !== payload.user.id) {
+      if (!payload.user || !nextSession.user || nextSession.user.id !== payload.user.id) {
         throw new Error("Sign-in finished, but the session was not established. Reload and try again.");
       }
 
       onSessionChange(nextSession);
-      setUsername("");
+      setLocalEmail("");
       setDisplayName("");
       setPassword("");
     } catch (submitError) {
@@ -1017,6 +1078,64 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
         submitError instanceof Error
           ? submitError.message
           : "Unable to complete user authentication.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function submitVerificationCode() {
+    if (!verificationChallenge) {
+      return;
+    }
+
+    if (!verificationCode.trim()) {
+      setError("Enter the 6-digit verification code from your email.");
+      return;
+    }
+
+    if (verificationSecondsRemaining <= 0) {
+      setError("That verification code has expired. Request a new one by signing in again.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/users/verify", {
+        credentials: "same-origin",
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          code: verificationCode,
+          email: verificationChallenge.email,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+
+      const nextSession = await fetchCurrentSession();
+
+      if (!nextSession.user) {
+        throw new Error("Verification finished, but the session was not established. Reload and try again.");
+      }
+
+      onSessionChange(nextSession);
+      setVerificationChallenge(null);
+      setVerificationCode("");
+      setLocalEmail("");
+      setDisplayName("");
+      setPassword("");
+    } catch (verificationError) {
+      setError(
+        verificationError instanceof Error
+          ? verificationError.message
+          : "Unable to verify that email code.",
       );
     } finally {
       setIsSubmitting(false);
@@ -1044,6 +1163,8 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
 
       onSessionChange(nextSession);
       setManagedUsers([]);
+      setVerificationChallenge(null);
+      setVerificationCode("");
     } catch (logoutError) {
       setError(
         logoutError instanceof Error
@@ -1163,6 +1284,43 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
         roleError instanceof Error
           ? roleError.message
           : "Unable to update the user role.",
+      );
+    } finally {
+      setBusyUserId(null);
+    }
+  }
+
+  async function changeLoginVerificationPolicy(userId: string, requireEmailVerificationOnLogin: boolean) {
+    setBusyUserId(userId);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/users/${userId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ requireEmailVerificationOnLogin }),
+      });
+
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+
+      const payload = (await response.json()) as { user: PublicUser };
+      setManagedUsers((current) =>
+        current.map((user) => (user.id === userId ? { ...user, ...payload.user } : user)),
+      );
+
+      if (session.user?.id === userId) {
+        const nextSession = await fetchCurrentSession();
+        onSessionChange(nextSession);
+      }
+    } catch (verificationPolicyError) {
+      setError(
+        verificationPolicyError instanceof Error
+          ? verificationPolicyError.message
+          : "Unable to update the login verification setting.",
       );
     } finally {
       setBusyUserId(null);
@@ -1318,7 +1476,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
       onSessionChange(nextSession);
       clearPendingBackupSelection();
       setManagedUsers([]);
-      setUsername("");
+      setLocalEmail("");
       setDisplayName("");
       setPassword("");
       setMode(nextSession.userCount === 0 ? "register" : "login");
@@ -1396,7 +1554,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
         <div className={`mt-6 grid gap-6 ${isPageSurface ? "lg:grid-cols-[minmax(0,0.88fr)_minmax(0,1.12fr)]" : ""}`}>
           <div className={`rounded-[28px] ${isPageSurface ? "theme-surface-elevated px-5 py-5" : "theme-surface-soft p-5"}`}>
             <p className="text-lg font-semibold text-foreground">{session.user.displayName}</p>
-            <p className="mt-1 text-sm text-muted">@{session.user.username}</p>
+            <p className="mt-1 text-sm text-muted">{session.user.authProvider === "local" ? session.user.email ?? session.user.username : `@${session.user.username}`}</p>
             {session.user.email ? (
               <p className="mt-1 text-sm text-muted">{session.user.email}</p>
             ) : null}
@@ -1454,8 +1612,8 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
                     <input
                       className="mt-2 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm font-normal text-foreground outline-none disabled:cursor-not-allowed disabled:bg-neutral-100"
                       autoComplete="email"
-                      disabled={session.user.authProvider === "google"}
-                      placeholder={session.user.authProvider === "google" ? "Managed by Google sign-in" : "name@example.com"}
+                      disabled
+                      placeholder={session.user.authProvider === "google" ? "Managed by Google sign-in" : "Used for local sign-in and verification"}
                       type="email"
                       value={accountEmail}
                       onChange={(event) => setAccountEmail(event.target.value)}
@@ -1506,7 +1664,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
                 <p className="mt-3 text-xs leading-6 text-muted">
                   {session.user.authProvider === "google"
                     ? "Google-managed accounts keep their provider email. You can still change the display name plus the defaults used when you start a new chat."
-                    : "Local accounts can leave email blank or store one address for identification and future recovery workflows. Model, reply style, and assistant style become your per-user defaults for new chats."}
+                    : "Local accounts now sign in with email and use 6-digit verification codes when required. The login email is shown here and model, reply style, and assistant style stay personal to this account."}
                 </p>
                 <button
                   className="ui-button ui-button-primary mt-4 w-full px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
@@ -1700,11 +1858,12 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
           </div>
           <input
             className="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
-            autoComplete="username"
-            name="username"
-            placeholder="Username"
-            value={username}
-            onChange={(event) => setUsername(event.target.value)}
+            autoComplete="email"
+            name="email"
+            placeholder="Email address"
+            type="email"
+            value={localEmail}
+            onChange={(event) => setLocalEmail(event.target.value)}
           />
           {mode === "register" ? (
             <input
@@ -1744,10 +1903,40 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
               {error}
             </div>
           ) : null}
+          {verificationChallenge ? (
+            <div className="rounded-[24px] border border-line bg-white px-4 py-4">
+              <p className="text-sm font-semibold text-foreground">Email verification required</p>
+              <p className="mt-2 text-sm leading-6 text-muted">
+                Enter the 6-digit code sent to {verificationChallenge.email}. {verificationSecondsRemaining > 0
+                  ? `This code expires in ${verificationSecondsRemaining} second${verificationSecondsRemaining === 1 ? "" : "s"}.`
+                  : "This code has expired. Submit the form again to request a new one."}
+              </p>
+              <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+                <input
+                  className="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
+                  inputMode="numeric"
+                  maxLength={6}
+                  placeholder="6-digit code"
+                  value={verificationCode}
+                  onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                />
+                <button
+                  className="ui-button ui-button-primary w-full px-5 py-3 text-sm disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                  disabled={isSubmitting || verificationSecondsRemaining <= 0}
+                  type="button"
+                  onClick={() => {
+                    void submitVerificationCode();
+                  }}
+                >
+                  {isSubmitting ? "Verifying..." : "Verify email"}
+                </button>
+              </div>
+            </div>
+          ) : null}
           <p className="text-sm leading-6 text-muted">
             {session.userCount === 0
-              ? "The first account becomes admin. Later accounts start as operators."
-              : "Sign in to access your saved conversations and role-based controls."}
+              ? "The first account becomes admin. Later accounts start as operators. Local accounts sign in with email addresses."
+              : "Sign in with your email address to access saved conversations and role-based controls."}
           </p>
           {showGoogleAuthUi ? (
             <p className="text-xs leading-6 text-muted">
@@ -1816,7 +2005,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
                         <p className="text-sm font-semibold text-foreground">
                           {user.displayName}
                         </p>
-                        <p className="mt-1 text-xs text-muted">@{user.username}</p>
+                        <p className="mt-1 text-xs text-muted">{user.authProvider === "local" ? user.email ?? user.username : `@${user.username}`}</p>
                       </div>
                       <span className="ui-pill ui-pill-soft border border-line text-xs text-muted">
                         {user.role}
@@ -1826,6 +2015,16 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
                       <span className="ui-pill ui-pill-soft border border-line text-xs text-muted">
                         {user.authProvider === "google" ? "Google" : "Local"}
                       </span>
+                      {user.authProvider === "local" ? (
+                        <span className="ui-pill ui-pill-soft border border-line text-xs text-muted">
+                          {user.emailVerifiedAt ? "Email verified" : "Verification pending"}
+                        </span>
+                      ) : null}
+                      {user.authProvider === "local" ? (
+                        <span className="ui-pill ui-pill-soft border border-line text-xs text-muted">
+                          {user.requireEmailVerificationOnLogin ? "Verify each login" : "Password only after verified email"}
+                        </span>
+                      ) : null}
                       {user.email ? (
                         <span className="ui-pill ui-pill-soft border border-line text-xs text-muted">
                           {user.email}
@@ -1858,6 +2057,39 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
                             </button>
                           ))}
                         </div>
+
+                        {user.authProvider === "local" ? (
+                          <div className="-mx-1 mt-3 flex gap-2 overflow-x-auto px-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
+                            <button
+                              className={`ui-button ui-button-chip shrink-0 px-3 py-2 text-xs ${
+                                !user.requireEmailVerificationOnLogin
+                                  ? "ui-button-primary"
+                                  : "ui-button-secondary"
+                              } disabled:cursor-not-allowed disabled:opacity-50`}
+                              disabled={busyUserId === user.id || !user.requireEmailVerificationOnLogin}
+                              type="button"
+                              onClick={() => {
+                                void changeLoginVerificationPolicy(user.id, false);
+                              }}
+                            >
+                              {busyUserId === user.id && user.requireEmailVerificationOnLogin ? "Updating..." : "Password only"}
+                            </button>
+                            <button
+                              className={`ui-button ui-button-chip shrink-0 px-3 py-2 text-xs ${
+                                user.requireEmailVerificationOnLogin
+                                  ? "ui-button-primary"
+                                  : "ui-button-secondary"
+                              } disabled:cursor-not-allowed disabled:opacity-50`}
+                              disabled={busyUserId === user.id || user.requireEmailVerificationOnLogin}
+                              type="button"
+                              onClick={() => {
+                                void changeLoginVerificationPolicy(user.id, true);
+                              }}
+                            >
+                              {busyUserId === user.id && !user.requireEmailVerificationOnLogin ? "Updating..." : "Verify each login"}
+                            </button>
+                          </div>
+                        ) : null}
 
                         {pendingDeleteUserId === user.id ? (
                           <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-950">

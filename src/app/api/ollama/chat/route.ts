@@ -38,6 +38,17 @@ function getPlaywrightChatChunks(payload: OllamaChatRequest) {
   ];
 }
 
+function getPlaywrightChatChunkDelay(payload: OllamaChatRequest, chunkIndex: number) {
+  const lastUserMessage = [...payload.messages].reverse().find((message) => message.role === "user");
+  const scenario = lastUserMessage?.content.trim() ?? "playwright:reply";
+
+  if (scenario.startsWith("playwright:stop")) {
+    return chunkIndex === 0 ? 1_200 : 120;
+  }
+
+  return 120;
+}
+
 function createPlaywrightChatStream(payload: OllamaChatRequest, signal?: AbortSignal) {
   const encoder = new TextEncoder();
   const chunks = getPlaywrightChatChunks(payload);
@@ -70,14 +81,14 @@ function createPlaywrightChatStream(payload: OllamaChatRequest, signal?: AbortSi
       });
 
       try {
-        for (const chunk of chunks) {
+        for (const [chunkIndex, chunk] of chunks.entries()) {
           if (signal?.aborted) {
             controller.close();
             return;
           }
 
           controller.enqueue(encoder.encode(chunk));
-          await waitForDelay(120);
+          await waitForDelay(getPlaywrightChatChunkDelay(payload, chunkIndex));
         }
 
         controller.close();

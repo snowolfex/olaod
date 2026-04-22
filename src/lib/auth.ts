@@ -225,7 +225,11 @@ export async function getCurrentUser(cookieHeader: string | null) {
 
   const storedUser = await getUserById(status.user.id);
 
-  if (!storedUser || storedUser.username !== status.user.username) {
+  if (
+    !storedUser
+    || storedUser.username !== status.user.username
+    || storedUser.email !== status.user.email
+  ) {
     return null;
   }
 

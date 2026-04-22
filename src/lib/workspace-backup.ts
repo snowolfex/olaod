@@ -60,6 +60,19 @@ function isStoredUser(value: unknown): value is StoredUser {
   const hasValidProvider = authProvider === undefined || authProvider === "local" || authProvider === "google";
   const hasValidPasswordShape = value.passwordHash === undefined || typeof value.passwordHash === "string";
   const hasValidSaltShape = value.passwordSalt === undefined || typeof value.passwordSalt === "string";
+  const hasValidVerificationFlag = value.requireEmailVerificationOnLogin === undefined || typeof value.requireEmailVerificationOnLogin === "boolean";
+  const hasValidVerificationDate = value.emailVerifiedAt === undefined || typeof value.emailVerifiedAt === "string";
+  const pendingEmailVerification = value.pendingEmailVerification;
+  const hasValidPendingVerification = pendingEmailVerification === undefined || (
+    isRecord(pendingEmailVerification)
+    && typeof pendingEmailVerification.codeHash === "string"
+    && typeof pendingEmailVerification.codeSalt === "string"
+    && typeof pendingEmailVerification.email === "string"
+    && typeof pendingEmailVerification.expiresAt === "string"
+    && typeof pendingEmailVerification.requestedAt === "string"
+    && typeof pendingEmailVerification.rememberSession === "boolean"
+    && (pendingEmailVerification.purpose === "register" || pendingEmailVerification.purpose === "login" || pendingEmailVerification.purpose === "email-change")
+  );
 
   return typeof value.id === "string"
     && typeof value.username === "string"
@@ -67,10 +80,13 @@ function isStoredUser(value: unknown): value is StoredUser {
     && (value.role === "viewer" || value.role === "operator" || value.role === "admin")
     && hasValidProvider
     && (value.email === undefined || typeof value.email === "string")
+    && hasValidVerificationDate
+    && hasValidVerificationFlag
     && (value.providerSubject === undefined || typeof value.providerSubject === "string")
     && (value.avatarUrl === undefined || typeof value.avatarUrl === "string")
     && hasValidPasswordShape
     && hasValidSaltShape
+    && hasValidPendingVerification
     && typeof value.createdAt === "string";
 }
 

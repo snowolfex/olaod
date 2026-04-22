@@ -198,14 +198,6 @@ function isConversationOlderThanArchivedRetention(
   return archivedAtMs <= Date.now() - archivedRetentionDays * 24 * 60 * 60 * 1000;
 }
 
-function formatBytes(value: number) {
-  if (!value) {
-    return "0 GB";
-  }
-
-  return `${(value / 1024 / 1024 / 1024).toFixed(1)} GB`;
-}
-
 function buildConversationTitle(messages: OllamaChatMessage[]) {
   const firstUserMessage = messages.find((message) => message.role === "user");
   return (firstUserMessage?.content.trim() || "New conversation").slice(0, 48);
@@ -1345,6 +1337,16 @@ export function ChatWorkspace({
       ], ensuredConversationId, { archived: false });
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
+        if (assistantContent) {
+          await persistConversation([
+            ...nextConversation,
+            {
+              role: "assistant",
+              content: assistantContent,
+            },
+          ], ensuredConversationId, { archived: false }).catch(() => undefined);
+        }
+
         return;
       }
 
@@ -1535,9 +1537,6 @@ export function ChatWorkspace({
   const transcriptSummary = messages.length > 0
     ? `${messages.length} message${messages.length === 1 ? "" : "s"} in this thread`
     : "Fresh thread ready for the first prompt";
-  const systemPromptPreview = systemPrompt.trim()
-    ? `${systemPrompt.trim().slice(0, 120)}${systemPrompt.trim().length > 120 ? "..." : ""}`
-    : "Using the current system prompt defaults.";
   const isUsingAccountPrompt = systemPrompt.trim() === accountSystemPrompt;
   const assistantStyleBadgeLabel = isUsingAccountPrompt ? "Account style" : "Saved thread style";
   const disclosureHeaderBaseClass = "group relative flex w-full items-start justify-between gap-4 overflow-hidden rounded-[24px] border px-4 py-4 text-left shadow-[0_18px_44px_rgba(83,53,31,0.1)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_24px_56px_rgba(83,53,31,0.14)]";

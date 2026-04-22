@@ -616,6 +616,14 @@ function createPlaywrightAiPlainTextStream(payload: AiChatRequest, signal?: Abor
       `Model ${payload.model} stayed inside the shared AI gateway test harness.`,
     ];
 
+  const getChunkDelay = (chunkIndex: number) => {
+    if (scenario.startsWith("playwright:stop")) {
+      return chunkIndex === 0 ? 1_200 : 120;
+    }
+
+    return 120;
+  };
+
   return new ReadableStream<Uint8Array>({
     async start(controller) {
       let timeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -645,14 +653,14 @@ function createPlaywrightAiPlainTextStream(payload: AiChatRequest, signal?: Abor
       });
 
       try {
-        for (const chunk of chunks) {
+        for (const [chunkIndex, chunk] of chunks.entries()) {
           if (signal?.aborted) {
             controller.close();
             return;
           }
 
           controller.enqueue(encoder.encode(chunk));
-          await waitForDelay(120);
+          await waitForDelay(getChunkDelay(chunkIndex));
         }
 
         controller.close();

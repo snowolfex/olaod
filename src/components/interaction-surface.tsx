@@ -50,13 +50,23 @@ export function InteractionSurface({
   const [canUseHoverHelp, setCanUseHoverHelp] = useState(true);
   const [activeMobileTab, setActiveMobileTab] = useState<MobileDeckTab>("chat");
   const [activeAdminTab, setActiveAdminTab] = useState<AdminTabId>("access");
-  const [helpContext, setHelpContext] = useState<HelpContext>("chat");
   const [requestedHelpSectionId, setRequestedHelpSectionId] = useState<string | null>(null);
   const [requestedHelpSectionNonce, setRequestedHelpSectionNonce] = useState(0);
   const canOpenAdmin = Boolean(userSession.user);
   const canAccessAdminSubsections = userSession.user?.role === "admin";
   const adminAvailability = !canOpenAdmin ? "none" : canAccessAdminSubsections ? "full" : "access";
-  const adminHelpContext = canAccessAdminSubsections ? activeAdminTab : "access";
+  const effectiveActiveMobileTab = adminAvailability === "none" && activeMobileTab === "admin"
+    ? "chat"
+    : activeMobileTab;
+  const effectiveActiveAdminTab = adminAvailability === "full" ? activeAdminTab : "access";
+  const adminHelpContext = canAccessAdminSubsections ? effectiveActiveAdminTab : "access";
+  const helpContext: HelpContext = isDesktopViewport
+    ? activeDesktopPage === "admin"
+      ? adminHelpContext
+      : "chat"
+    : effectiveActiveMobileTab === "admin" && canOpenAdmin
+      ? adminHelpContext
+      : "chat";
   const visibleMobileDeckTabs = canOpenAdmin
     ? mobileDeckTabs
     : mobileDeckTabs.filter((tab) => tab.id !== "admin");
@@ -129,67 +139,40 @@ export function InteractionSurface({
     };
   }, [status.isReachable]);
 
-  useEffect(() => {
-    if (activeMobileTab === "chat") {
-      setHelpContext("chat");
-      return;
-    }
-
-    if (activeMobileTab === "admin" && canOpenAdmin) {
-      setHelpContext(adminHelpContext);
-      return;
-    }
-
-    setHelpContext("chat");
-  }, [activeMobileTab, adminHelpContext, canOpenAdmin]);
-
-  useEffect(() => {
-    if (activeDesktopPage === "admin") {
-      setHelpContext(adminHelpContext);
-      return;
-    }
-
-    setHelpContext("chat");
-  }, [activeDesktopPage, adminHelpContext]);
-
-  useEffect(() => {
-    if (adminAvailability === "none") {
-      if (activeMobileTab === "admin") {
-        setActiveMobileTab("chat");
-      }
-    }
-
-    if (adminAvailability !== "full" && activeAdminTab !== "access") {
-      setActiveAdminTab("access");
-    }
-  }, [activeAdminTab, activeMobileTab, adminAvailability]);
-
-  const openHelpSection = useEffectEvent((sectionId: string) => {
+  async function openHelpSection(sectionId: string) {
     const section = getHelpSection(sectionId);
 
     if (isDesktopViewport) {
-      void onDesktopPageChange("help");
+      await onDesktopPageChange("help");
     } else {
       setActiveMobileTab("help");
     }
 
-    if (section) {
-      setHelpContext(section.context);
-
-      if (section.context !== "chat" && canAccessAdminSubsections) {
-        setActiveAdminTab(section.context);
-      }
+    if (section && section.context !== "chat" && canAccessAdminSubsections) {
+      setActiveAdminTab(section.context);
     }
 
     setRequestedHelpSectionId(sectionId);
     setRequestedHelpSectionNonce((current) => current + 1);
-  });
+  }
+
+  function handleSessionChange(nextSession: UserSessionStatus) {
+    setUserSession(nextSession);
+
+    if (!nextSession.user && activeMobileTab === "admin") {
+      setActiveMobileTab("chat");
+    }
+
+    if (nextSession.user?.role !== "admin") {
+      setActiveAdminTab("access");
+    }
+  }
 
   const adminPanel = (
     <AdminDeck
-      activeTab={activeAdminTab}
-      onSessionChange={setUserSession}
-      onTabChange={setActiveAdminTab}
+      activeTab={effectiveActiveAdminTab}
+      onSessionChange={handleSessionChange}
+      onTabChange={(nextTab) => setActiveAdminTab(canAccessAdminSubsections ? nextTab : "access")}
       surface={isDesktopViewport && activeDesktopPage === "admin" ? "page" : "embedded"}
       status={status}
       userSession={userSession}
@@ -223,7 +206,7 @@ export function InteractionSurface({
     <section className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden lg:min-h-full lg:flex-none lg:overflow-visible">
       <div className={`theme-surface-strong sticky top-3 z-20 grid gap-2 rounded-[24px] p-1.5 backdrop-blur lg:hidden ${visibleMobileDeckTabs.length === 2 ? "grid-cols-2" : "grid-cols-3"}`}>
         {visibleMobileDeckTabs.map((tab) => {
-          const isActive = activeMobileTab === tab.id;
+          const isActive = effectiveActiveMobileTab === tab.id;
 
           return (
             <button
@@ -248,7 +231,7 @@ export function InteractionSurface({
 
       <div className="min-h-0 flex-1 overflow-hidden lg:hidden">
         <div className="h-full overflow-y-auto pr-1 pb-2">
-          {activeMobileTab === "chat" ? (
+          {effectiveActiveMobileTab === "chat" ? (
             <ChatWorkspace
               currentUser={userSession.user}
               initialConversation={initialConversation}
@@ -256,7 +239,7 @@ export function InteractionSurface({
               isReachable={status.isReachable}
               models={status.models}
             />
-          ) : activeMobileTab === "admin" && canOpenAdmin ? (
+          ) : effectiveActiveMobileTab === "admin" && canOpenAdmin ? (
             adminPanel
           ) : (
             helpPanel

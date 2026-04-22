@@ -1,9 +1,53 @@
 import { recordActivity } from "@/lib/activity";
 import { getCurrentUser } from "@/lib/auth";
 import { deleteConversationsForUser } from "@/lib/conversations";
-import { countAdmins, deleteUser, getUserById, toPublicUser } from "@/lib/users";
+import { countAdmins, deleteUser, getUserById, toPublicUser, updateUserEmailVerificationPolicy } from "@/lib/users";
 
 export const dynamic = "force-dynamic";
+
+export async function PATCH(
+  request: Request,
+  context: RouteContext<"/api/users/[id]">,
+) {
+  const currentUser = await getCurrentUser(request.headers.get("cookie"));
+
+  if (currentUser?.role !== "admin") {
+    return Response.json({ error: "Admin access is required." }, { status: 401 });
+  }
+
+  const { id } = await context.params;
+  const targetUser = await getUserById(id);
+
+  if (!targetUser) {
+    return Response.json({ error: "User not found." }, { status: 404 });
+  }
+
+  const payload = (await request.json()) as {
+    requireEmailVerificationOnLogin?: boolean;
+  };
+
+  if (typeof payload.requireEmailVerificationOnLogin !== "boolean") {
+    return Response.json({ error: "A valid login verification setting is required." }, { status: 400 });
+  }
+
+  const updatedUser = await updateUserEmailVerificationPolicy({
+    id,
+    requireEmailVerificationOnLogin: payload.requireEmailVerificationOnLogin,
+  });
+
+  if (!updatedUser) {
+    return Response.json({ error: "User not found." }, { status: 404 });
+  }
+
+  await recordActivity({
+    level: "info",
+    summary: `Login verification updated: ${updatedUser.displayName}`,
+    details: `${currentUser.displayName} ${payload.requireEmailVerificationOnLogin ? "enabled" : "disabled"} per-login email verification for ${updatedUser.displayName}.`,
+    type: "user.login_verification_policy_updated",
+  });
+
+  return Response.json({ user: toPublicUser(updatedUser) });
+}
 
 export async function DELETE(
   request: Request,

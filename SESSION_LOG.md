@@ -318,6 +318,13 @@
 - Documented the machine-local Inno Setup install path and the exact Windows release-build command needed to regenerate `dist/native/OloadSetup.exe`.
 - Added provider-aware local user storage so password-based accounts and Google-backed accounts can coexist in the same workspace and backups remain restorable.
 - Added a server-side Google OAuth flow that creates or updates local app users, then reuses the existing signed session cookie for desktop and mobile browser login.
+
+## 2026-04-22
+- Switched local auth from username-based sign-in to email-based sign-in, added hashed 6-digit email verification challenges with 60-second expiry for registration and login, and introduced a shared local email delivery helper that uses SMTP when configured and a test outbox during Playwright coverage.
+- Added admin control for per-user `requireEmailVerificationOnLogin`, extended local user/session models plus backup validation for email-verification state, and hardened session resolution so restored or modified local accounts invalidate stale cookies correctly.
+- Updated the Access UI and auth flows to support email-first local accounts, inline verification-code entry, email-verified status cues, and per-user login-verification policy toggles while keeping Google-backed accounts on their existing provider-owned path.
+- Added a standalone production-style Playwright server launcher, broadened Playwright data seeding to both root and standalone runtime stores, and migrated the stale username-era browser specs to shared email-auth helpers plus the current desktop Admin and Chat surfaces.
+- Fixed the last full-suite smoke flake by making command-deck dismissal conditional on the visible state, removed leftover lint noise from the backup spec, and re-verified with `cmd /c npm run lint` plus a full Playwright rerun showing `17 passed (52.5s)`.
 - Simplified the auth wording by removing the redundant compact login header and renaming the admin access tab to clearer user/account language.
 - Normalized remaining auth copy to prefer account and users terminology across the login panel, help copy, and admin guidance text.
 - Shortened the login and users/help guidance copy so the auth screen and admin help lane scan faster on mobile.

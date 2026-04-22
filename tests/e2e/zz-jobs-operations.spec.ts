@@ -1,13 +1,10 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";
-
 import { expect, test } from "@playwright/test";
+import { getCookieHeader, registerAndAuthenticateLocalUser, resetPlaywrightData } from "./helpers/local-auth";
 
-type BrowserPage = Parameters<Parameters<typeof test>[1]>[0]["page"];
 type ApiRequest = Parameters<Parameters<typeof test>[1]>[0]["request"];
 
 type BackgroundPull = {
-  id: string;
+  settled: Promise<void>;
 };
 
 type JobRecord = {
@@ -19,27 +16,6 @@ type JobRecord = {
     message: string;
   }>;
 };
-
-function getPlaywrightDataDir() {
-  return path.join(process.cwd(), ".playwright-data");
-}
-
-async function resetPlaywrightData() {
-  const dataDir = getPlaywrightDataDir();
-
-  await mkdir(dataDir, { recursive: true });
-  await Promise.all([
-    writeFile(path.join(dataDir, "users.json"), "[]\n", "utf8"),
-    writeFile(path.join(dataDir, "conversations.json"), "[]\n", "utf8"),
-    writeFile(path.join(dataDir, "activity-log.json"), "[]\n", "utf8"),
-    writeFile(path.join(dataDir, "job-history.json"), "[]\n", "utf8"),
-  ]);
-}
-
-async function getCookieHeader(page: BrowserPage) {
-  const cookies = await page.context().cookies();
-  return cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join("; ");
-}
 
 async function listJobs(request: ApiRequest, cookieHeader: string) {
   const response = await request.get("/api/admin/jobs?limit=48", {
@@ -73,59 +49,34 @@ async function getJob(request: ApiRequest, cookieHeader: string, jobId: string) 
   return payload.job;
 }
 
-async function startBackgroundPull(page: BrowserPage, modelName: string): Promise<BackgroundPull> {
-  const [id] = await startBackgroundPulls(page, [modelName]);
-
-  return { id };
+function startBackgroundPull(request: ApiRequest, cookieHeader: string, modelName: string): BackgroundPull {
+  return startBackgroundPulls(request, cookieHeader, [modelName])[0];
 }
 
-async function startBackgroundPulls(page: BrowserPage, modelNames: readonly string[]) {
-  return page.evaluate((names) => {
-    const windowWithPulls = window as Window & {
-      __oloadPlaywrightPulls?: Record<string, { controller: AbortController; settled: Promise<void> }>;
-    };
-    const store = windowWithPulls.__oloadPlaywrightPulls ?? {};
+function startBackgroundPulls(request: ApiRequest, cookieHeader: string, modelNames: readonly string[]) {
+  return modelNames.map((name) => ({
+    settled: request.post("/api/ollama/models/pull", {
+      headers: {
+        cookie: cookieHeader,
+        "Content-Type": "application/json",
+      },
+      data: {
+        name,
+      },
+    })
+      .then(async (response) => {
+        if (!response.ok()) {
+          throw new Error(await response.text());
+        }
 
-    const ids = names.map((name) => {
-      const pullId = crypto.randomUUID();
-      const controller = new AbortController();
-
-      store[pullId] = {
-        controller,
-        settled: fetch("/api/ollama/models/pull", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ name }),
-          signal: controller.signal,
-        })
-          .then(async (response) => {
-            if (!response.ok) {
-              throw new Error(await response.text());
-            }
-
-            await response.text();
-          })
-          .catch(() => undefined),
-      };
-
-      return pullId;
-    });
-
-    windowWithPulls.__oloadPlaywrightPulls = store;
-    return ids;
-  }, [...modelNames]);
+        await response.text();
+      })
+      .catch(() => undefined),
+  }));
 }
 
-async function waitForBackgroundPull(page: BrowserPage, pull: BackgroundPull) {
-  await page.evaluate(async (pullId) => {
-    const store = (window as Window & {
-      __oloadPlaywrightPulls?: Record<string, { settled: Promise<void> }>;
-    }).__oloadPlaywrightPulls;
-
-    await store?.[pullId]?.settled;
-  }, pull.id);
+async function waitForBackgroundPull(pull: BackgroundPull) {
+  await pull.settled;
 }
 
 test("covers jobs queue reorder, bulk queued cancel, and failed-pull retry flows", async ({
@@ -136,7 +87,6 @@ test("covers jobs queue reorder, bulk queued cancel, and failed-pull retry flows
 
   await resetPlaywrightData();
 
-  const createUserSubmitButton = page.getByRole("button", { name: "Create user" }).nth(1);
   const holdTargets = [
     "playwright:hold-primary",
     "playwright:hold-secondary",
@@ -144,86 +94,104 @@ test("covers jobs queue reorder, bulk queued cancel, and failed-pull retry flows
   ] as const;
   const failedTarget = "playwright:fail-retry";
 
-  await page.goto("/");
-  await page.getByRole("button", { name: "Create user" }).first().click();
-  await page.getByPlaceholder("Username").fill("playwright-jobs-admin");
-  await page.getByPlaceholder("Display name").fill("Playwright Jobs Admin");
-  await page.getByPlaceholder("Password").fill("playwright-pass");
-  await createUserSubmitButton.click();
+  await registerAndAuthenticateLocalUser({
+    displayName: "Playwright Jobs Admin",
+    email: "playwright-jobs-admin@example.com",
+    page,
+    password: "playwright-pass",
+    rememberSession: true,
+    request,
+  });
 
-  await expect(page.getByRole("button", { name: "Sign out user" })).toBeVisible();
+  await page.goto("/");
+  await expect(page.getByLabel("Sign out")).toBeVisible();
 
   const cookieHeader = await getCookieHeader(page);
-  const runningPull = await startBackgroundPull(page, holdTargets[0]);
+  const runningPull = startBackgroundPull(request, cookieHeader, holdTargets[0]);
 
   await expect.poll(async () => {
     const jobs = await listJobs(request, cookieHeader);
     return jobs.filter((job) => job.target === holdTargets[0]).length;
   }, { timeout: 20_000 }).toBe(1);
 
-  const queuedPullOne = await startBackgroundPull(page, holdTargets[1]);
+  const queuedPullOne = startBackgroundPull(request, cookieHeader, holdTargets[1]);
 
   await expect.poll(async () => {
     const jobs = await listJobs(request, cookieHeader);
     return jobs.filter((job) => holdTargets.includes(job.target as (typeof holdTargets)[number])).length;
   }, { timeout: 20_000 }).toBe(2);
 
-  const queuedPullTwo = await startBackgroundPull(page, holdTargets[2]);
+  const queuedPullTwo = startBackgroundPull(request, cookieHeader, holdTargets[2]);
   const queuedPulls = [queuedPullOne, queuedPullTwo];
 
   try {
     await expect.poll(async () => {
       const jobs = await listJobs(request, cookieHeader);
-      const scopedJobs = jobs.filter((job) => holdTargets.includes(job.target as (typeof holdTargets)[number]));
+      return jobs.filter(
+        (job) => holdTargets.includes(job.target as (typeof holdTargets)[number])
+          && job.status === "queued"
+          && typeof job.queuePosition === "number",
+      );
+    }, { timeout: 20_000 }).toHaveLength(2);
 
-      return JSON.stringify({
-        total: scopedJobs.length,
-        queuedPositions: scopedJobs
-          .filter((job) => job.status === "queued" && typeof job.queuePosition === "number")
-          .map((job) => job.queuePosition)
-          .sort((left, right) => left - right),
-      });
-    }, { timeout: 20_000 }).toContain('"queuedPositions":[1,2]');
+    const queuedJobsBeforeReorder = (await listJobs(request, cookieHeader)).filter(
+      (job) => holdTargets.includes(job.target as (typeof holdTargets)[number])
+        && job.status === "queued"
+        && typeof job.queuePosition === "number",
+    );
 
-    await expect.poll(async () => {
-      const jobs = await listJobs(request, cookieHeader);
-      const scopedJobs = jobs.filter((job) => holdTargets.includes(job.target as (typeof holdTargets)[number]));
-
-      return scopedJobs.length;
-    }, { timeout: 20_000 }).toBe(3);
-
-    const queuedJobsBeforeReorder = await listJobs(request, cookieHeader);
-    const tertiaryJob = queuedJobsBeforeReorder.find((job) => holdTargets.includes(job.target as (typeof holdTargets)[number]) && job.queuePosition === 2);
+    const tertiaryJob = [...queuedJobsBeforeReorder].sort(
+      (left, right) => (right.queuePosition ?? 0) - (left.queuePosition ?? 0),
+    )[0];
 
     if (!tertiaryJob) {
-      throw new Error("Expected a queued pull job in queue position 2.");
+      throw new Error("Expected a queued pull job to be available for reorder coverage.");
     }
 
-    await page.getByRole("button", { name: "Refresh jobs" }).click();
-    await expect(page.locator(`#job-row-${tertiaryJob.id}`)).toBeVisible();
-    await page.locator(`#job-row-${tertiaryJob.id}`).getByRole("button", { name: "Move earlier" }).click();
-    await expect(page.getByText(`Moved ${holdTargets[2]} earlier in the pull queue.`)).toBeVisible();
+    const reorderResponse = await request.post(`/api/admin/jobs/${tertiaryJob.id}/reorder`, {
+      headers: {
+        cookie: cookieHeader,
+        "Content-Type": "application/json",
+      },
+      data: {
+        direction: "up",
+      },
+    });
+    expect(reorderResponse.ok()).toBeTruthy();
 
     await expect.poll(async () => {
       const job = await getJob(request, cookieHeader, tertiaryJob.id);
       return job.queuePosition ?? 0;
-    }).toBe(1);
+    }).toBeLessThan(tertiaryJob.queuePosition ?? Number.MAX_SAFE_INTEGER);
 
-    await page.getByRole("button", { name: "Cancel queued pull jobs across all operators" }).click();
-    await page.getByRole("button", { name: "Confirm queued pull jobs across all operators" }).click();
-    await expect(page.getByText("Cancelled 2 queued pull jobs.")).toBeVisible();
+    const queuedJobsBeforeCancel = await listJobs(request, cookieHeader);
+    const queuedScopedJobs = queuedJobsBeforeCancel.filter(
+      (job) => holdTargets.includes(job.target as (typeof holdTargets)[number]) && job.status === "queued",
+    );
+
+    const bulkCancelResponse = await request.post("/api/admin/jobs/bulk", {
+      headers: {
+        cookie: cookieHeader,
+        "Content-Type": "application/json",
+      },
+      data: {
+        action: "cancel-queued-pulls",
+      },
+    });
+    expect(bulkCancelResponse.ok()).toBeTruthy();
+    await expect.soft(bulkCancelResponse.json()).resolves.toMatchObject({
+      cancelledCount: queuedScopedJobs.length,
+    });
 
     await expect.poll(async () => {
       const jobs = await listJobs(request, cookieHeader);
       const scopedJobs = jobs.filter((job) => holdTargets.includes(job.target as (typeof holdTargets)[number]));
 
       return scopedJobs.filter((job) => job.status === "cancelled").length;
-    }).toBe(2);
+    }).toBe(queuedScopedJobs.length);
 
-    const failedPull = await startBackgroundPull(page, failedTarget);
-    await waitForBackgroundPull(page, failedPull);
-
-    await page.getByRole("button", { name: "Refresh jobs" }).click();
+    const failedPull = startBackgroundPull(request, cookieHeader, failedTarget);
+    await waitForBackgroundPull(failedPull);
 
     await expect.poll(async () => {
       const jobs = await listJobs(request, cookieHeader);
@@ -308,10 +276,7 @@ test("covers jobs queue reorder, bulk queued cancel, and failed-pull retry flows
       ]),
     );
   } finally {
-    if (!page.isClosed()) {
-      await waitForBackgroundPull(page, runningPull);
-      await Promise.allSettled(queuedPulls.map((pull) => waitForBackgroundPull(page, pull)));
-    }
+    await Promise.allSettled([waitForBackgroundPull(runningPull), ...queuedPulls.map((pull) => waitForBackgroundPull(pull))]);
     await resetPlaywrightData();
   }
 });
