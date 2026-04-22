@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import type {
+  ActiveConversationSnapshot,
   ConversationSummary,
   StoredConversation,
 } from "@/lib/conversation-types";
@@ -22,6 +23,7 @@ type ChatWorkspaceProps = {
   initialConversation: StoredConversation | null;
   initialConversations: ConversationSummary[];
   models: OllamaModel[];
+  onActiveConversationChange?: (conversation: ActiveConversationSnapshot | null) => void;
 };
 
 type PersistedConversationResponse = {
@@ -409,6 +411,7 @@ export function ChatWorkspace({
   initialConversation,
   initialConversations,
   models,
+  onActiveConversationChange,
 }: ChatWorkspaceProps) {
   const workspaceSidebarStorageKey = getWorkspaceSidebarStorageKey(currentUser?.id);
   const promptPresetsStorageKey = getPromptPresetsStorageKey(currentUser?.id);
@@ -1492,6 +1495,42 @@ export function ChatWorkspace({
 
       return rightValue.localeCompare(leftValue);
     });
+  useEffect(() => {
+    if (!onActiveConversationChange) {
+      return;
+    }
+
+    if (!activeConversationId) {
+      if (messages.length === 0) {
+        onActiveConversationChange(null);
+        return;
+      }
+
+      onActiveConversationChange({
+        archivedAt: null,
+        id: null,
+        messageCount: messages.length,
+        title: conversationTitle,
+      });
+      return;
+    }
+
+    onActiveConversationChange({
+      archivedAt: activeConversationSummary?.archivedAt ?? null,
+      id: activeConversationId,
+      messageCount: activeConversationSummary?.messageCount ?? messages.length,
+      title: activeConversationSummary?.title ?? conversationTitle,
+    });
+  }, [
+    activeConversationId,
+    activeConversationSummary?.archivedAt,
+    activeConversationSummary?.messageCount,
+    activeConversationSummary?.title,
+    conversationTitle,
+    messages.length,
+    onActiveConversationChange,
+  ]);
+
   const archivedVisibleConversationIds = archivedVisibleConversations.map((conversation) => conversation.id);
   const archivedVisibleConversationSignature = archivedVisibleConversationIds.join("|");
   const archivedVisibleConversationIdSet = new Set(archivedVisibleConversationIds);

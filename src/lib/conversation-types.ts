@@ -26,3 +26,10 @@ export type ConversationSummary = Pick<
   messageCount: number;
   lastMessagePreview: string;
 };
+
+export type ActiveConversationSnapshot = {
+  archivedAt: string | null;
+  id: string | null;
+  messageCount: number;
+  title: string;
+};

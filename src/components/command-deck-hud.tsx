@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { APP_THEME_COOKIE_NAME, APP_THEMES, APP_THEME_STORAGE_KEY, isAppThemeId } from "@/lib/theme";
@@ -16,6 +15,7 @@ type CommandDeckHudProps = {
   isReachable: boolean;
   modelCount: number;
   onNavigateWorkspacePage: (page: DesktopWorkspacePage) => Promise<void> | void;
+  onRequestLogout: () => Promise<void> | void;
   runningCount: number;
   userCount: number;
 };
@@ -118,10 +118,10 @@ export function CommandDeckHud({
   isReachable,
   modelCount,
   onNavigateWorkspacePage,
+  onRequestLogout,
   runningCount,
   userCount,
 }: CommandDeckHudProps) {
-  const router = useRouter();
   const [isHidden, setIsHidden] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const [iconPosition, setIconPosition] = useState<IconPosition>({ x: ICON_MARGIN, y: ICON_MARGIN });
@@ -242,9 +242,9 @@ export function CommandDeckHud({
     setIsSigningOut(true);
 
     try {
-      await fetch("/api/users/logout", { method: "POST" });
+      await onRequestLogout();
     } finally {
-      router.refresh();
+      setIsSigningOut(false);
     }
   };
 

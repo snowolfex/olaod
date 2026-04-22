@@ -9,6 +9,7 @@ import { ChatWorkspace } from "@/components/chat-workspace";
 import { HelpPanel } from "@/components/help-panel";
 import { getHelpSection, type HelpContext } from "@/lib/help-manual";
 import type {
+  ActiveConversationSnapshot,
   ConversationSummary,
   StoredConversation,
 } from "@/lib/conversation-types";
@@ -25,7 +26,9 @@ type InteractionSurfaceProps = {
   initialConversations: ConversationSummary[];
   initialStatus: OllamaStatus;
   initialUserSession: UserSessionStatus;
+  onActiveConversationChange?: (conversation: ActiveConversationSnapshot | null) => void;
   onDesktopPageChange: (page: DesktopWorkspacePage) => Promise<void> | void;
+  onRequestLogout: () => Promise<void> | void;
 };
 
 type MobileDeckTab = "chat" | "admin" | "help";
@@ -42,7 +45,9 @@ export function InteractionSurface({
   initialConversations,
   initialStatus,
   initialUserSession,
+  onActiveConversationChange,
   onDesktopPageChange,
+  onRequestLogout,
 }: InteractionSurfaceProps) {
   const [status, setStatus] = useState(initialStatus);
   const [userSession, setUserSession] = useState(initialUserSession);
@@ -183,6 +188,7 @@ export function InteractionSurface({
   const adminPanel = (
     <AdminDeck
       activeTab={effectiveActiveAdminTab}
+      onRequestLogout={onRequestLogout}
       onSessionChange={handleSessionChange}
       onTabChange={(nextTab) => setActiveAdminTab(canAccessAdminSubsections ? nextTab : "access")}
       surface={isDesktopViewport && activeDesktopPage === "admin" ? "page" : "embedded"}
@@ -210,6 +216,7 @@ export function InteractionSurface({
         initialConversations={initialConversations}
         isReachable={status.isReachable}
         models={chatModels}
+        onActiveConversationChange={onActiveConversationChange}
       />
     </div>
   ) : activeDesktopPage === "admin" ? adminPanel : helpPanel;
@@ -250,6 +257,7 @@ export function InteractionSurface({
               initialConversations={initialConversations}
               isReachable={status.isReachable}
               models={chatModels}
+              onActiveConversationChange={onActiveConversationChange}
             />
           ) : effectiveActiveMobileTab === "admin" && canOpenAdmin ? (
             adminPanel

@@ -118,6 +118,7 @@ type WorkspaceBackupSnapshot = {
 type UserAccessPanelProps = {
   availableModels?: OllamaModel[];
   compact?: boolean;
+  onRequestLogout?: () => Promise<void> | void;
   onSessionChange: (status: UserSessionStatus) => void;
   session: UserSessionStatus;
   surface?: "embedded" | "page";
@@ -222,7 +223,7 @@ function loadGoogleIdentityScript() {
   return googleScriptLoadPromise;
 }
 
-export function UserAccessPanel({ availableModels = [], compact = false, onSessionChange, session, surface = "embedded" }: UserAccessPanelProps) {
+export function UserAccessPanel({ availableModels = [], compact = false, onRequestLogout, onSessionChange, session, surface = "embedded" }: UserAccessPanelProps) {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1362,6 +1363,11 @@ export function UserAccessPanel({ availableModels = [], compact = false, onSessi
   }
 
   async function logout() {
+    if (onRequestLogout) {
+      await onRequestLogout();
+      return;
+    }
+
     setError(null);
 
     try {
