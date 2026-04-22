@@ -26,8 +26,8 @@ type ChatWorkspaceProps = {
   onActiveConversationChange?: (conversation: ActiveConversationSnapshot | null) => void;
 };
 
-type SpeechRecognitionConstructor = {
-  new (): SpeechRecognition;
+type AudioContextConstructor = {
+  new (): AudioContext;
 };
 
 type PersistedConversationResponse = {
@@ -390,17 +390,16 @@ async function readErrorMessage(response: Response) {
   }
 }
 
-function getSpeechRecognitionConstructor() {
+function getAudioContextConstructor() {
   if (typeof window === "undefined") {
     return null;
   }
 
   const speechWindow = window as Window & {
-    SpeechRecognition?: SpeechRecognitionConstructor;
-    webkitSpeechRecognition?: SpeechRecognitionConstructor;
+    webkitAudioContext?: AudioContextConstructor;
   };
 
-  return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition ?? null;
+  return window.AudioContext ?? speechWindow.webkitAudioContext ?? null;
 }
 
 function mergeVoiceDraft(baseDraft: string, transcript: string) {
@@ -418,20 +417,67 @@ function mergeVoiceDraft(baseDraft: string, transcript: string) {
   return `${trimmedBaseDraft} ${trimmedTranscript}`;
 }
 
-function getSpeechRecognitionErrorMessage(error: string) {
-  if (error === "not-allowed" || error === "service-not-allowed") {
+function getVoiceCaptureErrorMessage(errorName: string) {
+  if (errorName === "NotAllowedError" || errorName === "PermissionDeniedError") {
     return "Microphone access was blocked. Allow microphone access to use push-to-talk.";
   }
 
-  if (error === "no-speech") {
-    return "No speech was detected while push-to-talk was active.";
-  }
-
-  if (error === "audio-capture") {
+  if (errorName === "NotFoundError" || errorName === "DevicesNotFoundError") {
     return "No microphone was available for push-to-talk.";
   }
 
-  return "Push-to-talk could not transcribe audio right now.";
+  if (errorName === "NotReadableError" || errorName === "TrackStartError") {
+    return "The microphone is busy or unavailable right now.";
+  }
+
+  return "Push-to-talk could not start the microphone.";
+}
+
+function mergeAudioChunks(chunks: Float32Array[]) {
+  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const merged = new Float32Array(totalLength);
+  let offset = 0;
+
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.length;
+  }
+
+  return merged;
+}
+
+function encodeWav(samples: Float32Array, sampleRate: number) {
+  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const view = new DataView(buffer);
+
+  const writeString = (offset: number, value: string) => {
+    for (let index = 0; index < value.length; index += 1) {
+      view.setUint8(offset + index, value.charCodeAt(index));
+    }
+  };
+
+  writeString(0, "RIFF");
+  view.setUint32(4, 36 + samples.length * 2, true);
+  writeString(8, "WAVE");
+  writeString(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeString(36, "data");
+  view.setUint32(40, samples.length * 2, true);
+
+  let offset = 44;
+  for (let index = 0; index < samples.length; index += 1) {
+    const sample = Math.max(-1, Math.min(1, samples[index] ?? 0));
+    view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+    offset += 2;
+  }
+
+  return new Blob([buffer], { type: "audio/wav" });
 }
 
 function DisclosureChevronIcon({ open }: { open: boolean }) {
@@ -482,6 +528,7 @@ export function ChatWorkspace({
   const [draft, setDraft] = useState("");
   const [isVoiceCaptureAvailable, setIsVoiceCaptureAvailable] = useState(false);
   const [isVoiceCapturing, setIsVoiceCapturing] = useState(false);
+  const [isVoiceTranscribing, setIsVoiceTranscribing] = useState(false);
   const [conversationSearch, setConversationSearch] = useState("");
   const [conversationTitleDraft, setConversationTitleDraft] = useState(
     initialConversation?.title ?? "New conversation",
@@ -530,23 +577,41 @@ export function ChatWorkspace({
   const composerFormRef = useRef<HTMLFormElement | null>(null);
   const archivedConversationItemRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const abortControllerRef = useRef<AbortController | null>(null);
-  const speechRecognitionRef = useRef<SpeechRecognition | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const audioProcessorRef = useRef<ScriptProcessorNode | null>(null);
+  const audioMonitorRef = useRef<GainNode | null>(null);
   const voiceDraftBaseRef = useRef("");
-  const voiceTranscriptRef = useRef("");
-  const pendingVoiceSubmitRef = useRef(false);
+  const voiceSampleRateRef = useRef(16_000);
+  const audioChunksRef = useRef<Float32Array[]>([]);
   const activeVoicePointerIdRef = useRef<number | null>(null);
   const activeVoiceKeyboardRef = useRef(false);
   const saveTimeoutRef = useRef<number | null>(null);
   const recentlyUpdatedConversationTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
-    setIsVoiceCaptureAvailable(Boolean(getSpeechRecognitionConstructor()));
+    setIsVoiceCaptureAvailable(
+      typeof navigator !== "undefined"
+      && Boolean(navigator.mediaDevices?.getUserMedia)
+      && Boolean(getAudioContextConstructor()),
+    );
   }, []);
 
   useEffect(() => {
     return () => {
-      speechRecognitionRef.current?.abort();
-      speechRecognitionRef.current = null;
+      const stream = mediaStreamRef.current;
+      stream?.getTracks().forEach((track) => track.stop());
+      audioSourceRef.current?.disconnect();
+      audioProcessorRef.current?.disconnect();
+      audioMonitorRef.current?.disconnect();
+      void audioContextRef.current?.close().catch(() => undefined);
+
+      mediaStreamRef.current = null;
+      audioSourceRef.current = null;
+      audioProcessorRef.current = null;
+      audioMonitorRef.current = null;
+      audioContextRef.current = null;
     };
   }, []);
 
@@ -1462,105 +1527,140 @@ export function ChatWorkspace({
     abortControllerRef.current?.abort();
   }
 
-  function stopVoiceCapture(options?: { submit?: boolean }) {
-    if (!speechRecognitionRef.current) {
+  async function submitVoiceCapture() {
+    const recordedAudio = mergeAudioChunks(audioChunksRef.current);
+    audioChunksRef.current = [];
+
+    if (recordedAudio.length < 1_024) {
+      setError("No speech was detected while push-to-talk was active.");
       return;
     }
 
-    pendingVoiceSubmitRef.current = Boolean(options?.submit);
+    setIsVoiceTranscribing(true);
 
     try {
-      speechRecognitionRef.current.stop();
-    } catch {
-      speechRecognitionRef.current = null;
-      setIsVoiceCapturing(false);
+      const audioBlob = encodeWav(recordedAudio, voiceSampleRateRef.current);
+      const formData = new FormData();
+      formData.append("file", new File([audioBlob], "voice-input.wav", { type: "audio/wav" }));
+
+      const response = await fetch("/api/voice/transcribe", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+
+      const payload = (await response.json()) as { text: string };
+      const transcript = payload.text.trim();
+
+      if (!transcript) {
+        setError("No English speech was recognized from that recording.");
+        return;
+      }
+
+      setDraft(mergeVoiceDraft(voiceDraftBaseRef.current, transcript));
+      window.requestAnimationFrame(() => {
+        composerFormRef.current?.requestSubmit();
+      });
+    } catch (voiceError) {
+      setError(
+        voiceError instanceof Error
+          ? voiceError.message
+          : "Unable to transcribe the recorded audio.",
+      );
+    } finally {
+      setIsVoiceTranscribing(false);
     }
   }
 
-  function startVoiceCapture() {
-    if (isStreaming || isVoiceCapturing) {
+  async function stopVoiceCapture(options?: { submit?: boolean }) {
+    const stream = mediaStreamRef.current;
+    const audioContext = audioContextRef.current;
+
+    if (!stream && !audioContext) {
       return;
     }
 
-    const SpeechRecognitionConstructor = getSpeechRecognitionConstructor();
+    stream?.getTracks().forEach((track) => track.stop());
+    audioSourceRef.current?.disconnect();
+    audioProcessorRef.current?.disconnect();
+    audioMonitorRef.current?.disconnect();
+    await audioContext?.close().catch(() => undefined);
 
-    if (!SpeechRecognitionConstructor) {
+    mediaStreamRef.current = null;
+    audioSourceRef.current = null;
+    audioProcessorRef.current = null;
+    audioMonitorRef.current = null;
+    audioContextRef.current = null;
+    setIsVoiceCapturing(false);
+
+    if (options?.submit) {
+      await submitVoiceCapture();
+      return;
+    }
+
+    audioChunksRef.current = [];
+  }
+
+  async function startVoiceCapture() {
+    if (isStreaming || isVoiceCapturing || isVoiceTranscribing) {
+      return;
+    }
+
+    const AudioContextConstructor = getAudioContextConstructor();
+
+    if (!navigator.mediaDevices?.getUserMedia || !AudioContextConstructor) {
       setError("Push-to-talk is not supported by this browser.");
       return;
     }
 
-    const recognition = new SpeechRecognitionConstructor();
-    voiceDraftBaseRef.current = draft;
-    voiceTranscriptRef.current = "";
-    pendingVoiceSubmitRef.current = false;
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = typeof navigator !== "undefined" ? navigator.language : "en-US";
-    recognition.maxAlternatives = 1;
-    recognition.onresult = (event) => {
-      let nextConfirmedTranscript = voiceTranscriptRef.current;
-      let interimTranscript = "";
-
-      for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        const result = event.results[index];
-        const transcript = result[0]?.transcript?.trim() ?? "";
-
-        if (!transcript) {
-          continue;
-        }
-
-        if (result.isFinal) {
-          nextConfirmedTranscript = `${nextConfirmedTranscript} ${transcript}`.trim();
-        } else {
-          interimTranscript = `${interimTranscript} ${transcript}`.trim();
-        }
-      }
-
-      voiceTranscriptRef.current = nextConfirmedTranscript;
-      setDraft(mergeVoiceDraft(voiceDraftBaseRef.current, `${nextConfirmedTranscript} ${interimTranscript}`));
-    };
-    recognition.onerror = (event) => {
-      if (event.error === "aborted") {
-        return;
-      }
-
-      pendingVoiceSubmitRef.current = false;
-      setIsVoiceCapturing(false);
-      setError(getSpeechRecognitionErrorMessage(event.error));
-    };
-    recognition.onend = () => {
-      const shouldSubmit = pendingVoiceSubmitRef.current;
-      const finalTranscript = voiceTranscriptRef.current.trim();
-
-      speechRecognitionRef.current = null;
-      pendingVoiceSubmitRef.current = false;
-      activeVoicePointerIdRef.current = null;
-      activeVoiceKeyboardRef.current = false;
-      setIsVoiceCapturing(false);
-      setDraft(mergeVoiceDraft(voiceDraftBaseRef.current, finalTranscript));
-
-      if (shouldSubmit && finalTranscript && !isStreaming) {
-        window.requestAnimationFrame(() => {
-          composerFormRef.current?.requestSubmit();
-        });
-      }
-    };
-
     try {
-      recognition.start();
-      speechRecognitionRef.current = recognition;
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+      const audioContext = new AudioContextConstructor();
+      const source = audioContext.createMediaStreamSource(stream);
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      const monitor = audioContext.createGain();
+
+      audioChunksRef.current = [];
+      voiceDraftBaseRef.current = draft;
+      voiceSampleRateRef.current = audioContext.sampleRate;
+      processor.onaudioprocess = (event) => {
+        audioChunksRef.current.push(new Float32Array(event.inputBuffer.getChannelData(0)));
+      };
+      monitor.gain.value = 0;
+      source.connect(processor);
+      processor.connect(monitor);
+      monitor.connect(audioContext.destination);
+
+      mediaStreamRef.current = stream;
+      audioContextRef.current = audioContext;
+      audioSourceRef.current = source;
+      audioProcessorRef.current = processor;
+      audioMonitorRef.current = monitor;
       setError(null);
       setIsVoiceCapturing(true);
-    } catch {
-      setError("Push-to-talk could not start the microphone.");
-      speechRecognitionRef.current = null;
+    } catch (voiceError) {
+      setError(
+        voiceError instanceof DOMException
+          ? getVoiceCaptureErrorMessage(voiceError.name)
+          : "Push-to-talk could not start the microphone.",
+      );
       setIsVoiceCapturing(false);
     }
   }
 
   function clearConversation() {
     abortControllerRef.current?.abort();
-    stopVoiceCapture();
+    void stopVoiceCapture();
     setDraft("");
     setError(null);
     setIsStreaming(false);
@@ -1610,7 +1710,7 @@ export function ChatWorkspace({
 
     activeVoicePointerIdRef.current = event.pointerId;
     event.currentTarget.setPointerCapture(event.pointerId);
-    startVoiceCapture();
+    void startVoiceCapture();
   }
 
   function handleVoiceCapturePointerUp(event: React.PointerEvent<HTMLButtonElement>) {
@@ -1622,7 +1722,8 @@ export function ChatWorkspace({
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
 
-    stopVoiceCapture({ submit: true });
+    activeVoicePointerIdRef.current = null;
+    void stopVoiceCapture({ submit: true });
   }
 
   function handleVoiceCapturePointerCancel(event: React.PointerEvent<HTMLButtonElement>) {
@@ -1634,7 +1735,8 @@ export function ChatWorkspace({
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
 
-    stopVoiceCapture();
+    activeVoicePointerIdRef.current = null;
+    void stopVoiceCapture();
   }
 
   function handleVoiceCaptureKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
@@ -1644,7 +1746,7 @@ export function ChatWorkspace({
 
     event.preventDefault();
     activeVoiceKeyboardRef.current = true;
-    startVoiceCapture();
+    void startVoiceCapture();
   }
 
   function handleVoiceCaptureKeyUp(event: React.KeyboardEvent<HTMLButtonElement>) {
@@ -1653,7 +1755,8 @@ export function ChatWorkspace({
     }
 
     event.preventDefault();
-    stopVoiceCapture({ submit: true });
+    activeVoiceKeyboardRef.current = false;
+    void stopVoiceCapture({ submit: true });
   }
 
   const normalizedConversationSearch = conversationSearch.trim().toLowerCase();
@@ -2793,13 +2896,13 @@ export function ChatWorkspace({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
             <button
-              aria-label={isVoiceCapturing ? "Release to send your spoken message" : "Hold to talk"}
+              aria-label={isVoiceCapturing ? "Release to send your recorded message" : "Hold to talk"}
               className={`rounded-full px-5 py-3 text-sm font-semibold shadow-[0_16px_34px_rgba(213,122,66,0.16)] disabled:cursor-not-allowed disabled:opacity-50 ${
                 isVoiceCapturing
                   ? "bg-[color:color-mix(in_srgb,var(--accent)_78%,#7a1b12_22%)] text-white"
                   : "border border-line bg-white text-foreground"
               }`}
-              disabled={!isVoiceCaptureAvailable || isStreaming}
+              disabled={!isVoiceCaptureAvailable || isStreaming || isVoiceTranscribing}
               type="button"
               onKeyDown={handleVoiceCaptureKeyDown}
               onKeyUp={handleVoiceCaptureKeyUp}
@@ -2807,7 +2910,11 @@ export function ChatWorkspace({
               onPointerDown={handleVoiceCapturePointerDown}
               onPointerUp={handleVoiceCapturePointerUp}
             >
-              {isVoiceCapturing ? "Listening... release to send" : "Hold to talk"}
+              {isVoiceCapturing
+                ? "Recording... release to send"
+                : isVoiceTranscribing
+                  ? "Transcribing..."
+                  : "Hold to talk"}
             </button>
             <button
               className="rounded-full bg-[var(--accent)] px-6 py-3 text-sm font-semibold text-white shadow-[0_16px_34px_rgba(213,122,66,0.24)] disabled:cursor-not-allowed disabled:opacity-50"
@@ -2834,10 +2941,12 @@ export function ChatWorkspace({
           </div>
           <p className="text-xs leading-6 text-muted">
             {isVoiceCaptureAvailable
-              ? (isVoiceCapturing
-                ? "Audio is only being transcribed while the talk button is held down."
-                : "Hold the talk button to speak. Release it to stop listening and send.")
-              : "Push-to-talk needs a browser with built-in speech recognition support."}
+              ? isVoiceCapturing
+                ? "Audio is only being recorded while the talk button is held down."
+                : isVoiceTranscribing
+                  ? "A local English Whisper model is transcribing the recorded audio now."
+                  : "Hold the talk button to record. Release it to stop recording, transcribe, and send."
+              : "Push-to-talk needs microphone access and Web Audio support in the browser."}
           </p>
         </div>
       </form>
