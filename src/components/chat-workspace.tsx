@@ -1510,6 +1510,7 @@ export function ChatWorkspace({
         archivedAt: null,
         id: null,
         messageCount: messages.length,
+        modelName: selectedModel,
         title: conversationTitle,
       });
       return;
@@ -1519,6 +1520,7 @@ export function ChatWorkspace({
       archivedAt: activeConversationSummary?.archivedAt ?? null,
       id: activeConversationId,
       messageCount: activeConversationSummary?.messageCount ?? messages.length,
+      modelName: selectedModel,
       title: activeConversationSummary?.title ?? conversationTitle,
     });
   }, [
@@ -1529,6 +1531,7 @@ export function ChatWorkspace({
     conversationTitle,
     messages.length,
     onActiveConversationChange,
+    selectedModel,
   ]);
 
   const archivedVisibleConversationIds = archivedVisibleConversations.map((conversation) => conversation.id);

@@ -95,12 +95,14 @@ export function WorkspaceShell({
 }: WorkspaceShellProps) {
   const router = useRouter();
   const [activeWorkspacePage, setActiveWorkspacePage] = useState<DesktopWorkspacePage>(initialDesktopPage);
+  const [currentStatus, setCurrentStatus] = useState(initialStatus);
   const [activeConversation, setActiveConversation] = useState<ActiveConversationSnapshot | null>(
     initialConversation
       ? {
         archivedAt: initialConversation.archivedAt,
         id: initialConversation.id,
         messageCount: initialConversation.messages.length,
+        modelName: initialConversation.settings.model,
         title: initialConversation.title,
       }
       : null,
@@ -117,17 +119,38 @@ export function WorkspaceShell({
   }, [initialDesktopPage]);
 
   useEffect(() => {
+    setCurrentStatus(initialStatus);
+  }, [initialStatus]);
+
+  useEffect(() => {
     setActiveConversation(
       initialConversation
         ? {
           archivedAt: initialConversation.archivedAt,
           id: initialConversation.id,
           messageCount: initialConversation.messages.length,
+          modelName: initialConversation.settings.model,
           title: initialConversation.title,
         }
         : null,
     );
   }, [initialConversation]);
+
+  const activeModelName = activeConversation?.modelName?.trim() ?? "";
+  const isConversationModelRunning = Boolean(
+    activeModelName
+    && currentStatus.running.some((runtime) => runtime.model === activeModelName || runtime.name === activeModelName),
+  );
+  const isConversationModelInstalled = Boolean(
+    activeModelName && currentStatus.models.some((model) => model.name === activeModelName),
+  );
+  const conversationModelNote = !activeModelName
+    ? "No model is selected for this thread right now. If you keep it ready, the conversation will reopen, but you will need to choose a model before sending the next message."
+    : isConversationModelRunning
+      ? `${activeModelName} is running now. Keeping this conversation ready will reopen this thread with that model still selected.`
+      : isConversationModelInstalled
+        ? `${activeModelName} is installed but not running right now. Keeping this conversation ready will reopen the thread with that model selected, and it will load when you start chatting again.`
+        : `${activeModelName} is not available right now. If you keep this conversation ready, it will still reopen, but you may need to start Ollama or choose another model after you sign back in.`;
 
   const completeLogout = async (action: LogoutConversationAction, rememberChoice = false) => {
     if (isLoggingOut) {
@@ -239,10 +262,10 @@ export function WorkspaceShell({
         currentUser={initialUserSession.user!}
         isNavigatingWorkspacePage={isNavigatingWorkspacePage}
         isReachable={initialStatus.isReachable}
-        modelCount={initialStatus.modelCount}
+        modelCount={currentStatus.modelCount}
         onNavigateWorkspacePage={navigateWorkspacePage}
         onRequestLogout={requestLogout}
-        runningCount={initialStatus.runningCount}
+        runningCount={currentStatus.runningCount}
         userCount={initialUserSession.userCount}
       />
 
@@ -256,6 +279,7 @@ export function WorkspaceShell({
           onActiveConversationChange={setActiveConversation}
           onDesktopPageChange={navigateWorkspacePage}
           onRequestLogout={requestLogout}
+          onStatusChange={setCurrentStatus}
         />
       </div>
 
@@ -267,7 +291,7 @@ export function WorkspaceShell({
                 <div>
                   <p className="section-label text-xs font-semibold">Before you sign out</p>
                   <h2 className="mt-3 text-2xl font-semibold tracking-[-0.05em] text-foreground">
-                    Keep this conversation ready for next time?
+                    Do you want to keep this conversation ready for next time?
                   </h2>
                 </div>
                 <span className="ui-pill ui-pill-surface border border-line text-xs text-muted">
@@ -276,7 +300,7 @@ export function WorkspaceShell({
               </div>
 
               <p className="mt-4 text-sm leading-6 text-muted sm:text-[15px]">
-                Your conversations already stay stored locally, which helps protect work if a machine crashes. Choose whether the current thread should stay in your active list or move into the archive before you log out.
+                Your conversations already stay stored locally, which helps protect work if a machine crashes. Choose whether this thread should stay ready to reopen where you left off, move into the archive so you can start it again later, or just sign out with no change.
               </p>
 
               <div className="theme-surface-panel mt-5 rounded-[24px] px-4 py-4">
@@ -288,10 +312,25 @@ export function WorkspaceShell({
                   <span className="ui-pill ui-pill-surface border border-line">
                     {activeConversation?.messageCount ?? 0} message{activeConversation?.messageCount === 1 ? "" : "s"}
                   </span>
+                  <span className="ui-pill ui-pill-surface border border-line">
+                    {activeModelName || "No model selected"}
+                  </span>
                   <span className="ui-pill ui-pill-soft border border-line text-xs text-muted">
                     {activeConversation?.archivedAt ? "Currently archived" : "Currently active"}
                   </span>
+                  <span className="ui-pill ui-pill-soft border border-line text-xs text-muted">
+                    {!activeModelName
+                      ? "Pick a model later"
+                      : isConversationModelRunning
+                        ? "Model running now"
+                        : isConversationModelInstalled
+                          ? "Installed, not running"
+                          : "Model unavailable"}
+                  </span>
                 </div>
+                <p className="mt-3 text-sm leading-6 text-muted">
+                  {conversationModelNote}
+                </p>
               </div>
 
               <label className="mt-5 flex items-start gap-3 rounded-[22px] border border-line/80 px-4 py-4 text-sm text-foreground">
@@ -304,7 +343,7 @@ export function WorkspaceShell({
                 <span>
                   <span className="block font-medium text-foreground">Do not ask again on this device</span>
                   <span className="mt-1 block text-xs leading-5 text-muted">
-                    The button you choose below becomes the default logout behavior for this account on this machine until you clear the saved preference.
+                    The exact choice you make below becomes the default logout behavior for this account on this machine until you clear the saved preference.
                   </span>
                 </span>
               </label>
@@ -315,29 +354,19 @@ export function WorkspaceShell({
                 </div>
               ) : null}
 
-              <div className="mt-6 grid gap-3 sm:grid-cols-3">
+              <div className="mt-6 flex flex-row gap-3">
                 <button
-                  className="ui-button ui-button-secondary min-h-[3.5rem] justify-center px-4 py-3 text-sm disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={isLoggingOut}
-                  type="button"
-                  onClick={() => {
-                    void completeLogout("none", rememberLogoutChoice);
-                  }}
-                >
-                  {isLoggingOut ? "Signing out..." : "No"}
-                </button>
-                <button
-                  className="ui-button ui-button-primary min-h-[3.5rem] justify-center px-4 py-3 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                  className="ui-button ui-button-primary min-h-[3.5rem] min-w-0 flex-1 justify-center px-3 py-3 text-sm disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={isLoggingOut}
                   type="button"
                   onClick={() => {
                     void completeLogout("continue", rememberLogoutChoice);
                   }}
                 >
-                  {isLoggingOut ? "Saving..." : activeConversation?.archivedAt ? "Yes, Continue" : "Yes, Continue"}
+                  {isLoggingOut ? "Saving..." : "Yes"}
                 </button>
                 <button
-                  className="ui-button ui-button-secondary min-h-[3.5rem] justify-center border-[color:color-mix(in_srgb,var(--accent)_35%,transparent)] px-4 py-3 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                  className="ui-button ui-button-secondary min-h-[3.5rem] min-w-0 flex-1 justify-center border-[color:color-mix(in_srgb,var(--accent)_35%,transparent)] px-3 py-3 text-sm disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={isLoggingOut}
                   type="button"
                   onClick={() => {
@@ -345,6 +374,16 @@ export function WorkspaceShell({
                   }}
                 >
                   {isLoggingOut ? "Archiving..." : "Archive"}
+                </button>
+                <button
+                  className="ui-button ui-button-secondary min-h-[3.5rem] min-w-0 flex-1 justify-center px-3 py-3 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={isLoggingOut}
+                  type="button"
+                  onClick={() => {
+                    void completeLogout("none", rememberLogoutChoice);
+                  }}
+                >
+                  {isLoggingOut ? "Signing out..." : "No"}
                 </button>
               </div>
             </div>

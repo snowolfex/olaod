@@ -230,6 +230,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
   const googleButtonRef = useRef<HTMLDivElement | null>(null);
   const googleBrokerPollRef = useRef<number | null>(null);
   const knowledgeFormRef = useRef<HTMLDivElement | null>(null);
+  const knowledgeFileInputRef = useRef<HTMLInputElement | null>(null);
   const knowledgeTitleInputRef = useRef<HTMLInputElement | null>(null);
   const currentUserId = session.user?.id ?? null;
   const isPageSurface = surface === "page" && !compact;
@@ -292,14 +293,18 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
   const [knowledgeProviderIds, setKnowledgeProviderIds] = useState<AiProviderId[]>([]);
   const [knowledgeModelIds, setKnowledgeModelIds] = useState("");
   const [knowledgeContent, setKnowledgeContent] = useState("");
+  const [knowledgeImportUrl, setKnowledgeImportUrl] = useState("");
   const [editingKnowledgeId, setEditingKnowledgeId] = useState<string | null>(null);
   const [knowledgeOverlapResults, setKnowledgeOverlapResults] = useState<AiKnowledgeOverlapResult[]>([]);
   const [isLoadingKnowledge, setIsLoadingKnowledge] = useState(false);
+  const [isImportingKnowledge, setIsImportingKnowledge] = useState(false);
   const [isSavingKnowledge, setIsSavingKnowledge] = useState(false);
   const [isCheckingKnowledgeOverlaps, setIsCheckingKnowledgeOverlaps] = useState(false);
   const [busyKnowledgeId, setBusyKnowledgeId] = useState<string | null>(null);
   const [knownModelsByProvider, setKnownModelsByProvider] = useState<Partial<Record<AiProviderId, string[]>>>({});
   const [isLoadingKnowledgeModelSuggestions, setIsLoadingKnowledgeModelSuggestions] = useState(false);
+  const [knowledgeSummary, setKnowledgeSummary] = useState<string | null>(null);
+  const [knowledgeSummaryTone, setKnowledgeSummaryTone] = useState<"success" | "warning">("success");
   const [knowledgeDebugQuery, setKnowledgeDebugQuery] = useState("");
   const [knowledgeDebugProviderId, setKnowledgeDebugProviderId] = useState<AiProviderId | "all">("all");
   const [knowledgeDebugModelId, setKnowledgeDebugModelId] = useState("");
@@ -913,6 +918,118 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
     }
   }
 
+  function buildKnowledgeImportMetadata() {
+    return {
+      title: knowledgeTitle.trim() || undefined,
+      source: knowledgeSource.trim() && knowledgeSource.trim() !== "manual" ? knowledgeSource.trim() : undefined,
+      tags: parseKnowledgeTags(knowledgeTags),
+      providerIds: knowledgeProviderIds,
+      modelIds: parseScopedModelIds(knowledgeModelIds),
+    };
+  }
+
+  async function importKnowledgeFromUrl() {
+    const url = knowledgeImportUrl.trim();
+
+    if (!url) {
+      setError("Knowledge import URL is required.");
+      return;
+    }
+
+    setIsImportingKnowledge(true);
+    setError(null);
+    setKnowledgeSummary(null);
+
+    try {
+      const response = await fetch("/api/admin/ai/context/import", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          url,
+          ...buildKnowledgeImportMetadata(),
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+
+      const payload = (await response.json()) as { entry: AiKnowledgeEntry };
+      setKnowledgeImportUrl("");
+      setKnowledgeSummary(`Imported \"${payload.entry.title}\" from ${payload.entry.source}.`);
+      setKnowledgeSummaryTone("success");
+      await refreshKnowledgeEntries();
+    } catch (knowledgeError) {
+      setError(
+        knowledgeError instanceof Error
+          ? knowledgeError.message
+          : "Unable to import shared knowledge from the URL.",
+      );
+    } finally {
+      setIsImportingKnowledge(false);
+    }
+  }
+
+  async function importKnowledgeFile(file: File) {
+    setIsImportingKnowledge(true);
+    setError(null);
+    setKnowledgeSummary(null);
+
+    try {
+      const formData = new FormData();
+      const metadata = buildKnowledgeImportMetadata();
+      formData.append("file", file);
+
+      if (metadata.title) {
+        formData.append("title", metadata.title);
+      }
+
+      if (metadata.source) {
+        formData.append("source", metadata.source);
+      }
+
+      if (metadata.tags.length > 0) {
+        formData.append("tags", metadata.tags.join(","));
+      }
+
+      if (metadata.providerIds.length > 0) {
+        formData.append("providerIds", metadata.providerIds.join(","));
+      }
+
+      if (metadata.modelIds.length > 0) {
+        formData.append("modelIds", metadata.modelIds.join(","));
+      }
+
+      const response = await fetch("/api/admin/ai/context/import", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+
+      const payload = (await response.json()) as { entry: AiKnowledgeEntry };
+      setKnowledgeSummary(`Imported \"${payload.entry.title}\" from ${file.name}.`);
+      setKnowledgeSummaryTone("success");
+      await refreshKnowledgeEntries();
+    } catch (knowledgeError) {
+      setError(
+        knowledgeError instanceof Error
+          ? knowledgeError.message
+          : "Unable to import the selected knowledge file.",
+      );
+    } finally {
+      setIsImportingKnowledge(false);
+
+      if (knowledgeFileInputRef.current) {
+        knowledgeFileInputRef.current.value = "";
+      }
+    }
+  }
+
   async function saveKnowledgeEntry() {
     setIsSavingKnowledge(true);
     setError(null);
@@ -1007,7 +1124,9 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
     setKnowledgeProviderIds([]);
     setKnowledgeModelIds("");
     setKnowledgeContent("");
+    setKnowledgeImportUrl("");
     setKnowledgeOverlapResults([]);
+    setKnowledgeSummary(null);
   }
 
   async function runKnowledgeDebugSearch() {
@@ -2617,6 +2736,67 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                   >
                     Cancel edit
                   </button>
+                ) : null}
+              </div>
+              <div className="mt-3 rounded-2xl border border-line/80 bg-[var(--panel)]/60 px-4 py-4">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">Import knowledge</p>
+                    <p className="mt-1 text-xs leading-5 text-muted">
+                      Pull content from a URL or upload a file and save it directly into shared knowledge. Supported uploads: txt, csv, xls, xlsx, doc, docx, pdf, and pptx.
+                    </p>
+                  </div>
+                  <button
+                    className="ui-button ui-button-secondary w-full px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                    disabled={Boolean(editingKnowledgeId) || isImportingKnowledge || isSavingKnowledge}
+                    type="button"
+                    onClick={() => knowledgeFileInputRef.current?.click()}
+                  >
+                    {isImportingKnowledge ? "Importing..." : "Upload file"}
+                  </button>
+                </div>
+                <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+                  <input
+                    className="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
+                    disabled={Boolean(editingKnowledgeId) || isImportingKnowledge || isSavingKnowledge}
+                    placeholder="Import from URL"
+                    value={knowledgeImportUrl}
+                    onChange={(event) => setKnowledgeImportUrl(event.target.value)}
+                  />
+                  <button
+                    className="ui-button ui-button-primary w-full px-4 py-3 text-sm disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                    disabled={Boolean(editingKnowledgeId) || isImportingKnowledge || isSavingKnowledge}
+                    type="button"
+                    onClick={() => {
+                      void importKnowledgeFromUrl();
+                    }}
+                  >
+                    {isImportingKnowledge ? "Importing..." : "Import URL"}
+                  </button>
+                </div>
+                <input
+                  ref={knowledgeFileInputRef}
+                  accept=".txt,.csv,.md,.json,.xml,.html,.htm,.pdf,.doc,.docx,.xls,.xlsx,.pptx"
+                  className="hidden"
+                  disabled={Boolean(editingKnowledgeId) || isImportingKnowledge || isSavingKnowledge}
+                  type="file"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+
+                    if (!file) {
+                      return;
+                    }
+
+                    void importKnowledgeFile(file);
+                  }}
+                />
+                <p className="mt-3 text-xs leading-5 text-muted">
+                  Use the title, source, tags, provider scope, and model scope fields below if you want to override imported defaults. Legacy .ppt files should be re-saved as .pptx first.
+                </p>
+                {knowledgeSummary ? (
+                  <div className={`mt-3 rounded-2xl px-4 py-3 text-sm ${knowledgeSummaryTone === "success" ? "border border-emerald-200 bg-emerald-50/90 text-emerald-950" : "border border-amber-200 bg-amber-50/90 text-amber-950"}`}>
+                    {knowledgeSummary}
+                  </div>
                 ) : null}
               </div>
               <input

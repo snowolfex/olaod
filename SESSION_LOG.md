@@ -1,6 +1,8 @@
 # Session Log
 
 ## 2026-04-22
+- Added shared-knowledge ingestion for admins: the Access panel can now import knowledge directly from a URL or from uploaded txt, csv, xls, xlsx, doc, docx, pdf, and pptx files into the persistent retrieval store, and the new `/api/admin/ai/context/import` route extracts readable text before saving it for future Ollama and hosted-provider grounding.
+- Refined the logout conversation prompt wording so it now asks whether to keep the current thread ready to reopen, archive it for later, or answer "No", and added live model-status guidance telling the operator whether that saved thread's model is already running, merely installed, or unavailable before sign-out.
 - Added a themed logout conversation-safety flow that lifts the active chat into the shared workspace shell, asks whether to keep the current thread active or archive it before sign-out, supports a per-user device-local "do not ask again" preference, and routes both the command-deck and access-panel sign-out actions through the same logic.
 - Live-validated the new logout flow by signing in as `keith@bayou.com`, creating a saved conversation, reopening the sign-out prompt after a viewport-height fix, choosing `Archive`, and confirming on the next login that the conversation was preserved locally but removed from the active list and counted under archived chats.
 - Added manifest-driven app version checks plus admin-triggered live patching: the app now checks for updates on load, installers can persist an update manifest URL and channel, the server can download and apply platform patch bundles in place, and `cmd /c npm run bundle:updates` now emits validated Windows/Linux patch artifacts and a publishable manifest.

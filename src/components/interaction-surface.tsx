@@ -29,6 +29,7 @@ type InteractionSurfaceProps = {
   onActiveConversationChange?: (conversation: ActiveConversationSnapshot | null) => void;
   onDesktopPageChange: (page: DesktopWorkspacePage) => Promise<void> | void;
   onRequestLogout: () => Promise<void> | void;
+  onStatusChange?: (status: OllamaStatus) => void;
 };
 
 type MobileDeckTab = "chat" | "admin" | "help";
@@ -48,6 +49,7 @@ export function InteractionSurface({
   onActiveConversationChange,
   onDesktopPageChange,
   onRequestLogout,
+  onStatusChange,
 }: InteractionSurfaceProps) {
   const [status, setStatus] = useState(initialStatus);
   const [userSession, setUserSession] = useState(initialUserSession);
@@ -98,6 +100,10 @@ export function InteractionSurface({
       // Keep the last known status in place when the refresh fails.
     }
   });
+
+  useEffect(() => {
+    onStatusChange?.(status);
+  }, [onStatusChange, status]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia(DESKTOP_VIEWPORT_MEDIA_QUERY);

@@ -31,5 +31,6 @@ export type ActiveConversationSnapshot = {
   archivedAt: string | null;
   id: string | null;
   messageCount: number;
+  modelName: string;
   title: string;
 };
