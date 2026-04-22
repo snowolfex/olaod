@@ -26,6 +26,10 @@ type ChatWorkspaceProps = {
   onActiveConversationChange?: (conversation: ActiveConversationSnapshot | null) => void;
 };
 
+type SpeechRecognitionConstructor = {
+  new (): SpeechRecognition;
+};
+
 type PersistedConversationResponse = {
   conversation: StoredConversation;
   summary: ConversationSummary;
@@ -386,6 +390,50 @@ async function readErrorMessage(response: Response) {
   }
 }
 
+function getSpeechRecognitionConstructor() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const speechWindow = window as Window & {
+    SpeechRecognition?: SpeechRecognitionConstructor;
+    webkitSpeechRecognition?: SpeechRecognitionConstructor;
+  };
+
+  return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition ?? null;
+}
+
+function mergeVoiceDraft(baseDraft: string, transcript: string) {
+  const trimmedBaseDraft = baseDraft.trim();
+  const trimmedTranscript = transcript.trim();
+
+  if (!trimmedBaseDraft) {
+    return trimmedTranscript;
+  }
+
+  if (!trimmedTranscript) {
+    return trimmedBaseDraft;
+  }
+
+  return `${trimmedBaseDraft} ${trimmedTranscript}`;
+}
+
+function getSpeechRecognitionErrorMessage(error: string) {
+  if (error === "not-allowed" || error === "service-not-allowed") {
+    return "Microphone access was blocked. Allow microphone access to use push-to-talk.";
+  }
+
+  if (error === "no-speech") {
+    return "No speech was detected while push-to-talk was active.";
+  }
+
+  if (error === "audio-capture") {
+    return "No microphone was available for push-to-talk.";
+  }
+
+  return "Push-to-talk could not transcribe audio right now.";
+}
+
 function DisclosureChevronIcon({ open }: { open: boolean }) {
   return (
     <svg
@@ -432,6 +480,8 @@ export function ChatWorkspace({
     initialConversation?.messages ?? [],
   );
   const [draft, setDraft] = useState("");
+  const [isVoiceCaptureAvailable, setIsVoiceCaptureAvailable] = useState(false);
+  const [isVoiceCapturing, setIsVoiceCapturing] = useState(false);
   const [conversationSearch, setConversationSearch] = useState("");
   const [conversationTitleDraft, setConversationTitleDraft] = useState(
     initialConversation?.title ?? "New conversation",
@@ -480,8 +530,25 @@ export function ChatWorkspace({
   const composerFormRef = useRef<HTMLFormElement | null>(null);
   const archivedConversationItemRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const abortControllerRef = useRef<AbortController | null>(null);
+  const speechRecognitionRef = useRef<SpeechRecognition | null>(null);
+  const voiceDraftBaseRef = useRef("");
+  const voiceTranscriptRef = useRef("");
+  const pendingVoiceSubmitRef = useRef(false);
+  const activeVoicePointerIdRef = useRef<number | null>(null);
+  const activeVoiceKeyboardRef = useRef(false);
   const saveTimeoutRef = useRef<number | null>(null);
   const recentlyUpdatedConversationTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    setIsVoiceCaptureAvailable(Boolean(getSpeechRecognitionConstructor()));
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      speechRecognitionRef.current?.abort();
+      speechRecognitionRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     const fallbackModel = currentUser?.preferredModel && models.some((model) => model.name === currentUser.preferredModel)
@@ -1395,8 +1462,105 @@ export function ChatWorkspace({
     abortControllerRef.current?.abort();
   }
 
+  function stopVoiceCapture(options?: { submit?: boolean }) {
+    if (!speechRecognitionRef.current) {
+      return;
+    }
+
+    pendingVoiceSubmitRef.current = Boolean(options?.submit);
+
+    try {
+      speechRecognitionRef.current.stop();
+    } catch {
+      speechRecognitionRef.current = null;
+      setIsVoiceCapturing(false);
+    }
+  }
+
+  function startVoiceCapture() {
+    if (isStreaming || isVoiceCapturing) {
+      return;
+    }
+
+    const SpeechRecognitionConstructor = getSpeechRecognitionConstructor();
+
+    if (!SpeechRecognitionConstructor) {
+      setError("Push-to-talk is not supported by this browser.");
+      return;
+    }
+
+    const recognition = new SpeechRecognitionConstructor();
+    voiceDraftBaseRef.current = draft;
+    voiceTranscriptRef.current = "";
+    pendingVoiceSubmitRef.current = false;
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = typeof navigator !== "undefined" ? navigator.language : "en-US";
+    recognition.maxAlternatives = 1;
+    recognition.onresult = (event) => {
+      let nextConfirmedTranscript = voiceTranscriptRef.current;
+      let interimTranscript = "";
+
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const result = event.results[index];
+        const transcript = result[0]?.transcript?.trim() ?? "";
+
+        if (!transcript) {
+          continue;
+        }
+
+        if (result.isFinal) {
+          nextConfirmedTranscript = `${nextConfirmedTranscript} ${transcript}`.trim();
+        } else {
+          interimTranscript = `${interimTranscript} ${transcript}`.trim();
+        }
+      }
+
+      voiceTranscriptRef.current = nextConfirmedTranscript;
+      setDraft(mergeVoiceDraft(voiceDraftBaseRef.current, `${nextConfirmedTranscript} ${interimTranscript}`));
+    };
+    recognition.onerror = (event) => {
+      if (event.error === "aborted") {
+        return;
+      }
+
+      pendingVoiceSubmitRef.current = false;
+      setIsVoiceCapturing(false);
+      setError(getSpeechRecognitionErrorMessage(event.error));
+    };
+    recognition.onend = () => {
+      const shouldSubmit = pendingVoiceSubmitRef.current;
+      const finalTranscript = voiceTranscriptRef.current.trim();
+
+      speechRecognitionRef.current = null;
+      pendingVoiceSubmitRef.current = false;
+      activeVoicePointerIdRef.current = null;
+      activeVoiceKeyboardRef.current = false;
+      setIsVoiceCapturing(false);
+      setDraft(mergeVoiceDraft(voiceDraftBaseRef.current, finalTranscript));
+
+      if (shouldSubmit && finalTranscript && !isStreaming) {
+        window.requestAnimationFrame(() => {
+          composerFormRef.current?.requestSubmit();
+        });
+      }
+    };
+
+    try {
+      recognition.start();
+      speechRecognitionRef.current = recognition;
+      setError(null);
+      setIsVoiceCapturing(true);
+    } catch {
+      setError("Push-to-talk could not start the microphone.");
+      speechRecognitionRef.current = null;
+      setIsVoiceCapturing(false);
+    }
+  }
+
   function clearConversation() {
     abortControllerRef.current?.abort();
+    stopVoiceCapture();
     setDraft("");
     setError(null);
     setIsStreaming(false);
@@ -1437,6 +1601,59 @@ export function ChatWorkspace({
     }
 
     composerFormRef.current?.requestSubmit();
+  }
+
+  function handleVoiceCapturePointerDown(event: React.PointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0) {
+      return;
+    }
+
+    activeVoicePointerIdRef.current = event.pointerId;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    startVoiceCapture();
+  }
+
+  function handleVoiceCapturePointerUp(event: React.PointerEvent<HTMLButtonElement>) {
+    if (activeVoicePointerIdRef.current !== event.pointerId) {
+      return;
+    }
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    stopVoiceCapture({ submit: true });
+  }
+
+  function handleVoiceCapturePointerCancel(event: React.PointerEvent<HTMLButtonElement>) {
+    if (activeVoicePointerIdRef.current !== event.pointerId) {
+      return;
+    }
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    stopVoiceCapture();
+  }
+
+  function handleVoiceCaptureKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
+    if ((event.key !== " " && event.key !== "Enter") || event.repeat || activeVoiceKeyboardRef.current) {
+      return;
+    }
+
+    event.preventDefault();
+    activeVoiceKeyboardRef.current = true;
+    startVoiceCapture();
+  }
+
+  function handleVoiceCaptureKeyUp(event: React.KeyboardEvent<HTMLButtonElement>) {
+    if ((event.key !== " " && event.key !== "Enter") || !activeVoiceKeyboardRef.current) {
+      return;
+    }
+
+    event.preventDefault();
+    stopVoiceCapture({ submit: true });
   }
 
   const normalizedConversationSearch = conversationSearch.trim().toLowerCase();
@@ -2576,6 +2793,23 @@ export function ChatWorkspace({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
             <button
+              aria-label={isVoiceCapturing ? "Release to send your spoken message" : "Hold to talk"}
+              className={`rounded-full px-5 py-3 text-sm font-semibold shadow-[0_16px_34px_rgba(213,122,66,0.16)] disabled:cursor-not-allowed disabled:opacity-50 ${
+                isVoiceCapturing
+                  ? "bg-[color:color-mix(in_srgb,var(--accent)_78%,#7a1b12_22%)] text-white"
+                  : "border border-line bg-white text-foreground"
+              }`}
+              disabled={!isVoiceCaptureAvailable || isStreaming}
+              type="button"
+              onKeyDown={handleVoiceCaptureKeyDown}
+              onKeyUp={handleVoiceCaptureKeyUp}
+              onPointerCancel={handleVoiceCapturePointerCancel}
+              onPointerDown={handleVoiceCapturePointerDown}
+              onPointerUp={handleVoiceCapturePointerUp}
+            >
+              {isVoiceCapturing ? "Listening... release to send" : "Hold to talk"}
+            </button>
+            <button
               className="rounded-full bg-[var(--accent)] px-6 py-3 text-sm font-semibold text-white shadow-[0_16px_34px_rgba(213,122,66,0.24)] disabled:cursor-not-allowed disabled:opacity-50"
               disabled={!draft.trim() || !selectedModel || isStreaming}
               type="submit"
@@ -2598,6 +2832,13 @@ export function ChatWorkspace({
               Clear
             </button>
           </div>
+          <p className="text-xs leading-6 text-muted">
+            {isVoiceCaptureAvailable
+              ? (isVoiceCapturing
+                ? "Audio is only being transcribed while the talk button is held down."
+                : "Hold the talk button to speak. Release it to stop listening and send.")
+              : "Push-to-talk needs a browser with built-in speech recognition support."}
+          </p>
         </div>
       </form>
     </div>

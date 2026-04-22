@@ -1,6 +1,7 @@
 # Session Log
 
 ## 2026-04-22
+- Added browser push-to-talk on the chat composer: the chat surface now exposes a hold-to-talk control that starts speech recognition only while pressed, stops listening immediately on release, merges the recognized transcript into the current draft, and submits it as a chat message when the operator lets go.
 - Added shared-knowledge ingestion for admins: the Access panel can now import knowledge directly from a URL or from uploaded txt, csv, xls, xlsx, doc, docx, pdf, and pptx files into the persistent retrieval store, and the new `/api/admin/ai/context/import` route extracts readable text before saving it for future Ollama and hosted-provider grounding.
 - Refined the logout conversation prompt wording so it now asks whether to keep the current thread ready to reopen, archive it for later, or answer "No", and added live model-status guidance telling the operator whether that saved thread's model is already running, merely installed, or unavailable before sign-out.
 - Added a themed logout conversation-safety flow that lifts the active chat into the shared workspace shell, asks whether to keep the current thread active or archive it before sign-out, supports a per-user device-local "do not ask again" preference, and routes both the command-deck and access-panel sign-out actions through the same logic.
