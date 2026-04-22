@@ -11,7 +11,9 @@ import type {
   PublicUser,
   SessionUser,
   StoredUser,
+  VoiceTranscriptionLanguage,
 } from "@/lib/user-types";
+import { isVoiceTranscriptionLanguage } from "@/lib/voice-types";
 
 const STORE_PATH = getDataStorePath("users.json");
 const ADMIN_EMAIL_ALLOWLIST = new Set([
@@ -62,6 +64,12 @@ function normalizeOptionalString(value: unknown) {
 
 function normalizeOptionalBoolean(value: unknown) {
   return typeof value === "boolean" ? value : undefined;
+}
+
+function normalizeVoiceTranscriptionLanguage(value: unknown): VoiceTranscriptionLanguage | undefined {
+  return typeof value === "string" && isVoiceTranscriptionLanguage(value)
+    ? value as VoiceTranscriptionLanguage
+    : undefined;
 }
 
 function isEmailVerificationPurpose(value: unknown): value is EmailVerificationPurpose {
@@ -121,6 +129,7 @@ function normalizeStoredUser(user: StoredUser): StoredUser {
     preferredModel: normalizeModelName(user.preferredModel),
     preferredTemperature: normalizeTemperature(user.preferredTemperature),
     preferredSystemPrompt: normalizeSystemPrompt(user.preferredSystemPrompt),
+    preferredVoiceTranscriptionLanguage: normalizeVoiceTranscriptionLanguage(user.preferredVoiceTranscriptionLanguage),
     providerSubject: normalizeOptionalString(user.providerSubject),
     avatarUrl: normalizeOptionalString(user.avatarUrl),
     passwordHash: typeof user.passwordHash === "string" ? user.passwordHash : undefined,
@@ -158,6 +167,7 @@ export function toPublicUser(user: StoredUser): PublicUser {
     preferredModel: user.preferredModel,
     preferredTemperature: user.preferredTemperature,
     preferredSystemPrompt: user.preferredSystemPrompt,
+    preferredVoiceTranscriptionLanguage: user.preferredVoiceTranscriptionLanguage,
     providerSubject: user.providerSubject,
     avatarUrl: user.avatarUrl,
     createdAt: user.createdAt,
@@ -176,6 +186,7 @@ export function toSessionUser(user: StoredUser): SessionUser {
     preferredModel: user.preferredModel,
     preferredTemperature: user.preferredTemperature,
     preferredSystemPrompt: user.preferredSystemPrompt,
+    preferredVoiceTranscriptionLanguage: user.preferredVoiceTranscriptionLanguage,
   };
 }
 
@@ -261,6 +272,7 @@ export async function updateUserProfile(input: {
   preferredModel?: string;
   preferredTemperature?: number;
   preferredSystemPrompt?: string;
+  preferredVoiceTranscriptionLanguage?: VoiceTranscriptionLanguage;
 }) {
   const users = await readStore();
   const index = users.findIndex((user) => user.id === input.id);
@@ -311,6 +323,7 @@ export async function updateUserProfile(input: {
     preferredModel: normalizeModelName(input.preferredModel),
     preferredTemperature: normalizeTemperature(input.preferredTemperature),
     preferredSystemPrompt: normalizeSystemPrompt(input.preferredSystemPrompt),
+    preferredVoiceTranscriptionLanguage: normalizeVoiceTranscriptionLanguage(input.preferredVoiceTranscriptionLanguage),
   };
 
   await writeStore(users);

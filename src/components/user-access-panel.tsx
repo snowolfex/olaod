@@ -7,6 +7,7 @@ import { getHelpHint } from "@/lib/help-manual";
 import { readQuickHelpEnabled, writeQuickHelpEnabled } from "@/lib/help-preferences";
 import { DEFAULT_USER_CHAT_TEMPERATURE, DEFAULT_USER_SYSTEM_PROMPT } from "@/lib/system-prompt";
 import type { OllamaModel } from "@/lib/ollama";
+import { VOICE_TRANSCRIPTION_LANGUAGE_OPTIONS } from "@/lib/voice-types";
 import type {
   AiModelSummary,
   AiKnowledgeDebugResult,
@@ -15,7 +16,7 @@ import type {
   AiProviderConfigSummary,
   AiProviderId,
 } from "@/lib/ai-types";
-import type { ManagedUser, PublicUser, SessionUser, UserSessionStatus } from "@/lib/user-types";
+import type { ManagedUser, PublicUser, SessionUser, UserSessionStatus, VoiceTranscriptionLanguage } from "@/lib/user-types";
 
 const AI_PROVIDER_CONFIG_CHANGED_EVENT = "oload:ai-provider-config-changed";
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
@@ -258,6 +259,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
   const [accountPreferredModel, setAccountPreferredModel] = useState("");
   const [accountPreferredTemperature, setAccountPreferredTemperature] = useState(DEFAULT_USER_CHAT_TEMPERATURE);
   const [accountPreferredSystemPrompt, setAccountPreferredSystemPrompt] = useState(DEFAULT_USER_SYSTEM_PROMPT);
+  const [accountPreferredVoiceLanguage, setAccountPreferredVoiceLanguage] = useState<VoiceTranscriptionLanguage>("auto");
   const [currentPasswordDraft, setCurrentPasswordDraft] = useState("");
   const [nextPasswordDraft, setNextPasswordDraft] = useState("");
   const [rememberSession, setRememberSession] = useState(true);
@@ -383,10 +385,11 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
     setAccountPreferredModel(session.user?.preferredModel ?? "");
     setAccountPreferredTemperature(session.user?.preferredTemperature ?? DEFAULT_USER_CHAT_TEMPERATURE);
     setAccountPreferredSystemPrompt(session.user?.preferredSystemPrompt ?? DEFAULT_USER_SYSTEM_PROMPT);
+    setAccountPreferredVoiceLanguage(session.user?.preferredVoiceTranscriptionLanguage ?? "auto");
     setCurrentPasswordDraft("");
     setNextPasswordDraft("");
     setAccountSummary(null);
-  }, [session.user?.displayName, session.user?.email, session.user?.id, session.user?.preferredModel, session.user?.preferredSystemPrompt, session.user?.preferredTemperature]);
+  }, [session.user?.displayName, session.user?.email, session.user?.id, session.user?.preferredModel, session.user?.preferredSystemPrompt, session.user?.preferredTemperature, session.user?.preferredVoiceTranscriptionLanguage]);
 
   useEffect(() => {
     if (!session.user) {
@@ -1539,6 +1542,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
           preferredModel: accountPreferredModel,
           preferredTemperature: accountPreferredTemperature,
           preferredSystemPrompt: accountPreferredSystemPrompt,
+          preferredVoiceTranscriptionLanguage: accountPreferredVoiceLanguage,
         }),
       });
 
@@ -1978,6 +1982,22 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                       ))}
                     </select>
                   </label>
+                  <label className="block text-xs font-semibold uppercase tracking-[0.16em] text-muted/75">
+                    Voice transcription
+                    <select
+                      className="mt-2 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm font-normal text-foreground outline-none"
+                      value={accountPreferredVoiceLanguage}
+                      onChange={(event) => setAccountPreferredVoiceLanguage(event.target.value as VoiceTranscriptionLanguage)}
+                    >
+                      {VOICE_TRANSCRIPTION_LANGUAGE_OPTIONS.map((language) => (
+                        <option key={language} value={language}>
+                          {language === "auto"
+                            ? "Auto-detect"
+                            : language.slice(0, 1).toUpperCase() + language.slice(1)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                   <div>
                     <div className="flex items-center justify-between gap-4 text-xs font-semibold uppercase tracking-[0.16em] text-muted/75">
                       <span>Reply style</span>
@@ -2008,7 +2028,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                 <p className="mt-3 text-xs leading-6 text-muted">
                   {session.user.authProvider === "google"
                     ? "Google-managed accounts keep their provider email. You can still change the display name plus the defaults used when you start a new chat."
-                    : "Local accounts now sign in with email and use 6-digit verification codes when required. The login email is shown here and model, reply style, and assistant style stay personal to this account."}
+                    : "Local accounts now sign in with email and use 6-digit verification codes when required. The login email is shown here and model, voice mode, reply style, and assistant style stay personal to this account."}
                 </p>
                 <button
                   className="ui-button ui-button-primary mt-4 w-full px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"

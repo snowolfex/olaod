@@ -1,5 +1,6 @@
 import { transcribeAudioFile } from "@/lib/voice-transcription";
 import { isVoiceTranscriptionLanguage } from "@/lib/voice-types";
+import type { VoiceTranscriptionLanguage } from "@/lib/user-types";
 
 export const dynamic = "force-dynamic";
 
@@ -13,10 +14,11 @@ export async function POST(request: Request) {
       return Response.json({ error: "Recorded audio is required." }, { status: 400 });
     }
 
-    const language =
-      typeof languageValue === "string" && isVoiceTranscriptionLanguage(languageValue)
-        ? languageValue
-        : "auto";
+    let language: VoiceTranscriptionLanguage = "auto";
+
+    if (typeof languageValue === "string" && isVoiceTranscriptionLanguage(languageValue)) {
+      language = languageValue as VoiceTranscriptionLanguage;
+    }
 
     const text = await transcribeAudioFile(file, language);
 

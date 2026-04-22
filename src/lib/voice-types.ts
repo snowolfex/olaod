@@ -1,3 +1,5 @@
+import type { VoiceTranscriptionLanguage } from "@/lib/user-types";
+
 export const VOICE_TRANSCRIPTION_LANGUAGE_OPTIONS = [
   "auto",
   "english",
@@ -5,8 +7,7 @@ export const VOICE_TRANSCRIPTION_LANGUAGE_OPTIONS = [
   "chinese",
 ] as const;
 
-export type VoiceTranscriptionLanguage =
-  (typeof VOICE_TRANSCRIPTION_LANGUAGE_OPTIONS)[number];
+export type { VoiceTranscriptionLanguage } from "@/lib/user-types";
 
 export function isVoiceTranscriptionLanguage(value: string): value is VoiceTranscriptionLanguage {
   return VOICE_TRANSCRIPTION_LANGUAGE_OPTIONS.includes(value as VoiceTranscriptionLanguage);

@@ -1,6 +1,7 @@
 import { recordActivity } from "@/lib/activity";
 import { getCurrentUser } from "@/lib/auth";
 import { toPublicUser, updateUserProfile } from "@/lib/users";
+import type { VoiceTranscriptionLanguage } from "@/lib/user-types";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,7 @@ export async function PATCH(request: Request) {
       preferredModel?: string;
       preferredTemperature?: number;
       preferredSystemPrompt?: string;
+      preferredVoiceTranscriptionLanguage?: VoiceTranscriptionLanguage;
     };
 
     const updatedUser = await updateUserProfile({
@@ -27,6 +29,7 @@ export async function PATCH(request: Request) {
       preferredModel: payload.preferredModel,
       preferredTemperature: payload.preferredTemperature,
       preferredSystemPrompt: payload.preferredSystemPrompt,
+      preferredVoiceTranscriptionLanguage: payload.preferredVoiceTranscriptionLanguage,
     });
 
     if (!updatedUser) {

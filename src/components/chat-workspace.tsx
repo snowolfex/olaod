@@ -61,6 +61,30 @@ const VOICE_LANGUAGE_LABELS: Record<VoiceTranscriptionLanguage, string> = {
   chinese: "Chinese",
 };
 
+async function updatePreferredVoiceLanguage(
+  currentUser: SessionUser,
+  language: VoiceTranscriptionLanguage,
+) {
+  const response = await fetch("/api/users/profile", {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      displayName: currentUser.displayName,
+      email: currentUser.email,
+      preferredModel: currentUser.preferredModel,
+      preferredTemperature: currentUser.preferredTemperature,
+      preferredSystemPrompt: currentUser.preferredSystemPrompt,
+      preferredVoiceTranscriptionLanguage: language,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response));
+  }
+}
+
 const CHAT_WORKSPACE_SIDEBAR_STORAGE_KEY = "oload:chat:workspace-sidebar";
 const CHAT_PROMPT_PRESETS_STORAGE_KEY = "oload:chat:prompt-presets";
 const CHAT_PINNED_CONVERSATIONS_STORAGE_KEY = "oload:chat:pinned-conversations";
@@ -540,7 +564,9 @@ export function ChatWorkspace({
   const [isVoiceCaptureAvailable, setIsVoiceCaptureAvailable] = useState(false);
   const [isVoiceCapturing, setIsVoiceCapturing] = useState(false);
   const [isVoiceTranscribing, setIsVoiceTranscribing] = useState(false);
-  const [voiceTranscriptionLanguage, setVoiceTranscriptionLanguage] = useState<VoiceTranscriptionLanguage>("auto");
+  const [voiceTranscriptionLanguage, setVoiceTranscriptionLanguage] = useState<VoiceTranscriptionLanguage>(
+    currentUser?.preferredVoiceTranscriptionLanguage ?? "auto",
+  );
   const [conversationSearch, setConversationSearch] = useState("");
   const [conversationTitleDraft, setConversationTitleDraft] = useState(
     initialConversation?.title ?? "New conversation",
@@ -601,6 +627,10 @@ export function ChatWorkspace({
   const activeVoiceKeyboardRef = useRef(false);
   const saveTimeoutRef = useRef<number | null>(null);
   const recentlyUpdatedConversationTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    setVoiceTranscriptionLanguage(currentUser?.preferredVoiceTranscriptionLanguage ?? "auto");
+  }, [currentUser?.id, currentUser?.preferredVoiceTranscriptionLanguage]);
 
   useEffect(() => {
     setIsVoiceCaptureAvailable(
@@ -2913,7 +2943,22 @@ export function ChatWorkspace({
               <select
                 className="bg-transparent text-sm font-semibold outline-none"
                 value={voiceTranscriptionLanguage}
-                onChange={(event) => setVoiceTranscriptionLanguage(event.target.value as VoiceTranscriptionLanguage)}
+                onChange={(event) => {
+                  const language = event.target.value as VoiceTranscriptionLanguage;
+                  setVoiceTranscriptionLanguage(language);
+
+                  if (!currentUser) {
+                    return;
+                  }
+
+                  void updatePreferredVoiceLanguage(currentUser, language).catch((voicePreferenceError) => {
+                    setError(
+                      voicePreferenceError instanceof Error
+                        ? voicePreferenceError.message
+                        : "Unable to save the voice transcription preference.",
+                    );
+                  });
+                }}
                 disabled={isVoiceCapturing || isVoiceTranscribing || isStreaming}
               >
                 {VOICE_TRANSCRIPTION_LANGUAGE_OPTIONS.map((language) => (

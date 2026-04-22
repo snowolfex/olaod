@@ -1,6 +1,7 @@
 # Session Log
 
 ## 2026-04-22
+- Persisted multilingual voice mode as a user preference: the selected voice transcription language now saves through the account profile and the chat composer writes it back when the operator changes the voice selector, so `Auto`, `English`, `Spanish`, and `Chinese` survive reloads for the signed-in account.
 - Extended local push-to-talk transcription from English-only to multilingual Whisper handling with explicit `Auto`, `English`, `Spanish`, and `Chinese` language modes wired end-to-end from the chat composer into the `/api/voice/transcribe` route.
 - Replaced the browser-vendor speech API experiment with a real local English transcription path: push-to-talk now records raw microphone audio only while the button is held, posts a generated WAV clip to `/api/voice/transcribe`, and runs a local `Xenova/whisper-tiny.en` Whisper model on the server to turn that audio into chat text before sending it.
 - Added browser push-to-talk on the chat composer: the chat surface now exposes a hold-to-talk control that starts speech recognition only while pressed, stops listening immediately on release, merges the recognized transcript into the current draft, and submits it as a chat message when the operator lets go.

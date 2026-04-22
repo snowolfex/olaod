@@ -16,6 +16,8 @@ export type PendingEmailVerification = {
   requestedAt: string;
 };
 
+export type VoiceTranscriptionLanguage = "auto" | "english" | "spanish" | "chinese";
+
 export type StoredUser = {
   id: string;
   username: string;
@@ -28,6 +30,7 @@ export type StoredUser = {
   preferredModel?: string;
   preferredTemperature?: number;
   preferredSystemPrompt?: string;
+  preferredVoiceTranscriptionLanguage?: VoiceTranscriptionLanguage;
   providerSubject?: string;
   avatarUrl?: string;
   passwordHash?: string;
@@ -42,7 +45,7 @@ export type ManagedUser = PublicUser & {
   savedConversationCount: number;
 };
 
-export type SessionUser = Pick<PublicUser, "id" | "username" | "displayName" | "role" | "authProvider" | "email" | "emailVerifiedAt" | "preferredModel" | "preferredTemperature" | "preferredSystemPrompt">;
+export type SessionUser = Pick<PublicUser, "id" | "username" | "displayName" | "role" | "authProvider" | "email" | "emailVerifiedAt" | "preferredModel" | "preferredTemperature" | "preferredSystemPrompt" | "preferredVoiceTranscriptionLanguage">;
 
 export type UserSessionStatus = {
   authAvailable: boolean;
