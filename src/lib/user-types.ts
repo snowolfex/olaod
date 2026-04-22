@@ -22,9 +22,11 @@ export type VoiceTranscriptionLanguage =
   | "bengali"
   | "chinese"
   | "english"
+  | "farsi"
   | "french"
   | "hindi"
   | "japanese"
+  | "korean"
   | "portuguese"
   | "russian"
   | "spanish";
