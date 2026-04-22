@@ -16,6 +16,10 @@ import type {
 import type { OllamaChatMessage, OllamaModel } from "@/lib/ollama";
 import { DEFAULT_USER_CHAT_TEMPERATURE, DEFAULT_USER_SYSTEM_PROMPT } from "@/lib/system-prompt";
 import type { SessionUser } from "@/lib/user-types";
+import {
+  VOICE_TRANSCRIPTION_LANGUAGE_OPTIONS,
+  type VoiceTranscriptionLanguage,
+} from "@/lib/voice-types";
 
 type ChatWorkspaceProps = {
   currentUser: SessionUser | null;
@@ -49,6 +53,13 @@ const PROMPT_PRESETS = [
     prompt: "Create a concise operator checklist for checking Ollama health, model availability, queue state, and active jobs.",
   },
 ] as const;
+
+const VOICE_LANGUAGE_LABELS: Record<VoiceTranscriptionLanguage, string> = {
+  auto: "Auto",
+  english: "English",
+  spanish: "Spanish",
+  chinese: "Chinese",
+};
 
 const CHAT_WORKSPACE_SIDEBAR_STORAGE_KEY = "oload:chat:workspace-sidebar";
 const CHAT_PROMPT_PRESETS_STORAGE_KEY = "oload:chat:prompt-presets";
@@ -529,6 +540,7 @@ export function ChatWorkspace({
   const [isVoiceCaptureAvailable, setIsVoiceCaptureAvailable] = useState(false);
   const [isVoiceCapturing, setIsVoiceCapturing] = useState(false);
   const [isVoiceTranscribing, setIsVoiceTranscribing] = useState(false);
+  const [voiceTranscriptionLanguage, setVoiceTranscriptionLanguage] = useState<VoiceTranscriptionLanguage>("auto");
   const [conversationSearch, setConversationSearch] = useState("");
   const [conversationTitleDraft, setConversationTitleDraft] = useState(
     initialConversation?.title ?? "New conversation",
@@ -1542,6 +1554,7 @@ export function ChatWorkspace({
       const audioBlob = encodeWav(recordedAudio, voiceSampleRateRef.current);
       const formData = new FormData();
       formData.append("file", new File([audioBlob], "voice-input.wav", { type: "audio/wav" }));
+      formData.append("language", voiceTranscriptionLanguage);
 
       const response = await fetch("/api/voice/transcribe", {
         method: "POST",
@@ -1556,7 +1569,7 @@ export function ChatWorkspace({
       const transcript = payload.text.trim();
 
       if (!transcript) {
-        setError("No English speech was recognized from that recording.");
+        setError("No speech was recognized from that recording.");
         return;
       }
 
@@ -2895,6 +2908,21 @@ export function ChatWorkspace({
         ) : null}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2 rounded-full border border-line bg-white px-4 py-3 text-sm text-foreground">
+              <span className="font-medium">Voice</span>
+              <select
+                className="bg-transparent text-sm font-semibold outline-none"
+                value={voiceTranscriptionLanguage}
+                onChange={(event) => setVoiceTranscriptionLanguage(event.target.value as VoiceTranscriptionLanguage)}
+                disabled={isVoiceCapturing || isVoiceTranscribing || isStreaming}
+              >
+                {VOICE_TRANSCRIPTION_LANGUAGE_OPTIONS.map((language) => (
+                  <option key={language} value={language}>
+                    {VOICE_LANGUAGE_LABELS[language]}
+                  </option>
+                ))}
+              </select>
+            </label>
             <button
               aria-label={isVoiceCapturing ? "Release to send your recorded message" : "Hold to talk"}
               className={`rounded-full px-5 py-3 text-sm font-semibold shadow-[0_16px_34px_rgba(213,122,66,0.16)] disabled:cursor-not-allowed disabled:opacity-50 ${
@@ -2944,7 +2972,7 @@ export function ChatWorkspace({
               ? isVoiceCapturing
                 ? "Audio is only being recorded while the talk button is held down."
                 : isVoiceTranscribing
-                  ? "A local English Whisper model is transcribing the recorded audio now."
+                  ? `A local Whisper model is transcribing the recorded audio in ${VOICE_LANGUAGE_LABELS[voiceTranscriptionLanguage].toLowerCase()} mode now.`
                   : "Hold the talk button to record. Release it to stop recording, transcribe, and send."
               : "Push-to-talk needs microphone access and Web Audio support in the browser."}
           </p>

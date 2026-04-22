@@ -1,6 +1,9 @@
 import { env, pipeline, type AutomaticSpeechRecognitionPipeline } from "@huggingface/transformers";
 import { WaveFile } from "wavefile";
-const ENGLISH_WHISPER_MODEL = "Xenova/whisper-tiny.en";
+
+import type { VoiceTranscriptionLanguage } from "@/lib/voice-types";
+
+const MULTILINGUAL_WHISPER_MODEL = "Xenova/whisper-tiny";
 const MAX_TRANSCRIPTION_BYTES = 10 * 1024 * 1024;
 
 let transcriberPromise: Promise<AutomaticSpeechRecognitionPipeline> | null = null;
@@ -43,13 +46,13 @@ function decodeWavFile(buffer: Uint8Array) {
   return mixDownToMono(samples);
 }
 
-async function getEnglishTranscriber() {
+async function getVoiceTranscriber() {
   env.allowLocalModels = true;
 
   if (!transcriberPromise) {
     transcriberPromise = pipeline(
       "automatic-speech-recognition",
-      ENGLISH_WHISPER_MODEL,
+      MULTILINGUAL_WHISPER_MODEL,
       {
         device: "cpu",
       },
@@ -59,7 +62,10 @@ async function getEnglishTranscriber() {
   return transcriberPromise;
 }
 
-export async function transcribeEnglishAudioFile(file: File) {
+export async function transcribeAudioFile(
+  file: File,
+  language: VoiceTranscriptionLanguage = "auto",
+) {
   if (file.size === 0) {
     throw new Error("The recorded audio was empty.");
   }
@@ -74,10 +80,12 @@ export async function transcribeEnglishAudioFile(file: File) {
     throw new Error("The recorded audio did not contain usable samples.");
   }
 
-  const transcriber = await getEnglishTranscriber();
+  const transcriber = await getVoiceTranscriber();
   const result = await transcriber(audioInput, {
+    ...(language === "auto" ? {} : { language }),
     chunk_length_s: 15,
     stride_length_s: 3,
+    task: "transcribe",
   });
 
   return result.text.trim();
