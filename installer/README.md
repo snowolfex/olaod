@@ -26,6 +26,7 @@ First-run behavior:
 - the first user created in the app becomes the admin account
 - `OLOAD_SESSION_SECRET` is generated automatically if you leave it blank during install
 - `OLOAD_ADMIN_PASSWORD` is optional and only matters before local users exist
+- if you want Google popup sign-in without a broker, keep the installed app on `http://localhost:3000` and ship a build that includes `NEXT_PUBLIC_GOOGLE_CLIENT_ID`
 
 Linux note:
 

@@ -326,6 +326,7 @@
 - Added a standalone production-style Playwright server launcher, broadened Playwright data seeding to both root and standalone runtime stores, and migrated the stale username-era browser specs to shared email-auth helpers plus the current desktop Admin and Chat surfaces.
 - Fixed the last full-suite smoke flake by making command-deck dismissal conditional on the visible state, removed leftover lint noise from the backup spec, and re-verified with `cmd /c npm run lint` plus a full Playwright rerun showing `17 passed (52.5s)`.
 - Re-enabled the Google sign-in entry on the auth surface without the old UI flag, replaced the plain treatment with a branded Google card, tightened the divider and helper copy around it, and updated the README so the setup instructions match the now always-visible Google option.
+- Shifted the documented downloadable-app recommendation away from broker-first and toward fixed `http://localhost:3000` direct Google popup mode using `NEXT_PUBLIC_GOOGLE_CLIENT_ID`, while keeping broker mode documented as the later option for arbitrary origins.
 - Simplified the auth wording by removing the redundant compact login header and renaming the admin access tab to clearer user/account language.
 - Normalized remaining auth copy to prefer account and users terminology across the login panel, help copy, and admin guidance text.
 - Shortened the login and users/help guidance copy so the auth screen and admin help lane scan faster on mobile.

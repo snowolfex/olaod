@@ -192,8 +192,8 @@ Free references surfaced in Help:
 ## Local development
 
 1. Copy `.env.example` to `.env.local` if you need a non-default Ollama host.
-2. For a hosted auth-broker release, set `AUTH_BROKER_BASE_URL` to your broker domain so the app uses the brokered Google flow.
-3. For a publisher-owned zero-config Google sign-in release without a broker, build the app with `NEXT_PUBLIC_GOOGLE_CLIENT_ID` set so the official Google button is active for every downloader.
+2. For the current downloadable-app path, keep the app on `http://localhost:3000` and build it with `NEXT_PUBLIC_GOOGLE_CLIENT_ID` so the Google popup flow works from that fixed local origin.
+3. If you later need Google sign-in to work across arbitrary hosts, ports, LAN URLs, or public domains, set `AUTH_BROKER_BASE_URL` to move the app onto the hosted broker flow.
 4. If you still need the older redirect-based Google OAuth flow for a custom deployment, also set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and optionally `GOOGLE_REDIRECT_URI`.
 5. The auth screen always shows the Google sign-in entry and automatically activates the correct mode when broker, direct-popup, or redirect OAuth configuration is present.
 6. Start Ollama locally or make sure the configured host is reachable.
@@ -202,14 +202,14 @@ Free references surfaced in Help:
 
 ## Google sign-in setup
 
-1. For the strongest downloadable-app story, use the broker scaffold under [broker/README.md](broker/README.md) and host it on a stable domain such as `https://auth.example.com`.
-2. Set `AUTH_BROKER_BASE_URL=https://auth.example.com` in the app so broker mode takes priority over direct Google sign-in.
-3. In Google Cloud, register one OAuth web app for the broker and add `https://auth.example.com/api/google/callback` as the authorized redirect URI.
-4. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in the broker service, not on every downloader machine.
-5. For the non-broker direct mode, add the browser origin you plan to ship, such as `http://localhost:3000`, to Authorized JavaScript origins and build the app with `NEXT_PUBLIC_GOOGLE_CLIENT_ID`.
-6. The first Google account to sign into an empty workspace becomes the admin account. Later Google users are created as operators.
-7. If a local username or email already matches a Google account address, the app blocks automatic linking to avoid taking over an existing local account.
-8. Broker mode is the better fit for downloadable installs because the app no longer needs to own the Google callback URL itself.
+1. For the current downloadable-install plan, use direct popup mode and standardize the app on `http://localhost:3000`.
+2. In Google Cloud, create a Google web application and add `http://localhost:3000` to Authorized JavaScript origins.
+3. Build the app with `NEXT_PUBLIC_GOOGLE_CLIENT_ID` set to that Google OAuth client ID.
+4. In this direct mode, the browser popup returns an ID token to `/api/users/google/token`, which the app verifies server-side with the same client ID.
+5. The first Google account to sign into an empty workspace becomes the admin account. Later Google users are created as operators.
+6. If a local username or email already matches a Google account address, the app blocks automatic linking to avoid taking over an existing local account.
+7. Use the broker scaffold under [broker/README.md](broker/README.md) only if you later need Google sign-in to work across arbitrary hosts, ports, LAN URLs, or public origins.
+8. If you need server-owned redirect OAuth instead of the popup flow, set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and optionally `GOOGLE_REDIRECT_URI`.
 
 ## Auth broker
 
