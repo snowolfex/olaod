@@ -2,8 +2,9 @@
 
 import { ModelOperationsPanel } from "@/components/model-operations-panel";
 import { UserAccessPanel } from "@/components/user-access-panel";
+import { translateUi, translateUiText } from "@/lib/ui-language";
 import type { OllamaStatus } from "@/lib/ollama";
-import type { UserSessionStatus } from "@/lib/user-types";
+import type { UserSessionStatus, VoiceTranscriptionLanguage } from "@/lib/user-types";
 
 type AdminDeckProps = {
   activeTab: AdminTabId;
@@ -12,47 +13,11 @@ type AdminDeckProps = {
   onTabChange: (tab: AdminTabId) => void;
   surface?: "embedded" | "page";
   status: OllamaStatus;
+  uiLanguagePreference: VoiceTranscriptionLanguage;
   userSession: UserSessionStatus;
 };
 
 export type AdminTabId = "access" | "models" | "jobs" | "activity";
-
-const adminTabs: Array<{
-  id: AdminTabId;
-  label: string;
-  hint: string;
-  detail: string;
-  eyebrow: string;
-}> = [
-  {
-    id: "access",
-    label: "Access",
-    hint: "Accounts and preferences",
-    detail: "Manage sign-in, account defaults, local users, and backup controls.",
-    eyebrow: "Identity",
-  },
-  {
-    id: "models",
-    label: "Models",
-    hint: "Library and ready",
-    detail: "Inspect model inventory, runtime readiness, and download state.",
-    eyebrow: "Runtime",
-  },
-  {
-    id: "jobs",
-    label: "Jobs",
-    hint: "Queue and detail",
-    detail: "Track queued and active operations with retry, cancel, and detail tools.",
-    eyebrow: "Execution",
-  },
-  {
-    id: "activity",
-    label: "Activity",
-    hint: "Audit trail",
-    detail: "Review warnings, history, and administrative change records.",
-    eyebrow: "Audit",
-  },
-];
 
 function AccessIcon() {
   return (
@@ -120,8 +85,28 @@ export function AdminDeck({
   onTabChange,
   surface = "embedded",
   status,
+  uiLanguagePreference,
   userSession,
 }: AdminDeckProps) {
+  const t = (key: Parameters<typeof translateUi>[1], variables?: Record<string, string | number>) =>
+    translateUi(uiLanguagePreference, key, variables);
+  const literal = (text: string, variables?: Record<string, string | number>) =>
+    translateUiText(uiLanguagePreference, text, variables);
+  const roleLabel = (role: "admin" | "operator" | "viewer") =>
+    role === "viewer" ? "Viewer" : t(role);
+  const adminTabs: Array<{
+    id: AdminTabId;
+    label: string;
+    hint: string;
+    detail: string;
+    eyebrow: string;
+    ariaLabel: string;
+  }> = [
+    { id: "access", label: t("access"), hint: t("access"), detail: t("accountAndAccess"), eyebrow: t("identity"), ariaLabel: literal("Identity Access Account and access") },
+    { id: "models", label: t("modelsTab"), hint: t("models"), detail: t("models"), eyebrow: t("runtime"), ariaLabel: literal("Runtime Models Library and ready") },
+    { id: "jobs", label: t("jobs"), hint: t("jobs"), detail: t("jobs"), eyebrow: t("execution"), ariaLabel: literal("Execution Jobs Queue and detail") },
+    { id: "activity", label: t("activity"), hint: t("activity"), detail: t("activity"), eyebrow: t("activity"), ariaLabel: literal("Audit Activity Audit trail") },
+  ];
   const isAdminSession = userSession.user?.role === "admin";
   const availableTabs = isAdminSession
     ? adminTabs
@@ -132,59 +117,69 @@ export function AdminDeck({
   const isGatewayHealthy = status.isReachable;
 
   return (
-    <section className={isPageSurface ? "glass-panel flex flex-col rounded-[32px] p-4 sm:rounded-[36px] sm:p-6" : "flex min-h-0 flex-col gap-3"}>
+    <section data-tour-id="admin-shell" className={isPageSurface ? "glass-panel flex flex-col rounded-[32px] p-4 sm:rounded-[36px] sm:p-6" : "flex min-h-0 flex-col gap-3"}>
       {isPageSurface ? (
         <div className="theme-surface-elevated rounded-[28px] px-5 py-5">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="max-w-3xl">
-              <p className="section-label text-xs font-semibold">Admin page</p>
+              <p className="section-label text-xs font-semibold">{t("adminPage")}</p>
               <h2 className="mt-3 text-2xl font-semibold tracking-[-0.04em] text-foreground sm:text-3xl">
-                {isAdminSession ? "Operations and access control" : "Account and access"}
+                {isAdminSession ? t("operationsAndAccessControl") : t("accountAndAccess")}
               </h2>
               <p className="mt-3 text-sm leading-6 text-muted sm:text-base">
                 {isAdminSession
-                  ? "This page groups access, models, jobs, and activity into one dedicated operations surface."
-                  : "This page keeps your account, defaults, and sign-in controls separate from the chat surface."}
+                  ? t("operationsAndAccessControl")
+                  : t("accountAndAccess")}
               </p>
             </div>
 
             <div className="flex flex-wrap gap-2">
               <span className={`ui-pill ${status.isReachable ? "ui-pill-success" : "ui-pill-warning"}`}>
-                {status.isReachable ? "Gateway online" : "Gateway offline"}
+                {status.isReachable ? t("gatewayOnline") : t("gatewayOffline")}
               </span>
-              <span className="ui-pill ui-pill-surface">
+              <span className="ui-pill ui-pill-label">
                 {userSession.user?.displayName ?? "Guest"}
               </span>
-              <span className="ui-pill ui-pill-soft border border-line text-xs text-muted">
-                {userSession.user?.role ?? "viewer"}
+              <span className="ui-pill ui-pill-meta text-xs text-muted">
+                {roleLabel(userSession.user?.role ?? "viewer")}
               </span>
             </div>
           </div>
 
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
             <div className="theme-surface-soft rounded-[22px] px-4 py-4">
-              <p className="eyebrow text-muted">Current area</p>
-              <p className="mt-2 text-base font-semibold text-foreground">{activeTabMeta?.label ?? "Users"}</p>
-              <p className="mt-1 text-xs leading-5 text-muted">{activeTabMeta?.hint ?? "Accounts and backup"}</p>
+              <p className="eyebrow text-muted">{t("currentArea")}</p>
+              <p className="mt-2 text-base font-semibold text-foreground">{activeTabMeta?.label ?? t("access")}</p>
+              <p className="mt-1 text-xs leading-5 text-muted">{activeTabMeta?.hint ?? t("access")}</p>
             </div>
             <div className="theme-surface-soft rounded-[22px] px-4 py-4">
-              <p className="eyebrow text-muted">Gateway posture</p>
-              <p className="mt-2 text-base font-semibold text-foreground">{isGatewayHealthy ? "Operational" : "Attention needed"}</p>
+              <p className="eyebrow text-muted">{t("gatewayPosture")}</p>
+              <p className="mt-2 text-base font-semibold text-foreground">{isGatewayHealthy ? t("operational") : t("attentionNeeded")}</p>
               <p className="mt-1 text-xs leading-5 text-muted">
-                {isGatewayHealthy ? `${status.modelCount} models visible, ${runningModelsCount} active runtime${runningModelsCount === 1 ? "" : "s"}.` : "Gateway refreshes are degraded, so operational data may be stale."}
+                {isGatewayHealthy
+                  ? literal("{modelCount} models visible, {runningModelsCount} active runtime(s).", {
+                      modelCount: status.modelCount,
+                      runningModelsCount,
+                    })
+                  : literal("Gateway refreshes are degraded, so operational data may be stale.")}
               </p>
             </div>
             <div className="theme-surface-soft rounded-[22px] px-4 py-4">
-              <p className="eyebrow text-muted">Access scope</p>
-              <p className="mt-2 text-base font-semibold text-foreground">{isAdminSession ? "Full deck" : "Limited deck"}</p>
-              <p className="mt-1 text-xs leading-5 text-muted">{userSession.userCount} workspace user{userSession.userCount === 1 ? "" : "s"} with {availableTabs.length} visible admin section{availableTabs.length === 1 ? "" : "s"}.</p>
+              <p className="eyebrow text-muted">{t("accessScope")}</p>
+              <p className="mt-2 text-base font-semibold text-foreground">{isAdminSession ? t("fullDeck") : t("limitedDeck")}</p>
+              <p className="mt-1 text-xs leading-5 text-muted">
+                {literal("{userCount} workspace user(s) with {sectionCount} visible admin section(s).", {
+                  userCount: userSession.userCount,
+                  sectionCount: availableTabs.length,
+                })}
+              </p>
             </div>
           </div>
 
           <div className="theme-surface-panel mt-4 rounded-[24px] px-4 py-4">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="max-w-3xl">
-                <p className="eyebrow text-muted">Current briefing</p>
+                <p className="eyebrow text-muted">{t("currentBriefing")}</p>
                 <div className="mt-2 flex items-center gap-3">
                   <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--accent)] text-white shadow-[0_10px_24px_rgba(188,95,61,0.24)]">
                     <AdminTabIcon tab={activeTabMeta.id} />
@@ -199,12 +194,12 @@ export function AdminDeck({
 
               <div className="grid min-w-[15rem] gap-2 sm:grid-cols-2">
                 <div className="theme-surface-soft rounded-[20px] px-3 py-3">
-                  <p className="eyebrow text-muted">{isAdminSession ? "Models ready" : "Signed-in role"}</p>
-                  <p className="mt-1 text-sm font-semibold text-foreground">{isAdminSession ? status.modelCount : userSession.user?.role ?? "viewer"}</p>
+                  <p className="eyebrow text-muted">{isAdminSession ? t("modelsReady") : t("signedInRole")}</p>
+                  <p className="mt-1 text-sm font-semibold text-foreground">{isAdminSession ? status.modelCount : roleLabel(userSession.user?.role ?? "viewer")}</p>
                 </div>
                 <div className="theme-surface-soft rounded-[20px] px-3 py-3">
-                  <p className="eyebrow text-muted">{isAdminSession ? "Runtime live" : "Gateway status"}</p>
-                  <p className="mt-1 text-sm font-semibold text-foreground">{isAdminSession ? runningModelsCount : isGatewayHealthy ? "Online" : "Offline"}</p>
+                  <p className="eyebrow text-muted">{isAdminSession ? t("runtimeLive") : t("gatewayStatus")}</p>
+                  <p className="mt-1 text-sm font-semibold text-foreground">{isAdminSession ? runningModelsCount : isGatewayHealthy ? t("online") : t("offline")}</p>
                 </div>
               </div>
             </div>
@@ -213,15 +208,16 @@ export function AdminDeck({
       ) : null}
 
       <div className={isPageSurface ? "mt-4" : ""}>
-        <div className="glass-panel sticky top-3 z-10 rounded-[28px] p-2.5 sm:rounded-[30px] sm:p-3 lg:static">
+        <div data-tour-id="admin-tabs" className="glass-panel sticky top-3 z-10 rounded-[28px] p-2.5 sm:rounded-[30px] sm:p-3 lg:static">
           <div className={isPageSurface ? "grid gap-2 xl:grid-cols-4" : "grid grid-cols-2 gap-2"}>
             {availableTabs.map((tab) => {
               const isActive = activeTab === tab.id;
 
               return (
                 <button
+                  aria-label={tab.ariaLabel}
                   key={tab.id}
-                  className={`rounded-[22px] border px-4 py-4 text-left transition ${isPageSurface ? "min-h-[8.25rem]" : "min-h-[4rem]"} ${isActive ? "theme-accent-gradient border-transparent text-white shadow-[0_18px_42px_color-mix(in_srgb,var(--accent)_24%,transparent)]" : "theme-surface-strong text-foreground hover:border-[color:color-mix(in_srgb,var(--accent)_35%,transparent)]"}`}
+                  className={`rounded-[22px] border px-4 py-4 text-left transition ${isPageSurface ? "min-h-[8.25rem]" : "min-h-[4rem]"} ${isActive ? "theme-accent-gradient border-transparent text-white shadow-[0_18px_42px_color-mix(in_srgb,var(--accent)_24%,transparent)]" : "ui-button-surface theme-surface-strong text-foreground hover:border-[color:color-mix(in_srgb,var(--accent)_35%,transparent)]"}`}
                   data-help-id={tab.id === "access" ? "admin.users" : tab.id === "models" ? "admin.models" : tab.id === "jobs" ? "admin.jobs" : "admin.activity"}
                   type="button"
                   onClick={() => onTabChange(tab.id)}
@@ -246,9 +242,9 @@ export function AdminDeck({
         </div>
       </div>
 
-      <div className={isPageSurface ? "mt-4 pr-1" : "min-h-0 flex-1 overflow-y-auto pr-1"}>
+      <div data-tour-id={`admin-panel-${activeTab}`} className={isPageSurface ? "mt-4 pr-1" : "min-h-0 flex-1 overflow-y-auto pr-1"}>
         {activeTab === "access" ? (
-          <UserAccessPanel availableModels={status.models} onRequestLogout={onRequestLogout} onSessionChange={onSessionChange} session={userSession} surface={isPageSurface ? "page" : "embedded"} />
+          <UserAccessPanel availableModels={status.models} onRequestLogout={onRequestLogout} onSessionChange={onSessionChange} session={userSession} surface={isPageSurface ? "page" : "embedded"} uiLanguagePreference={uiLanguagePreference} />
         ) : (
           <ModelOperationsPanel
             cli={status.cli}
@@ -263,6 +259,7 @@ export function AdminDeck({
             runningCount={status.runningCount}
             server={status.server}
             surface={isPageSurface ? "page" : "embedded"}
+            uiLanguagePreference={uiLanguagePreference}
             userCount={userSession.userCount}
             version={status.version}
             view={activeTab}

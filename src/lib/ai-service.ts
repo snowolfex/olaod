@@ -98,6 +98,25 @@ function buildKnowledgeSystemPrompt(results: Awaited<ReturnType<typeof searchAiK
   ].join("\n\n");
 }
 
+function buildGroundingInstruction(mode: AiChatRequest["groundingMode"]) {
+  if (mode === "strict") {
+    return [
+      "Grounding mode: strict.",
+      "Prefer the retrieved workspace context over general model memory when it is relevant.",
+      "If the retrieved context is insufficient, say so plainly instead of filling gaps with unsupported detail.",
+    ].join("\n");
+  }
+
+  if (mode === "balanced") {
+    return [
+      "Grounding mode: balanced.",
+      "Use retrieved workspace context when it helps, but keep the answer readable and practical.",
+    ].join("\n");
+  }
+
+  return null;
+}
+
 function buildKnowledgeCitations(results: Awaited<ReturnType<typeof searchAiKnowledge>>): AiKnowledgeCitation[] {
   return dedupeKnowledgeCitations(results.map((entry) => ({
     id: entry.id,
@@ -677,7 +696,10 @@ function createPlaywrightAiPlainTextStream(payload: AiChatRequest, signal?: Abor
 }
 
 async function buildEffectiveChatPayload(payload: AiChatRequest) {
-  if (!payload.useKnowledge) {
+  const groundingMode = payload.groundingMode ?? (payload.useKnowledge ? "balanced" : "off");
+  const useKnowledge = payload.useKnowledge && groundingMode !== "off";
+
+  if (!useKnowledge) {
     return {
       payload,
       knowledgeCitations: [] as AiKnowledgeCitation[],
@@ -689,12 +711,16 @@ async function buildEffectiveChatPayload(payload: AiChatRequest) {
     providerId: payload.providerId,
     modelId: payload.model,
   });
-  const knowledgePrompt = buildKnowledgeSystemPrompt(knowledgeResults);
+  const knowledgePrompt = buildSystemPrompt(
+    buildGroundingInstruction(groundingMode) ?? undefined,
+    buildKnowledgeSystemPrompt(knowledgeResults),
+  );
 
   return {
     payload: {
       ...payload,
-      systemPrompt: buildSystemPrompt(payload.systemPrompt, knowledgePrompt),
+      groundingMode,
+      systemPrompt: buildSystemPrompt(payload.systemPrompt, knowledgePrompt ?? null),
     } satisfies AiChatRequest,
     knowledgeCitations: buildKnowledgeCitations(knowledgeResults),
   };

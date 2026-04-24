@@ -15,7 +15,8 @@ import type {
   OllamaServerStatus,
   OllamaStatus,
 } from "@/lib/ollama";
-import type { SessionUser } from "@/lib/user-types";
+import { translateUiText } from "@/lib/ui-language";
+import type { SessionUser, VoiceTranscriptionLanguage } from "@/lib/user-types";
 
 type JobFilter = "all" | "queued" | "running" | "failed" | "cancelled" | "completed";
 type JobTypeFilter = "all" | JobType;
@@ -391,27 +392,27 @@ function getJobStatusClasses(status: JobRecord["status"]) {
   return "bg-amber-100 text-amber-900";
 }
 
-function getJobSectionTitle(status: JobRecord["status"]) {
+function getJobSectionTitle(status: JobRecord["status"], language: VoiceTranscriptionLanguage = "english") {
   if (status === "queued") {
-    return "Queued";
+    return translateUiText(language, "Queued");
   }
 
   if (status === "running") {
-    return "Running";
+    return translateUiText(language, "Running");
   }
 
   if (status === "failed") {
-    return "Failed";
+    return translateUiText(language, "Failed");
   }
 
   if (status === "cancelled") {
-    return "Cancelled";
+    return translateUiText(language, "Cancelled");
   }
 
-  return "Succeeded";
+  return translateUiText(language, "Succeeded");
 }
 
-function getJobSectionInsight(section: JobSection, currentUser: SessionUser | null) {
+function getJobSectionInsight(section: JobSection, currentUser: SessionUser | null, language: VoiceTranscriptionLanguage = "english") {
   if (section.key === "queued") {
     const nextJob = section.jobs.find((job) => job.queuePosition === 1) ?? section.jobs[0];
 
@@ -420,29 +421,29 @@ function getJobSectionInsight(section: JobSection, currentUser: SessionUser | nu
     }
 
     return currentUser?.displayName === nextJob.requestedBy
-      ? "You are next to run"
-      : `${nextJob.requestedBy} is next to run`;
+      ? translateUiText(language, "You are next to run")
+      : translateUiText(language, "{requestedBy} is next to run", { requestedBy: nextJob.requestedBy });
   }
 
   if (section.key === "running") {
     return section.ownerCount > 0
-      ? `${section.ownerCount} of these running jobs are yours`
-      : "No running jobs in this section belong to you";
+      ? translateUiText(language, "{count} of these running jobs are yours", { count: section.ownerCount })
+      : translateUiText(language, "No running jobs in this section belong to you");
   }
 
   if (section.key === "failed" || section.key === "cancelled") {
     const retryablePullCount = section.jobs.filter((job) => job.type === "model.pull").length;
 
     if (retryablePullCount === 0) {
-      return "No retryable pull jobs in this section";
+      return translateUiText(language, "No retryable pull jobs in this section");
     }
 
-    return `${retryablePullCount} retryable pull job${retryablePullCount === 1 ? "" : "s"}`;
+    return translateUiText(language, "{count} retryable pull jobs", { count: retryablePullCount });
   }
 
   return section.ownerCount > 0
-    ? `${section.ownerCount} succeeded job${section.ownerCount === 1 ? "" : "s"} belong to you`
-    : "No succeeded jobs in this section belong to you";
+    ? translateUiText(language, "{count} succeeded jobs belong to you", { count: section.ownerCount })
+    : translateUiText(language, "No succeeded jobs in this section belong to you");
 }
 
 type JobDetailPayload = {
@@ -474,8 +475,8 @@ const EMPTY_JOB_SUMMARY: JobSummary = {
   completed: 0,
 };
 
-function formatJobType(type: JobRecord["type"]) {
-  return type === "model.pull" ? "Pull" : "Delete";
+function formatJobType(type: JobRecord["type"], language: VoiceTranscriptionLanguage = "english") {
+  return type === "model.pull" ? translateUiText(language, "Pull") : translateUiText(language, "Delete");
 }
 
 function getRevealFilterForStatus(status: JobRecord["status"]): JobFilter {
@@ -667,8 +668,15 @@ function getScopeSummaryText(
   jobFilter: JobFilter,
   jobTypeFilter: JobTypeFilter,
   jobOwnershipFilter: JobOwnershipFilter,
+  language: VoiceTranscriptionLanguage = "english",
 ) {
-  return `${getJobFilterFamilyLabel(jobFilter)} across ${getJobTypeFamilyLabel(jobTypeFilter).toLowerCase()} for ${jobOwnershipFilter === "mine" ? "your jobs" : "all operators"}.`;
+  return translateUiText(language, "{filter} across {type} for {ownership}.", {
+    filter: getJobFilterFamilyLabel(jobFilter, language),
+    type: getJobTypeFamilyLabel(jobTypeFilter, language).toLowerCase(),
+    ownership: jobOwnershipFilter === "mine"
+      ? translateUiText(language, "your jobs")
+      : translateUiText(language, "all operators"),
+  });
 }
 
 function getCurrentScopeBadgeText(
@@ -676,20 +684,26 @@ function getCurrentScopeBadgeText(
   jobTypeFilter: JobTypeFilter,
   jobOwnershipFilter: JobOwnershipFilter,
   jobSnapshotLimit: JobSnapshotLimit,
+  language: VoiceTranscriptionLanguage = "english",
 ) {
   const statusScope = jobFilter === "all"
-    ? "all statuses"
+    ? translateUiText(language, "all statuses")
     : jobFilter === "completed"
-      ? "succeeded only"
-      : `${jobFilter} only`;
+      ? translateUiText(language, "succeeded only")
+      : translateUiText(language, "{status} only", { status: translateUiText(language, jobFilter) });
   const typeScope = jobTypeFilter === "all"
-    ? "all jobs"
+    ? translateUiText(language, "all jobs")
     : jobTypeFilter === "model.pull"
-      ? "pulls"
-      : "deletes";
-  const ownershipScope = jobOwnershipFilter === "mine" ? "my jobs" : "all operators";
+      ? translateUiText(language, "pulls")
+      : translateUiText(language, "deletes");
+  const ownershipScope = jobOwnershipFilter === "mine" ? translateUiText(language, "my jobs") : translateUiText(language, "all operators");
 
-  return `${statusScope} · ${typeScope} · ${ownershipScope} · ${jobSnapshotLimit} jobs`;
+  return translateUiText(language, "{statusScope} · {typeScope} · {ownershipScope} · {count} jobs", {
+    statusScope,
+    typeScope,
+    ownershipScope,
+    count: jobSnapshotLimit,
+  });
 }
 
 function getCopyScopeText(
@@ -697,8 +711,12 @@ function getCopyScopeText(
   jobTypeFilter: JobTypeFilter,
   jobOwnershipFilter: JobOwnershipFilter,
   jobSnapshotLimit: JobSnapshotLimit,
+  language: VoiceTranscriptionLanguage = "english",
 ) {
-  return `Jobs scope: ${getCurrentScopeBadgeText(jobFilter, jobTypeFilter, jobOwnershipFilter, jobSnapshotLimit)} (${getScopeSummaryText(jobFilter, jobTypeFilter, jobOwnershipFilter)})`;
+  return translateUiText(language, "Jobs scope: {badge} ({summary})", {
+    badge: getCurrentScopeBadgeText(jobFilter, jobTypeFilter, jobOwnershipFilter, jobSnapshotLimit, language),
+    summary: getScopeSummaryText(jobFilter, jobTypeFilter, jobOwnershipFilter, language),
+  });
 }
 
 function getScopeSignature(
@@ -710,8 +728,8 @@ function getScopeSignature(
   return `${jobFilter}|${jobTypeFilter}|${jobOwnershipFilter}|${jobSnapshotLimit}`;
 }
 
-function getOwnershipFilterLabel(jobOwnershipFilter: JobOwnershipFilter) {
-  return jobOwnershipFilter === "mine" ? "My jobs" : "All operators";
+function getOwnershipFilterLabel(jobOwnershipFilter: JobOwnershipFilter, language: VoiceTranscriptionLanguage = "english") {
+  return jobOwnershipFilter === "mine" ? translateUiText(language, "My jobs") : translateUiText(language, "All operators");
 }
 
 function getActiveJobsQuickScope(input: {
@@ -739,20 +757,20 @@ function getActiveJobsQuickScope(input: {
   return null;
 }
 
-function getJobsQuickScopeLabel(value: JobsQuickScope) {
+function getJobsQuickScopeLabel(value: JobsQuickScope, language: VoiceTranscriptionLanguage = "english") {
   if (value === "my-queued") {
-    return "My queued";
+    return translateUiText(language, "My queued");
   }
 
   if (value === "my-failed-pulls") {
-    return "My failed pulls";
+    return translateUiText(language, "My failed pulls");
   }
 
   if (value === "pull-queue-only") {
-    return "Pull queue only";
+    return translateUiText(language, "Pull queue only");
   }
 
-  return "Running pulls";
+  return translateUiText(language, "Running pulls");
 }
 
 function getSelectedJobScopeReasonLabel(input: {
@@ -761,15 +779,16 @@ function getSelectedJobScopeReasonLabel(input: {
   jobFilter: JobFilter;
   jobTypeFilter: JobTypeFilter;
   jobOwnershipFilter: JobOwnershipFilter;
+  language?: VoiceTranscriptionLanguage;
 }) {
   if (input.jobTypeFilter !== "all" && input.job.type !== input.jobTypeFilter) {
     return input.jobTypeFilter === "model.pull"
-      ? "Outside current pull-only scope"
-      : "Outside current delete-only scope";
+      ? translateUiText(input.language, "Outside current pull-only scope")
+      : translateUiText(input.language, "Outside current delete-only scope");
   }
 
   if (input.jobOwnershipFilter === "mine" && input.currentUser?.displayName !== input.job.requestedBy) {
-    return "Outside your ownership scope";
+    return translateUiText(input.language, "Outside your ownership scope");
   }
 
   if (input.jobFilter !== "all") {
@@ -778,66 +797,70 @@ function getSelectedJobScopeReasonLabel(input: {
       : input.job.status === input.jobFilter;
 
     if (!matchesStatus) {
-      return `Outside current ${input.jobFilter === "completed" ? "succeeded" : input.jobFilter} view`;
+      return translateUiText(input.language, "Outside current {status} view", {
+        status: input.jobFilter === "completed"
+          ? translateUiText(input.language, "succeeded")
+          : translateUiText(input.language, input.jobFilter),
+      });
     }
   }
 
-  return "In current scope";
+  return translateUiText(input.language, "In current scope");
 }
 
-function getSelectedJobBulkActionLabel(job: JobRecord) {
+function getSelectedJobBulkActionLabel(job: JobRecord, language: VoiceTranscriptionLanguage = "english") {
   if (job.type !== "model.pull") {
-    return "Not part of pull bulk actions";
+    return translateUiText(language, "Not part of pull bulk actions");
   }
 
   if (job.status === "queued") {
-    return "Included in queued-cancel scope";
+    return translateUiText(language, "Included in queued-cancel scope");
   }
 
   if (job.status === "failed" || job.status === "cancelled") {
-    return "Included in retry scope";
+    return translateUiText(language, "Included in retry scope");
   }
 
-  return "Outside current bulk-action states";
+  return translateUiText(language, "Outside current bulk-action states");
 }
 
-function getRetryLineageLabel(job: JobRecord | null) {
+function getRetryLineageLabel(job: JobRecord | null, language: VoiceTranscriptionLanguage = "english") {
   if (!job || job.type !== "model.pull") {
     return null;
   }
 
   return job.progressEntries[0]?.message === "Retry queued."
-    ? "Retry run"
-    : "Original run";
+    ? translateUiText(language, "Retry run")
+    : translateUiText(language, "Original run");
 }
 
-function getJobTypeFamilyLabel(jobTypeFilter: JobTypeFilter) {
+function getJobTypeFamilyLabel(jobTypeFilter: JobTypeFilter, language: VoiceTranscriptionLanguage = "english") {
   if (jobTypeFilter === "model.pull") {
-    return "Pull scope";
+    return translateUiText(language, "Pull scope");
   }
 
   if (jobTypeFilter === "model.delete") {
-    return "Delete scope";
+    return translateUiText(language, "Delete scope");
   }
 
-  return "Mixed types";
+  return translateUiText(language, "Mixed types");
 }
 
-function getJobFilterFamilyLabel(jobFilter: JobFilter) {
+function getJobFilterFamilyLabel(jobFilter: JobFilter, language: VoiceTranscriptionLanguage = "english") {
   if (jobFilter === "queued" || jobFilter === "running") {
-    return "Active view";
+    return translateUiText(language, "Active view");
   }
 
   if (jobFilter === "failed" || jobFilter === "cancelled" || jobFilter === "completed") {
-    return "Terminal view";
+    return translateUiText(language, "Terminal view");
   }
 
-  return "Mixed view";
+  return translateUiText(language, "Mixed view");
 }
 
-function formatDuration(durationMs?: number) {
+function formatDuration(durationMs: number | undefined, language: VoiceTranscriptionLanguage = "english") {
   if (!durationMs || durationMs < 1000) {
-    return durationMs === 0 ? "0s" : "In progress";
+    return durationMs === 0 ? "0s" : translateUiText(language, "In progress");
   }
 
   const totalSeconds = Math.round(durationMs / 1000);
@@ -1534,6 +1557,7 @@ type ModelOperationsPanelProps = {
   version?: string;
   onStatusChange: (status: OllamaStatus) => void;
   surface?: "embedded" | "page";
+  uiLanguagePreference: VoiceTranscriptionLanguage;
   view?: "all" | "models" | "jobs" | "activity";
 };
 
@@ -1559,8 +1583,11 @@ export function ModelOperationsPanel({
   version,
   onStatusChange,
   surface = "embedded",
+  uiLanguagePreference,
   view = "all",
 }: ModelOperationsPanelProps) {
+  const literal = (sourceText: string, variables?: Record<string, string | number>) =>
+    translateUiText(uiLanguagePreference, sourceText, variables);
   const collapsedSectionsStorageKey = getCollapsedSectionsStorageKey(currentUser?.id);
   const selectedJobStorageKey = getSelectedJobStorageKey(currentUser?.id);
   const jobHintsStorageKey = getJobHintsStorageKey(currentUser?.id);
@@ -3130,7 +3157,7 @@ export function ModelOperationsPanel({
     : [];
   const groupedJobs = ["queued", "running", "failed", "cancelled", "succeeded"].map((status) => ({
     key: status as JobRecord["status"],
-    title: getJobSectionTitle(status as JobRecord["status"]),
+    title: getJobSectionTitle(status as JobRecord["status"], uiLanguagePreference),
     jobs: jobs.filter((job) => job.status === status),
     ownerCount: jobs.filter(
       (job) => job.status === status && currentUser?.displayName && job.requestedBy === currentUser.displayName,
@@ -3283,13 +3310,13 @@ export function ModelOperationsPanel({
       <div className={panelShellClassName} data-help-context="models" onKeyDown={handleJobsPanelKeyDown}>
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="section-label text-xs font-semibold">Model library</p>
+            <p className="section-label text-xs font-semibold">{literal("Model library")}</p>
             <h2 className="mt-3 text-2xl font-semibold tracking-tight text-foreground">
-              Model library
+              {literal("Model library")}
             </h2>
             {isPageSurface ? (
               <p className="mt-3 max-w-3xl text-sm leading-6 text-muted">
-                Local Ollama inventory, hosted AI readiness, runtime controls, and download operations now live as their own Admin destination instead of borrowing space from the chat workspace.
+                {literal("Local Ollama inventory, hosted AI readiness, runtime controls, and download operations now live as their own Admin destination instead of borrowing space from the chat workspace.")}
               </p>
             ) : null}
           </div>
@@ -3300,41 +3327,41 @@ export function ModelOperationsPanel({
                 : "bg-amber-100 text-amber-800"
             }`}
           >
-            {isReachable ? "Reachable" : "Offline"}
+            {isReachable ? literal("Reachable") : literal("Offline")}
           </div>
         </div>
 
         {isPageSurface ? (
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
             <div className="theme-surface-soft rounded-[24px] px-4 py-4">
-              <p className="eyebrow text-muted">Catalog reach</p>
+              <p className="eyebrow text-muted">{literal("Catalog reach")}</p>
               <p className="mt-2 text-base font-semibold text-foreground">{libraryModels.length}</p>
-              <p className="mt-1 text-xs leading-5 text-muted">Models currently visible in the local library and catalog merge.</p>
+              <p className="mt-1 text-xs leading-5 text-muted">{literal("Models currently visible in the local library and catalog merge.")}</p>
             </div>
             <div className="theme-surface-soft rounded-[24px] px-4 py-4">
-              <p className="eyebrow text-muted">Hosted providers</p>
+              <p className="eyebrow text-muted">{literal("Hosted providers")}</p>
               <p className="mt-2 text-base font-semibold text-foreground">{configuredHostedProviderCount}</p>
-              <p className="mt-1 text-xs leading-5 text-muted">Hosted AI services configured behind the shared gateway.</p>
+              <p className="mt-1 text-xs leading-5 text-muted">{literal("Hosted AI services configured behind the shared gateway.")}</p>
             </div>
             <div className="theme-surface-soft rounded-[24px] px-4 py-4">
-              <p className="eyebrow text-muted">Admin posture</p>
-              <p className="mt-2 text-base font-semibold text-foreground">{adminLocked ? "Locked" : "Operational"}</p>
-              <p className="mt-1 text-xs leading-5 text-muted">Download, runtime, and delete actions stay gated behind admin access.</p>
+              <p className="eyebrow text-muted">{literal("Admin posture")}</p>
+              <p className="mt-2 text-base font-semibold text-foreground">{adminLocked ? literal("Locked") : literal("Operational")}</p>
+              <p className="mt-1 text-xs leading-5 text-muted">{literal("Download, runtime, and delete actions stay gated behind admin access.")}</p>
             </div>
           </div>
         ) : null}
 
         <div className="mt-6 grid gap-3 sm:grid-cols-3">
           <div className="theme-surface-soft rounded-[24px] px-4 py-4">
-            <p className="eyebrow text-muted">Downloaded</p>
+            <p className="eyebrow text-muted">{literal("Downloaded")}</p>
             <p className="mt-2 text-2xl font-semibold text-foreground">{installedLibraryModelCount}</p>
           </div>
           <div className="theme-surface-soft rounded-[24px] px-4 py-4">
-            <p className="eyebrow text-muted">Ready</p>
+            <p className="eyebrow text-muted">{literal("Ready")}</p>
             <p className="mt-2 text-2xl font-semibold text-foreground">{runningCount}</p>
           </div>
           <div className="theme-surface-soft rounded-[24px] px-4 py-4">
-            <p className="eyebrow text-muted">Local service</p>
+            <p className="eyebrow text-muted">{literal("Local service")}</p>
             <p className="mt-2 text-sm font-semibold text-foreground">{serverStatusLabel}</p>
           </div>
         </div>
@@ -3342,14 +3369,14 @@ export function ModelOperationsPanel({
         <div className="theme-surface-panel mt-4 rounded-[24px] px-4 py-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="eyebrow text-muted">AI services</p>
+              <p className="eyebrow text-muted">{literal("AI services")}</p>
               <p className="mt-2 text-sm text-muted">
-                Local and hosted AI services share the same chat gateway. Provider keys and shared knowledge stay in the Users panel.
+                {literal("Local and hosted AI services share the same chat gateway. Provider keys and shared knowledge stay in the Users panel.")}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="ui-pill ui-pill-surface">{providerReadyCount} ready</span>
-              <span className="ui-pill ui-pill-surface">{configuredHostedProviderCount} hosted configured</span>
+              <span className="ui-pill ui-pill-surface">{literal("{count} ready", { count: providerReadyCount })}</span>
+              <span className="ui-pill ui-pill-surface">{literal("{count} hosted configured", { count: configuredHostedProviderCount })}</span>
               <button
                 className="ui-button ui-button-secondary px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
                 data-help-id="models.refresh-services"
@@ -3359,13 +3386,13 @@ export function ModelOperationsPanel({
                   void refreshAiProviders();
                 }}
               >
-                {isLoadingAiProviders ? "Refreshing..." : "Refresh services"}
+                {isLoadingAiProviders ? literal("Refreshing...") : literal("Refresh services")}
               </button>
             </div>
           </div>
 
           {aiProvidersError ? (
-            <p className="mt-3 text-xs text-amber-900">AI services refresh failed: {aiProvidersError}</p>
+            <p className="mt-3 text-xs text-amber-900">{literal("AI services refresh failed: {error}", { error: aiProvidersError })}</p>
           ) : null}
 
           {aiProviders.length > 0 ? (
@@ -3375,19 +3402,19 @@ export function ModelOperationsPanel({
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="text-sm font-semibold text-foreground">{provider.label}</p>
-                      <p className="mt-1 text-xs text-muted">{provider.kind === "local" ? "On this device" : "Hosted service"}</p>
+                      <p className="mt-1 text-xs text-muted">{provider.kind === "local" ? literal("On this device") : literal("Hosted service")}</p>
                     </div>
                     <span className={`ui-pill ${provider.enabled ? "ui-pill-success" : provider.configured ? "ui-pill-warning" : "ui-pill-neutral"}`}>
-                      {provider.enabled ? "Ready" : provider.configured ? "Set up" : "Needs setup"}
+                      {provider.enabled ? literal("Ready") : provider.configured ? literal("Set up") : literal("Needs setup")}
                     </span>
                   </div>
                   <p className="mt-3 text-sm leading-6 text-muted">{provider.description}</p>
                   <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-semibold">
                     <span className="rounded-full bg-stone-100 px-2.5 py-1 text-stone-700">
-                      {provider.supportsModelLoading ? "Can keep models ready" : "Provider-managed memory"}
+                      {provider.supportsModelLoading ? literal("Can keep models ready") : literal("Provider-managed memory")}
                     </span>
                     <span className="rounded-full bg-stone-100 px-2.5 py-1 text-stone-700">
-                      {provider.supportsStreaming ? "Streaming replies" : "Standard replies"}
+                      {provider.supportsStreaming ? literal("Streaming replies") : literal("Standard replies")}
                     </span>
                   </div>
                   {provider.notes.length > 0 ? (
@@ -3410,11 +3437,11 @@ export function ModelOperationsPanel({
             {adminStatusLabel}
           </span>
           <span className="ui-pill ui-pill-surface">
-            Version {version ?? cli.version ?? "Unknown"}
+            {literal("Version {version}", { version: version ?? cli.version ?? literal("Unknown") })}
           </span>
           {server.pid ? (
             <span className="ui-pill ui-pill-surface">
-              PID {server.pid}
+              {literal("PID {pid}", { pid: server.pid })}
             </span>
           ) : null}
           {cli.executablePath ? (
@@ -3424,45 +3451,45 @@ export function ModelOperationsPanel({
           ) : null}
           {catalogFetchedAt ? (
             <span className="ui-pill ui-pill-surface">
-              Catalog {new Date(catalogFetchedAt).toLocaleTimeString()}
+              {literal("Catalog {time}", { time: new Date(catalogFetchedAt).toLocaleTimeString() })}
             </span>
           ) : null}
         </div>
 
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-muted">
-            Last sync {new Date(fetchedAt).toLocaleTimeString()}
+            {literal("Last sync {time}", { time: new Date(fetchedAt).toLocaleTimeString() })}
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <button
-              aria-label="Ensure the Ollama server is running locally"
+              aria-label={literal("Ensure the Ollama server is running locally")}
               className="ui-button ui-button-primary px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
               data-help-id="models.start-service"
               disabled={!canStartServer || isStartingServer || adminLocked}
               type="button"
               onClick={ensureServerRunning}
             >
-              {isStartingServer ? "Starting Ollama..." : server.canReachApi ? "Ollama ready" : "Start Ollama"}
+              {isStartingServer ? literal("Starting Ollama...") : server.canReachApi ? literal("Ollama ready") : literal("Start Ollama")}
             </button>
             <button
-              aria-label="Refresh the model library and current Ollama status"
+              aria-label={literal("Refresh the model library and current Ollama status")}
               className="ui-button ui-button-secondary px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
               data-help-id="models.refresh"
               disabled={isRefreshing || isPulling || isLoadingCatalog}
               type="button"
               onClick={refreshStatus}
             >
-              {isRefreshing ? "Refreshing..." : "Refresh"}
+              {isRefreshing ? literal("Refreshing...") : literal("Refresh")}
             </button>
             {auth.authEnabled ? (
               currentUser?.role === "admin" ? null : auth.authenticated ? (
                 <button
-                  aria-label="Sign out the current admin session"
+                  aria-label={literal("Sign out the current admin session")}
                   className="ui-button ui-button-secondary px-4 py-2 text-sm"
                   type="button"
                   onClick={logout}
                 >
-                  Sign out admin
+                  {literal("Sign out admin")}
                 </button>
               ) : null
             ) : null}
@@ -3472,31 +3499,31 @@ export function ModelOperationsPanel({
         {userCount === 0 && auth.authEnabled && !auth.authenticated ? (
           <form className="theme-surface-soft mt-6 space-y-3 rounded-[28px] border-dashed p-4 sm:p-5" onSubmit={login}>
             <div>
-              <p className="eyebrow text-muted">Admin session</p>
+              <p className="eyebrow text-muted">{literal("Admin session")}</p>
               <p className="mt-2 text-sm leading-6 text-muted">
-                Download and remove actions require the admin password configured in the environment.
+                {literal("Download and remove actions require the admin password configured in the environment.")}
               </p>
             </div>
             <div className="flex flex-col gap-3 sm:flex-row">
               <label className="sr-only" htmlFor="admin-password-input">
-                Admin password
+                {literal("Admin password")}
               </label>
               <input
                 id="admin-password-input"
-                aria-label="Admin password"
+                aria-label={literal("Admin password")}
                 className="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
-                placeholder="Admin password"
+                placeholder={literal("Admin password")}
                 type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
               />
               <button
-                aria-label="Unlock admin controls"
+                aria-label={literal("Unlock admin controls")}
                 className="ui-button ui-button-primary px-5 py-3 text-sm disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={!password.trim() || isAuthenticating}
                 type="submit"
               >
-                {isAuthenticating ? "Signing in..." : "Unlock admin"}
+                {isAuthenticating ? literal("Signing in...") : literal("Unlock admin")}
               </button>
             </div>
           </form>
@@ -3512,7 +3539,7 @@ export function ModelOperationsPanel({
           <div className="theme-surface-soft flex flex-col gap-3 rounded-[24px] px-4 py-4">
             <div className="grid gap-2 sm:grid-cols-2">
                 <button
-                  aria-label="Show the full Ollama model catalog and refresh the catalog list"
+                  aria-label={literal("Show the full Ollama model catalog and refresh the catalog list")}
                   aria-pressed={modelLibraryFilter === "all"}
                   className={`ui-button min-h-[3.35rem] w-full justify-between px-4 py-3 text-sm ${
                     modelLibraryFilter === "all"
@@ -3528,7 +3555,7 @@ export function ModelOperationsPanel({
                   }}
                 >
                   <span className="flex items-center gap-2">
-                    <span>{isLoadingCatalog ? "Refreshing..." : "All models"}</span>
+                    <span>{isLoadingCatalog ? literal("Refreshing...") : literal("All models")}</span>
                     <span aria-hidden="true">↻</span>
                   </span>
                   <span className="rounded-full bg-black/10 px-2 py-0.5 text-xs font-semibold">
@@ -3536,7 +3563,7 @@ export function ModelOperationsPanel({
                   </span>
                 </button>
                 <button
-                  aria-label="Show installed models only"
+                  aria-label={literal("Show installed models only")}
                   aria-pressed={modelLibraryFilter === "installed"}
                   className={`ui-button min-h-[3.35rem] w-full justify-between px-4 py-3 text-sm ${
                     modelLibraryFilter === "installed"
@@ -3547,13 +3574,13 @@ export function ModelOperationsPanel({
                   type="button"
                   onClick={() => setModelLibraryFilter("installed")}
                 >
-                  Downloaded
+                  {literal("Downloaded")}
                   <span className="ml-2 rounded-full bg-black/10 px-2 py-0.5 text-xs font-semibold">
                     {installedLibraryModelCount}
                   </span>
                 </button>
                 <button
-                  aria-label="Show only models with active runtimes"
+                  aria-label={literal("Show only models with active runtimes")}
                   aria-pressed={modelLibraryFilter === "running"}
                   className={`ui-button min-h-[3.35rem] w-full justify-between px-4 py-3 text-sm ${
                     modelLibraryFilter === "running"
@@ -3564,41 +3591,41 @@ export function ModelOperationsPanel({
                   type="button"
                   onClick={() => setModelLibraryFilter("running")}
                 >
-                  Ready now
+                  {literal("Ready now")}
                   <span className="ml-2 rounded-full bg-black/10 px-2 py-0.5 text-xs font-semibold">
                     {runningLibraryModelCount}
                   </span>
                 </button>
                 <div className="min-h-[3.35rem]">
                 <label className="sr-only" htmlFor="model-library-sort">
-                  Sort installed models
+                  {literal("Sort installed models")}
                 </label>
                 <select
                   id="model-library-sort"
-                  aria-label="Sort installed models"
+                  aria-label={literal("Sort installed models")}
                   className="min-h-[3.35rem] w-full rounded-full border border-line bg-white px-4 py-3 text-sm font-semibold text-foreground outline-none"
                   value={modelLibrarySort}
                   onChange={(event) => setModelLibrarySort(event.target.value as ModelLibrarySort)}
                 >
-                  <option value="recent">Latest update</option>
-                  <option value="name">Name</option>
-                  <option value="size">Largest size</option>
+                  <option value="recent">{literal("Latest update")}</option>
+                  <option value="name">{literal("Name")}</option>
+                  <option value="size">{literal("Largest size")}</option>
                 </select>
                 </div>
             </div>
             {catalogError ? (
               <p className="text-xs text-amber-900">
-                Library refresh failed: {catalogError}
+                {literal("Library refresh failed: {error}", { error: catalogError })}
               </p>
             ) : null}
             {libraryModels.length > 0 ? (
               <div className="theme-surface-panel space-y-3 rounded-[24px] px-4 py-4">
               <div ref={modelPickerRef} className="relative">
                 <p className="px-3 py-2 text-sm font-semibold italic text-muted">
-                  Choose one model below, then use the action card to download it, make it ready, stop it, or remove it.
+                  {literal("Choose one model below, then use the action card to download it, make it ready, stop it, or remove it.")}
                 </p>
                 <label className="eyebrow text-muted" htmlFor="model-library-picker-input">
-                  Model picker
+                  {literal("Model picker")}
                 </label>
                 <div className="theme-surface-input mt-3 flex items-center gap-2 rounded-[24px] px-3 py-2">
                   <input
@@ -3606,10 +3633,10 @@ export function ModelOperationsPanel({
                     aria-autocomplete="list"
                     aria-controls="model-library-picker-listbox"
                     aria-expanded={isModelPickerOpen}
-                    aria-label="Choose a model from the library"
+                    aria-label={literal("Choose a model from the library")}
                     aria-haspopup="listbox"
                     className="min-w-0 flex-1 bg-transparent px-2 py-2 text-sm text-foreground outline-none"
-                    placeholder="Search models or use the arrow"
+                    placeholder={literal("Search models or use the arrow")}
                     role="combobox"
                     value={modelPickerInputValue}
                     onChange={(event) => {
@@ -3628,7 +3655,7 @@ export function ModelOperationsPanel({
                     onFocus={() => setIsModelPickerOpen(true)}
                   />
                   <button
-                    aria-label={isModelPickerOpen ? "Collapse model picker options" : "Expand model picker options"}
+                    aria-label={isModelPickerOpen ? literal("Collapse model picker options") : literal("Expand model picker options")}
                     className="ui-button ui-button-secondary ui-button-icon h-10 w-10 text-sm"
                     type="button"
                     onClick={() => setIsModelPickerOpen((current) => !current)}
@@ -3640,7 +3667,7 @@ export function ModelOperationsPanel({
                   <div className="theme-surface-elevated absolute left-0 right-0 z-20 mt-2 overflow-hidden rounded-[24px] backdrop-blur-xl">
                     <div
                       id="model-library-picker-listbox"
-                      aria-label="Filtered model options"
+                      aria-label={literal("Filtered model options")}
                       className="max-h-80 overflow-y-auto p-2"
                       role="listbox"
                     >
@@ -3665,10 +3692,10 @@ export function ModelOperationsPanel({
                           <span className="text-xs leading-5 text-muted">{model.description}</span>
                           <span className="flex flex-wrap gap-2 text-[11px] font-semibold">
                             {model.installed ? (
-                              <span className="rounded-full bg-sky-100 px-2.5 py-1 text-sky-900">Downloaded</span>
+                              <span className="rounded-full bg-sky-100 px-2.5 py-1 text-sky-900">{literal("Downloaded")}</span>
                             ) : null}
                             {model.running ? (
-                              <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-emerald-900">Ready</span>
+                              <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-emerald-900">{literal("Ready")}</span>
                             ) : null}
                             {model.slug ? (
                               <span className="rounded-full bg-stone-100 px-2.5 py-1 text-stone-700">{model.slug}</span>
@@ -3677,13 +3704,16 @@ export function ModelOperationsPanel({
                         </button>
                       )) : (
                         <div className="rounded-[20px] px-4 py-4 text-sm text-muted">
-                          No models match the current library scope.
+                          {literal("No models match the current library scope.")}
                         </div>
                       )}
                     </div>
                     {visibleModelOverflowCount > 0 ? (
                       <div className="border-t border-line px-4 py-3 text-xs text-muted">
-                        {visibleModelOverflowCount} more model{visibleModelOverflowCount === 1 ? "" : "s"} match. Keep typing to narrow the list.
+                        {literal("{count} more model{suffix} match. Keep typing to narrow the list.", {
+                          count: visibleModelOverflowCount,
+                          suffix: visibleModelOverflowCount === 1 ? "" : "s",
+                        })}
                       </div>
                     ) : null}
                   </div>
@@ -3697,10 +3727,10 @@ export function ModelOperationsPanel({
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="text-lg font-semibold text-foreground">{selectedLibraryModel.displayName}</p>
                         {selectedLibraryModel.installed ? (
-                          <span className="ui-pill ui-pill-surface">Downloaded</span>
+                          <span className="ui-pill ui-pill-surface">{literal("Downloaded")}</span>
                         ) : null}
                         {selectedLibraryModel.running ? (
-                          <span className="ui-pill ui-pill-success">Ready now</span>
+                          <span className="ui-pill ui-pill-success">{literal("Ready now")}</span>
                         ) : null}
                         {selectedLibraryModel.slug ? (
                           <span className="ui-pill ui-pill-neutral">{selectedLibraryModel.slug}</span>
@@ -3709,18 +3739,18 @@ export function ModelOperationsPanel({
                       <p className="mt-3 max-w-3xl text-sm leading-6 text-muted">{selectedLibraryModel.description}</p>
                       <div className="mt-4 flex flex-wrap gap-2 text-xs text-muted">
                         {selectedLibraryModel.size !== null ? (
-                          <span className="ui-pill ui-pill-surface">Size {formatByteCount(selectedLibraryModel.size) ?? "Unknown"}</span>
+                          <span className="ui-pill ui-pill-surface">{literal("Size {size}", { size: formatByteCount(selectedLibraryModel.size) ?? literal("Unknown") })}</span>
                         ) : null}
                         {selectedLibraryModel.modifiedAt ? (
-                          <span className="ui-pill ui-pill-surface">Updated {new Date(selectedLibraryModel.modifiedAt).toLocaleString()}</span>
+                          <span className="ui-pill ui-pill-surface">{literal("Updated {time}", { time: new Date(selectedLibraryModel.modifiedAt).toLocaleString() })}</span>
                         ) : null}
-                        <span className="ui-pill ui-pill-surface">Download name {selectedLibraryModel.pullTarget}</span>
+                        <span className="ui-pill ui-pill-surface">{literal("Download name {name}", { name: selectedLibraryModel.pullTarget })}</span>
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 lg:max-w-sm lg:justify-end">
                       {!selectedLibraryModel.installed ? (
                         <button
-                          aria-label={`Download model ${selectedLibraryModel.pullTarget}`}
+                          aria-label={literal("Download model {model}", { model: selectedLibraryModel.pullTarget })}
                           className="ui-button ui-button-primary px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
                           data-help-id="models.download"
                           disabled={isPulling || adminLocked || !isReachable}
@@ -3729,12 +3759,12 @@ export function ModelOperationsPanel({
                             void startPull(selectedLibraryModel.pullTarget);
                           }}
                         >
-                          {isPulling ? "Downloading..." : "Download"}
+                          {isPulling ? literal("Downloading...") : literal("Download")}
                         </button>
                       ) : null}
                       {selectedLibraryModel.installed && !selectedLibraryModel.running ? (
                         <button
-                          aria-label={`Start model ${selectedLibraryModel.installedModelNames[0] ?? selectedLibraryModel.displayName}`}
+                          aria-label={literal("Start model {model}", { model: selectedLibraryModel.installedModelNames[0] ?? selectedLibraryModel.displayName })}
                           className="ui-button ui-button-success px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
                           data-help-id="models.make-ready"
                           disabled={runtimeBusyModel === (selectedLibraryModel.installedModelNames[0] ?? selectedLibraryModel.displayName) || adminLocked || !cli.isInstalled}
@@ -3743,12 +3773,12 @@ export function ModelOperationsPanel({
                             void changeModelRuntime(selectedLibraryModel.installedModelNames[0] ?? selectedLibraryModel.displayName, "start");
                           }}
                         >
-                          {runtimeBusyModel === (selectedLibraryModel.installedModelNames[0] ?? selectedLibraryModel.displayName) ? "Preparing..." : "Make ready"}
+                          {runtimeBusyModel === (selectedLibraryModel.installedModelNames[0] ?? selectedLibraryModel.displayName) ? literal("Preparing...") : literal("Make ready")}
                         </button>
                       ) : null}
                       {selectedLibraryModel.running ? (
                         <button
-                          aria-label={`Stop model ${selectedLibraryModel.runningModelNames[0] ?? selectedLibraryModel.displayName}`}
+                          aria-label={literal("Stop model {model}", { model: selectedLibraryModel.runningModelNames[0] ?? selectedLibraryModel.displayName })}
                           className="ui-button ui-button-secondary px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
                           data-help-id="models.stop-runtime"
                           disabled={runtimeBusyModel === (selectedLibraryModel.runningModelNames[0] ?? selectedLibraryModel.displayName) || adminLocked || !cli.isInstalled}
@@ -3757,43 +3787,46 @@ export function ModelOperationsPanel({
                             void changeModelRuntime(selectedLibraryModel.runningModelNames[0] ?? selectedLibraryModel.displayName, "stop");
                           }}
                         >
-                          {runtimeBusyModel === (selectedLibraryModel.runningModelNames[0] ?? selectedLibraryModel.displayName) ? "Stopping..." : "Stop"}
+                          {runtimeBusyModel === (selectedLibraryModel.runningModelNames[0] ?? selectedLibraryModel.displayName) ? literal("Stopping...") : literal("Stop")}
                         </button>
                       ) : null}
                       {selectedLibraryModel.installed ? (
                         <button
-                          aria-label={`${busyModel === selectedLibraryModel.installedModelNames[0] ? "Deleting" : "Delete"} model ${selectedLibraryModel.installedModelNames[0] ?? selectedLibraryModel.displayName}`}
+                          aria-label={literal("{action} model {model}", {
+                            action: busyModel === selectedLibraryModel.installedModelNames[0] ? literal("Deleting") : literal("Delete"),
+                            model: selectedLibraryModel.installedModelNames[0] ?? selectedLibraryModel.displayName,
+                          })}
                           className="ui-button ui-button-danger px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
                           data-help-id="models.delete"
                           disabled={busyModel === selectedLibraryModel.installedModelNames[0] || isPulling || adminLocked || !isReachable}
                           type="button"
                           onClick={() => removeModel(selectedLibraryModel.installedModelNames[0] ?? selectedLibraryModel.displayName)}
                         >
-                          {busyModel === selectedLibraryModel.installedModelNames[0] ? "Deleting..." : "Delete"}
+                          {busyModel === selectedLibraryModel.installedModelNames[0] ? literal("Deleting...") : literal("Delete")}
                         </button>
                       ) : null}
                       {isPulling ? (
                         <button
-                          aria-label="Cancel the active model download"
+                          aria-label={literal("Cancel the active model download")}
                           className="ui-button ui-button-secondary px-4 py-2 text-sm"
                           data-help-id="models.cancel-download"
                           type="button"
                           onClick={cancelPull}
                         >
-                          Cancel download
+                          {literal("Cancel download")}
                         </button>
                       ) : null}
                     </div>
                   </div>
                   <div className="ui-control-band mt-4 flex flex-wrap items-center gap-2 text-xs text-muted">
-                    <span className="font-semibold">Selected model</span>
+                    <span className="font-semibold">{literal("Selected model")}</span>
                     {selectedLibraryModel.installedModelNames.length > 0 ? (
-                      <span>Downloaded names: {selectedLibraryModel.installedModelNames.join(", ")}</span>
+                      <span>{literal("Downloaded names: {names}", { names: selectedLibraryModel.installedModelNames.join(", ") })}</span>
                     ) : (
-                      <span>Not downloaded to this device yet.</span>
+                      <span>{literal("Not downloaded to this device yet.")}</span>
                     )}
                     {selectedLibraryModel.runningModelNames.length > 0 ? (
-                      <span>Ready now: {selectedLibraryModel.runningModelNames.join(", ")}</span>
+                      <span>{literal("Ready now: {names}", { names: selectedLibraryModel.runningModelNames.join(", ") })}</span>
                     ) : null}
                   </div>
                   <p className={`mt-3 text-xs ${adminLocked ? "text-amber-900" : "text-muted"}`}>
@@ -3806,15 +3839,15 @@ export function ModelOperationsPanel({
           </div>
           {libraryModels.length === 0 ? (
             <div className="theme-surface-panel rounded-[24px] border-dashed px-4 py-4 text-sm text-muted xl:h-full">
-              No model inventory is available yet.
+              {literal("No model inventory is available yet.")}
             </div>
           ) : visibleModels.length === 0 ? (
             <div className="theme-surface-panel rounded-[24px] border-dashed px-4 py-4 text-sm text-muted xl:h-full">
               {modelLibraryFilter === "running"
-                ? "No ready models match the current library scope."
+                ? literal("No ready models match the current library scope.")
                 : modelLibraryFilter === "installed"
-                  ? "No downloaded models match the current search."
-                  : "No models match the current search."}
+                  ? literal("No downloaded models match the current search.")
+                  : literal("No models match the current search.")}
             </div>
           ) : null}
         </div>
@@ -3823,23 +3856,23 @@ export function ModelOperationsPanel({
 
       {showModelsView ? (
       <div className={panelShellClassName} data-help-context="models">
-        <p className="section-label text-xs font-semibold">Download progress</p>
+        <p className="section-label text-xs font-semibold">{literal("Download progress")}</p>
         <h2 className="mt-3 text-2xl font-semibold tracking-tight text-foreground">
-          Live transfer log
+          {literal("Live transfer log")}
         </h2>
         <p className="mt-3 text-sm leading-6 text-muted">
           {auth.authEnabled
             ? currentUser?.role === "admin"
-              ? "Admin account active. Privileged model operations are unlocked."
+              ? literal("Admin account active. Privileged model operations are unlocked.")
               : auth.authenticated
-              ? "Admin session active. Privileged model operations are unlocked."
-              : "Admin auth is enabled. Unlock the panel to run download and remove actions."
+              ? literal("Admin session active. Privileged model operations are unlocked.")
+              : literal("Admin auth is enabled. Unlock the panel to run download and remove actions.")
             : currentUser?.role === "admin"
-              ? "Local admin account active. Privileged model operations are unlocked without the fallback environment password flow."
-              : "Admin auth is currently disabled. Configure environment secrets to require sign-in."}
+              ? literal("Local admin account active. Privileged model operations are unlocked without the fallback environment password flow.")
+              : literal("Admin auth is currently disabled. Configure environment secrets to require sign-in.")}
         </p>
-        <div aria-busy={isPulling} aria-label="Streaming model download log" aria-live="polite" role="log" className="mt-5 max-h-72 overflow-y-auto rounded-[24px] bg-[#201812] px-4 py-4 font-mono text-xs leading-6 text-[#f3eadf]">
-          {pullLog.length > 0 ? pullLog.join("\n") : "No download has started yet."}
+        <div aria-busy={isPulling} aria-label={literal("Streaming model download log")} aria-live="polite" role="log" className="mt-5 max-h-72 overflow-y-auto rounded-[24px] bg-[#201812] px-4 py-4 font-mono text-xs leading-6 text-[#f3eadf]">
+          {pullLog.length > 0 ? pullLog.join("\n") : literal("No download has started yet.")}
         </div>
       </div>
       ) : null}
@@ -3848,13 +3881,13 @@ export function ModelOperationsPanel({
       <div className={panelShellClassName} data-help-context="jobs">
         <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="section-label text-xs font-semibold">Jobs</p>
+            <p className="section-label text-xs font-semibold">{literal("Jobs")}</p>
             <h2 className="mt-3 text-2xl font-semibold tracking-tight text-foreground">
-              Recent job history
+              {literal("Recent job history")}
             </h2>
             {isPageSurface ? (
               <p className="mt-3 max-w-3xl text-sm leading-6 text-muted">
-                Queue operations, retries, cancellations, analytics, and pinned job inspection are elevated into a dedicated operations surface for desktop administration.
+                {literal("Queue operations, retries, cancellations, analytics, and pinned job inspection are elevated into a dedicated operations surface for desktop administration.")}
               </p>
             ) : null}
           </div>
@@ -3881,9 +3914,9 @@ export function ModelOperationsPanel({
               }}
             >
               {isRunningBulkAction
-                ? "Retrying failed..."
+                ? literal("Retrying failed...")
                 : confirmBulkRetry
-                  ? `Confirm ${bulkRetryLabel.toLowerCase()}`
+                  ? literal("Confirm {label}", { label: bulkRetryLabel.toLowerCase() })
                   : bulkRetryLabel}
             </button>
             <button
@@ -3908,9 +3941,9 @@ export function ModelOperationsPanel({
               }}
             >
               {isRunningBulkAction
-                ? "Cancelling queued..."
+                ? literal("Cancelling queued...")
                 : confirmBulkCancel
-                  ? `Confirm ${bulkCancelLabel.toLowerCase()}`
+                  ? literal("Confirm {label}", { label: bulkCancelLabel.toLowerCase() })
                   : bulkCancelLabel}
             </button>
             {(confirmBulkRetry || confirmBulkCancel) && !isRunningBulkAction ? (
@@ -3923,7 +3956,7 @@ export function ModelOperationsPanel({
                   setConfirmBulkCancel(false);
                 }}
               >
-                Clear confirm
+                {literal("Clear confirm")}
               </button>
             ) : null}
             <button
@@ -3935,10 +3968,10 @@ export function ModelOperationsPanel({
                 void refreshJobs("manual");
               }}
             >
-              {isLoadingJobs ? "Refreshing..." : "Refresh jobs"}
+              {isLoadingJobs ? literal("Refreshing...") : literal("Refresh jobs")}
             </button>
             <button
-              aria-label={compactJobHints ? "Switch to expanded jobs hints" : "Switch to compact jobs hints"}
+              aria-label={compactJobHints ? literal("Switch to expanded jobs hints") : literal("Switch to compact jobs hints")}
               aria-pressed={compactJobHints}
               className={`ui-button shrink-0 px-4 py-2 text-sm ${
                 compactJobHints
@@ -3949,64 +3982,64 @@ export function ModelOperationsPanel({
               type="button"
               onClick={() => setCompactJobHints((current) => !current)}
             >
-              {compactJobHints ? "Expanded hints" : "Compact hints"}
+              {compactJobHints ? literal("Expanded hints") : literal("Compact hints")}
             </button>
           </div>
         </div>
         {isPageSurface ? (
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
             <div className="theme-surface-soft rounded-[24px] px-4 py-4">
-              <p className="eyebrow text-muted">Jobs in view</p>
+              <p className="eyebrow text-muted">{literal("Jobs in view")}</p>
               <p className="mt-2 text-base font-semibold text-foreground">{scopedJobSummary.total}</p>
-              <p className="mt-1 text-xs leading-5 text-muted">Current filtered snapshot across queue, running, and terminal states.</p>
+              <p className="mt-1 text-xs leading-5 text-muted">{literal("Current filtered snapshot across queue, running, and terminal states.")}</p>
             </div>
             <div className="theme-surface-soft rounded-[24px] px-4 py-4">
-              <p className="eyebrow text-muted">Active now</p>
+              <p className="eyebrow text-muted">{literal("Active now")}</p>
               <p className="mt-2 text-base font-semibold text-foreground">{scopedJobSummary.queued + scopedJobSummary.running}</p>
-              <p className="mt-1 text-xs leading-5 text-muted">Queued and running jobs still changing under auto-refresh.</p>
+              <p className="mt-1 text-xs leading-5 text-muted">{literal("Queued and running jobs still changing under auto-refresh.")}</p>
             </div>
             <div className="theme-surface-soft rounded-[24px] px-4 py-4">
-              <p className="eyebrow text-muted">Pinned detail</p>
-              <p className="mt-2 text-base font-semibold text-foreground">{selectedJob ? selectedJob.target : "No selection"}</p>
-              <p className="mt-1 text-xs leading-5 text-muted">Keep one job pinned while pivoting the visible list and analytics scope.</p>
+              <p className="eyebrow text-muted">{literal("Pinned detail")}</p>
+              <p className="mt-2 text-base font-semibold text-foreground">{selectedJob ? selectedJob.target : literal("No selection")}</p>
+              <p className="mt-1 text-xs leading-5 text-muted">{literal("Keep one job pinned while pivoting the visible list and analytics scope.")}</p>
             </div>
           </div>
         ) : null}
         {isPageSurface ? (
           <div className="mt-3 grid gap-3 xl:grid-cols-3">
             <div className="theme-surface-soft rounded-[22px] px-4 py-4 text-sm text-muted">
-              <p className="eyebrow text-muted">Operator scope</p>
+              <p className="eyebrow text-muted">{literal("Operator scope")}</p>
               <p className="mt-2 text-sm font-semibold text-foreground">{getCurrentScopeBadgeText(jobFilter, jobTypeFilter, jobOwnershipFilter, jobSnapshotLimit)}</p>
               <p className="mt-2 text-xs leading-5">{getScopeSummaryText(jobFilter, jobTypeFilter, jobOwnershipFilter)}</p>
             </div>
             <div className="theme-surface-soft rounded-[22px] px-4 py-4 text-sm text-muted">
-              <p className="eyebrow text-muted">Bulk pull actions</p>
-              <p className="mt-2 text-sm font-semibold text-foreground">{canRunBulkPullActions ? `${jobBulkActions.queuedPulls} queued / ${jobBulkActions.retryablePulls} retryable` : "Delete-only view"}</p>
+              <p className="eyebrow text-muted">{literal("Bulk pull actions")}</p>
+              <p className="mt-2 text-sm font-semibold text-foreground">{canRunBulkPullActions ? literal("{queued} queued / {retryable} retryable", { queued: jobBulkActions.queuedPulls, retryable: jobBulkActions.retryablePulls }) : literal("Delete-only view")}</p>
               <p className="mt-2 text-xs leading-5">{bulkScopeSummaryText}</p>
             </div>
             <div className="theme-surface-soft rounded-[22px] px-4 py-4 text-sm text-muted">
-              <p className="eyebrow text-muted">Refresh cadence</p>
+              <p className="eyebrow text-muted">{literal("Refresh cadence")}</p>
               <p className="mt-2 text-sm font-semibold text-foreground">{jobsRefreshStatus.label}</p>
-              <p className="mt-2 text-xs leading-5">{hasActiveJobs ? "Auto-refresh remains active while queue work is changing." : `Latest snapshot ${jobsRefreshRelativeTime}.`}</p>
+              <p className="mt-2 text-xs leading-5">{hasActiveJobs ? literal("Auto-refresh remains active while queue work is changing.") : literal("Latest snapshot {time}.", { time: jobsRefreshRelativeTime })}</p>
             </div>
           </div>
         ) : null}
         <div className="ui-control-band mt-3 -mx-1 flex items-center gap-2 overflow-x-auto px-1 text-xs text-muted [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
-          <span className="font-semibold">Bulk scope</span>
+          <span className="font-semibold">{literal("Bulk scope")}</span>
           <span>{bulkScopeSummaryText}</span>
           {canRunBulkPullActions ? (
             <>
               <span className="ui-pill ui-pill-surface">
-                Queued {jobBulkActions.queuedPulls}
+                {literal("Queued {count}", { count: jobBulkActions.queuedPulls })}
               </span>
               <span className="ui-pill ui-pill-surface">
-                Retryable {jobBulkActions.retryablePulls}
+                {literal("Retryable {count}", { count: jobBulkActions.retryablePulls })}
               </span>
             </>
           ) : null}
         </div>
         <div className="ui-control-band mt-3 -mx-1 flex items-center gap-2 overflow-x-auto px-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
-          <span className="text-xs font-semibold text-muted">Current scope</span>
+          <span className="text-xs font-semibold text-muted">{literal("Current scope")}</span>
           <span className="ui-pill ui-pill-surface">
             {getCurrentScopeBadgeText(jobFilter, jobTypeFilter, jobOwnershipFilter, jobSnapshotLimit)}
           </span>
@@ -4018,12 +4051,12 @@ export function ModelOperationsPanel({
               void copyCurrentScope();
             }}
           >
-            Copy scope
+            {literal("Copy scope")}
           </button>
         </div>
         <div className="mt-5 space-y-3">
           <div className="ui-control-band -mx-1 flex items-center gap-2 overflow-x-auto px-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
-            <span className="text-xs font-semibold text-muted">Ownership</span>
+            <span className="text-xs font-semibold text-muted">{literal("Ownership")}</span>
             {(["all", "mine"] as const).map((value) => (
               <button
                 key={value}
@@ -4043,7 +4076,7 @@ export function ModelOperationsPanel({
             ))}
           </div>
           <div className="ui-control-band -mx-1 flex items-center gap-2 overflow-x-auto px-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
-            <span className="text-xs font-semibold text-muted">Operator shortcuts</span>
+            <span className="text-xs font-semibold text-muted">{literal("Operator shortcuts")}</span>
             {([
               ["my-queued", "My queued"],
               ["my-failed-pulls", "My failed pulls"],
@@ -4104,32 +4137,32 @@ export function ModelOperationsPanel({
             })}
             {activeJobsQuickScope ? (
               <span className="ui-pill ui-pill-surface">
-                Shortcut {getJobsQuickScopeLabel(activeJobsQuickScope)}
+                {literal("Shortcut {label}", { label: getJobsQuickScopeLabel(activeJobsQuickScope) })}
               </span>
             ) : null}
           </div>
           <div className="ui-control-band -mx-1 flex items-center gap-2 overflow-x-auto px-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
-            <span className="text-xs font-semibold text-muted">Quick pivot</span>
+            <span className="text-xs font-semibold text-muted">{literal("Quick pivot")}</span>
             <span className="ui-pill ui-pill-surface">
               {jobFilter === "all" ? "All statuses" : `Status: ${jobFilter === "completed" ? "succeeded" : jobFilter}`}
             </span>
             <span className="ui-pill ui-pill-surface">
-              {getJobFilterFamilyLabel(jobFilter)}
+              {getJobFilterFamilyLabel(jobFilter, uiLanguagePreference)}
             </span>
             {jobFilter !== "all" ? (
               <button
-                aria-label="Reset the status quick pivot to all jobs"
+                aria-label={literal("Reset the status quick pivot to all jobs")}
                 className="ui-button ui-button-chip ui-button-secondary px-3 py-1 text-xs"
                 data-help-id="jobs.reset-pivots"
                 type="button"
                 onClick={() => setJobFilter("all")}
               >
-                Reset pivots
+                {literal("Reset pivots")}
               </button>
             ) : null}
             {(jobFilter !== "all" || jobTypeFilter !== "all" || jobOwnershipFilter !== "all") ? (
               <button
-                aria-label="Clear all jobs filters and return to the full jobs scope"
+                aria-label={literal("Clear all jobs filters and return to the full jobs scope")}
                 className="ui-button ui-button-chip ui-button-secondary px-3 py-1 text-xs"
                 data-help-id="jobs.clear-filters"
                 type="button"
@@ -4139,7 +4172,7 @@ export function ModelOperationsPanel({
                   setJobOwnershipFilter("all");
                 }}
               >
-                Clear all filters
+                {literal("Clear all filters")}
               </button>
             ) : null}
           </div>
@@ -4150,7 +4183,7 @@ export function ModelOperationsPanel({
             </p>
           ) : null}
           <div className="ui-control-band -mx-1 flex items-center gap-2 overflow-x-auto px-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
-            <span className="text-xs font-semibold text-muted">Terminal only</span>
+            <span className="text-xs font-semibold text-muted">{literal("Terminal only")}</span>
             {([
               ["failed", "Failed"],
               ["cancelled", "Cancelled"],
@@ -4173,7 +4206,7 @@ export function ModelOperationsPanel({
             ))}
           </div>
           <div className="ui-control-band -mx-1 flex items-center gap-2 overflow-x-auto px-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
-            <span className="text-xs font-semibold text-muted">Active only</span>
+            <span className="text-xs font-semibold text-muted">{literal("Active only")}</span>
             {([
               ["queued", "Queued"],
               ["running", "Running"],
@@ -4196,13 +4229,13 @@ export function ModelOperationsPanel({
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
             <button
-              aria-label={jobFilter === "queued" ? "Show all jobs instead of queued only" : "Show only queued jobs"}
+              aria-label={jobFilter === "queued" ? literal("Show all jobs instead of queued only") : literal("Show only queued jobs")}
               aria-pressed={jobFilter === "queued"}
               className={`rounded-[24px] px-4 py-4 text-left ${getSummaryCardClasses(jobFilter === "queued")}`}
               type="button"
               onClick={() => setJobFilter((current) => current === "queued" ? "all" : "queued")}
             >
-              <p className="eyebrow text-muted">Queued</p>
+              <p className="eyebrow text-muted">{literal("Queued")}</p>
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <p className="text-2xl font-semibold text-foreground">{scopedJobSummary.queued}</p>
                 {ownerScopedJobSummary ? (
@@ -4232,22 +4265,22 @@ export function ModelOperationsPanel({
               )}
             </button>
             <button
-              aria-label={jobFilter === "running" ? "Show all jobs instead of running only" : "Show only running jobs"}
+              aria-label={jobFilter === "running" ? literal("Show all jobs instead of running only") : literal("Show only running jobs")}
               aria-pressed={jobFilter === "running"}
               className={`rounded-[24px] px-4 py-4 text-left ${getSummaryCardClasses(jobFilter === "running")}`}
               type="button"
               onClick={() => setJobFilter((current) => current === "running" ? "all" : "running")}
             >
-              <p className="eyebrow text-muted">Running</p>
+              <p className="eyebrow text-muted">{literal("Running")}</p>
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <p className="text-2xl font-semibold text-foreground">{scopedJobSummary.running}</p>
                 {ownerScopedJobSummary ? (
                   <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-foreground">
                     {jobOwnershipFilter === "mine"
-                      ? `${ownerScopedJobSummary.running} yours`
+                      ? literal("{count} yours", { count: ownerScopedJobSummary.running })
                       : ownerScopedJobSummary.running > 0
-                        ? `Yours ${ownerScopedJobSummary.running}`
-                        : "None yours"}
+                        ? literal("Yours {count}", { count: ownerScopedJobSummary.running })
+                        : literal("None yours")}
                   </span>
                 ) : null}
                 {runningSummaryDeltaBadge ? (
@@ -4261,29 +4294,29 @@ export function ModelOperationsPanel({
               </div>
               {compactJobHints ? (
                 <div className="mt-2 flex items-center justify-end">
-                  <HintButton label="Running jobs help" text={runningCountHelpText} />
+                  <HintButton label={literal("Running jobs help")} text={runningCountHelpText} />
                 </div>
               ) : (
                 <p className="mt-2 text-xs leading-6 text-muted">{runningCountHelpText}</p>
               )}
             </button>
             <button
-              aria-label={jobFilter === "failed" ? "Show all jobs instead of failed only" : "Show only failed jobs"}
+              aria-label={jobFilter === "failed" ? literal("Show all jobs instead of failed only") : literal("Show only failed jobs")}
               aria-pressed={jobFilter === "failed"}
               className={`rounded-[24px] px-4 py-4 text-left ${getSummaryCardClasses(jobFilter === "failed")}`}
               type="button"
               onClick={() => setJobFilter((current) => current === "failed" ? "all" : "failed")}
             >
-              <p className="eyebrow text-muted">Failed</p>
+              <p className="eyebrow text-muted">{literal("Failed")}</p>
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <p className="text-2xl font-semibold text-foreground">{scopedJobSummary.failed}</p>
                 {ownerScopedJobSummary ? (
                   <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-foreground">
                     {jobOwnershipFilter === "mine"
-                      ? `${ownerScopedJobSummary.failed} yours`
+                      ? literal("{count} yours", { count: ownerScopedJobSummary.failed })
                       : ownerScopedJobSummary.failed > 0
-                        ? `Yours ${ownerScopedJobSummary.failed}`
-                        : "None yours"}
+                        ? literal("Yours {count}", { count: ownerScopedJobSummary.failed })
+                        : literal("None yours")}
                   </span>
                 ) : null}
                 {failedSummaryDeltaBadge ? (
@@ -4297,29 +4330,29 @@ export function ModelOperationsPanel({
               </div>
               {compactJobHints ? (
                 <div className="mt-2 flex items-center justify-end">
-                  <HintButton label="Failed jobs help" text={failedCountHelpText} />
+                  <HintButton label={literal("Failed jobs help")} text={failedCountHelpText} />
                 </div>
               ) : (
                 <p className="mt-2 text-xs leading-6 text-muted">{failedCountHelpText}</p>
               )}
             </button>
             <button
-              aria-label={jobFilter === "cancelled" ? "Show all jobs instead of cancelled only" : "Show only cancelled jobs"}
+              aria-label={jobFilter === "cancelled" ? literal("Show all jobs instead of cancelled only") : literal("Show only cancelled jobs")}
               aria-pressed={jobFilter === "cancelled"}
               className={`rounded-[24px] px-4 py-4 text-left ${getSummaryCardClasses(jobFilter === "cancelled")}`}
               type="button"
               onClick={() => setJobFilter((current) => current === "cancelled" ? "all" : "cancelled")}
             >
-              <p className="eyebrow text-muted">Cancelled</p>
+              <p className="eyebrow text-muted">{literal("Cancelled")}</p>
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <p className="text-2xl font-semibold text-foreground">{scopedJobSummary.cancelled}</p>
                 {ownerScopedJobSummary ? (
                   <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-foreground">
                     {jobOwnershipFilter === "mine"
-                      ? `${ownerScopedJobSummary.cancelled} yours`
+                      ? literal("{count} yours", { count: ownerScopedJobSummary.cancelled })
                       : ownerScopedJobSummary.cancelled > 0
-                        ? `Yours ${ownerScopedJobSummary.cancelled}`
-                        : "None yours"}
+                        ? literal("Yours {count}", { count: ownerScopedJobSummary.cancelled })
+                        : literal("None yours")}
                   </span>
                 ) : null}
                 {cancelledSummaryDeltaBadge ? (
@@ -4333,29 +4366,29 @@ export function ModelOperationsPanel({
               </div>
               {compactJobHints ? (
                 <div className="mt-2 flex items-center justify-end">
-                  <HintButton label="Cancelled jobs help" text={cancelledCountHelpText} />
+                  <HintButton label={literal("Cancelled jobs help")} text={cancelledCountHelpText} />
                 </div>
               ) : (
                 <p className="mt-2 text-xs leading-6 text-muted">{cancelledCountHelpText}</p>
               )}
             </button>
             <button
-              aria-label={jobFilter === "completed" ? "Show all jobs instead of succeeded only" : "Show only succeeded jobs"}
+              aria-label={jobFilter === "completed" ? literal("Show all jobs instead of succeeded only") : literal("Show only succeeded jobs")}
               aria-pressed={jobFilter === "completed"}
               className={`rounded-[24px] px-4 py-4 text-left ${getSummaryCardClasses(jobFilter === "completed")}`}
               type="button"
               onClick={() => setJobFilter((current) => current === "completed" ? "all" : "completed")}
             >
-              <p className="eyebrow text-muted">Succeeded</p>
+              <p className="eyebrow text-muted">{literal("Succeeded")}</p>
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <p className="text-2xl font-semibold text-foreground">{scopedJobSummary.completed}</p>
                 {ownerScopedJobSummary ? (
                   <span className="ui-pill ui-pill-surface text-xs">
                     {jobOwnershipFilter === "mine"
-                      ? `${ownerScopedJobSummary.completed} yours`
+                      ? literal("{count} yours", { count: ownerScopedJobSummary.completed })
                       : ownerScopedJobSummary.completed > 0
-                        ? `Yours ${ownerScopedJobSummary.completed}`
-                        : "None yours"}
+                        ? literal("Yours {count}", { count: ownerScopedJobSummary.completed })
+                        : literal("None yours")}
                   </span>
                 ) : null}
                 {completedSummaryDeltaBadge ? (
@@ -4369,7 +4402,7 @@ export function ModelOperationsPanel({
               </div>
               {compactJobHints ? (
                 <div className="mt-2 flex items-center justify-end">
-                  <HintButton label="Succeeded jobs help" text={completedCountHelpText} />
+                  <HintButton label={literal("Succeeded jobs help")} text={completedCountHelpText} />
                 </div>
               ) : (
                 <p className="mt-2 text-xs leading-6 text-muted">{completedCountHelpText}</p>
@@ -4378,7 +4411,7 @@ export function ModelOperationsPanel({
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="ui-control-band sm:col-span-3 flex flex-wrap items-center gap-2 text-xs text-muted">
-              <span className="font-semibold">Analytics scope</span>
+              <span className="font-semibold">{literal("Analytics scope")}</span>
               <span className="ui-pill ui-pill-surface">
                 {analyticsOwnershipLabel}
               </span>
@@ -4396,7 +4429,7 @@ export function ModelOperationsPanel({
               <span className="ui-pill ui-pill-soft">{trendWindowText}</span>
             </div>
             <div className="theme-surface-panel rounded-[24px] px-4 py-4">
-              <p className="eyebrow text-muted">Avg pull wait</p>
+              <p className="eyebrow text-muted">{literal("Avg pull wait")}</p>
               <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted">
                 <span className="ui-pill ui-pill-surface">
                   {analyticsOwnershipLabel}
@@ -4413,7 +4446,7 @@ export function ModelOperationsPanel({
               <div className="mt-2 flex items-center gap-2">
                 <p className="text-xl font-semibold text-foreground">
                   {jobAnalytics.averagePullWaitMs === null
-                    ? "No data"
+                    ? literal("No data")
                     : formatDuration(jobAnalytics.averagePullWaitMs)}
                 </p>
                 <span className={`rounded-full px-3 py-1 text-xs font-semibold ${getTrendClasses(jobAnalytics.averagePullWaitTrend)}`}>
@@ -4422,8 +4455,8 @@ export function ModelOperationsPanel({
               </div>
               {compactJobHints ? (
                 <div className="mt-2 flex items-center justify-end gap-2">
-                  <HintButton label="Average pull wait help" text={averagePullWaitHelpText} />
-                  <HintButton label="Average pull wait trend window" text={trendWindowText} />
+                  <HintButton label={literal("Average pull wait help")} text={averagePullWaitHelpText} />
+                  <HintButton label={literal("Average pull wait trend window")} text={trendWindowText} />
                 </div>
               ) : (
                 <>
@@ -4434,7 +4467,7 @@ export function ModelOperationsPanel({
               )}
             </div>
             <div className="theme-surface-panel rounded-[24px] px-4 py-4">
-              <p className="eyebrow text-muted">Retry queued</p>
+              <p className="eyebrow text-muted">{literal("Retry queued")}</p>
               <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted">
                 <span className="ui-pill ui-pill-surface">
                   {analyticsOwnershipLabel}
@@ -4456,8 +4489,8 @@ export function ModelOperationsPanel({
               </div>
               {compactJobHints ? (
                 <div className="mt-2 flex items-center justify-end gap-2">
-                  <HintButton label="Retry queued help" text={retryQueuedHelpText} />
-                  <HintButton label="Retry queued trend window" text={trendWindowText} />
+                  <HintButton label={literal("Retry queued help")} text={retryQueuedHelpText} />
+                  <HintButton label={literal("Retry queued trend window")} text={trendWindowText} />
                 </div>
               ) : (
                 <>
@@ -4468,7 +4501,7 @@ export function ModelOperationsPanel({
               )}
             </div>
             <div className="theme-surface-panel rounded-[24px] px-4 py-4">
-              <p className="eyebrow text-muted">Failure rate</p>
+              <p className="eyebrow text-muted">{literal("Failure rate")}</p>
               <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted">
                 <span className="ui-pill ui-pill-surface">
                   {analyticsOwnershipLabel}
@@ -4492,8 +4525,8 @@ export function ModelOperationsPanel({
               </div>
               {compactJobHints ? (
                 <div className="mt-2 flex items-center justify-end gap-2">
-                  <HintButton label="Failure rate help" text={failureRateHelpText} />
-                  <HintButton label="Failure rate trend window" text={trendWindowText} />
+                  <HintButton label={literal("Failure rate help")} text={failureRateHelpText} />
+                  <HintButton label={literal("Failure rate trend window")} text={trendWindowText} />
                 </div>
               ) : (
                 <>
@@ -4551,11 +4584,11 @@ export function ModelOperationsPanel({
               </button>
             ))}
             <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-foreground">
-              {getJobTypeFamilyLabel(jobTypeFilter)}
+              {getJobTypeFamilyLabel(jobTypeFilter, uiLanguagePreference)}
             </span>
           </div>
           <div className="-mx-1 flex items-center gap-2 overflow-x-auto px-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
-            <span className="text-xs font-semibold text-muted">Snapshot</span>
+            <span className="text-xs font-semibold text-muted">{literal("Snapshot")}</span>
             {JOB_SNAPSHOT_LIMIT_OPTIONS.map((value) => (
               <button
                 key={value}
@@ -4576,22 +4609,22 @@ export function ModelOperationsPanel({
           {groupedJobs.length > 0 ? (
             <div className="-mx-1 flex gap-2 overflow-x-auto px-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
               <button
-                aria-label="Expand every visible job section"
+                aria-label={literal("Expand every visible job section")}
                 className="ui-button ui-button-secondary px-4 py-2 text-sm"
                 data-help-id="jobs.expand-all"
                 type="button"
                 onClick={expandAllSections}
               >
-                Expand all sections
+                {literal("Expand all sections")}
               </button>
               <button
-                aria-label="Collapse every visible job section"
+                aria-label={literal("Collapse every visible job section")}
                 className="ui-button ui-button-secondary px-4 py-2 text-sm"
                 data-help-id="jobs.collapse-all"
                 type="button"
                 onClick={collapseAllSections}
               >
-                Collapse all sections
+                {literal("Collapse all sections")}
               </button>
             </div>
           ) : null}
@@ -4599,10 +4632,13 @@ export function ModelOperationsPanel({
             <div className="rounded-[24px] border border-[var(--accent)]/30 bg-[color:color-mix(in_srgb,var(--accent)_8%,white)] px-4 py-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="eyebrow text-muted">Pinned selection</p>
+                  <p className="eyebrow text-muted">{literal("Pinned selection")}</p>
                   <p className="mt-2 text-sm font-semibold text-foreground">{selectedJob.target}</p>
                   <p className="mt-1 text-xs text-muted">
-                    {formatJobType(selectedJob.type)} job · requested by {selectedJob.requestedBy}
+                    {literal("{type} job · requested by {requestedBy}", {
+                      type: formatJobType(selectedJob.type, uiLanguagePreference),
+                      requestedBy: selectedJob.requestedBy,
+                    })}
                   </p>
                   <p className="mt-1 text-xs text-muted">
                     Detail refreshed {formatRefreshTime(selectedJobRefreshedAt)} · {selectedJobRefreshRelativeTime}
@@ -4659,14 +4695,14 @@ export function ModelOperationsPanel({
                   {selectedJobScopeChanged ? (
                     <div className="mt-2 flex flex-wrap gap-2">
                       <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-foreground">
-                        Scope changed since pin
+                        {literal("Scope changed since pin")}
                       </span>
                       <button
                         className="ui-button ui-button-chip ui-button-secondary px-3 py-1 text-xs"
                         type="button"
                         onClick={() => setSelectedJobScopeSignature(currentScopeSignature)}
                       >
-                        Re-pin to current scope
+                        {literal("Re-pin to current scope")}
                       </button>
                     </div>
                   ) : null}
@@ -4677,11 +4713,11 @@ export function ModelOperationsPanel({
                   </span>
                   {!selectedJobIsVisibleInList ? (
                     <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-foreground">
-                      Outside current list view
+                      {literal("Outside current list view")}
                     </span>
                   ) : null}
                   <span className="rounded-full bg-stone-200 px-3 py-1 text-xs font-semibold text-stone-900">
-                    {formatDuration(selectedJob.durationMs)}
+                    {formatDuration(selectedJob.durationMs, uiLanguagePreference)}
                   </span>
                   <span className={`rounded-full px-3 py-1 text-xs font-semibold ${getJobStatusClasses(selectedJob.status)}`}>
                     {selectedJob.status}
@@ -4711,7 +4747,7 @@ export function ModelOperationsPanel({
                     </span>
                   ) : null}
                   <button
-                    aria-label={selectedJobNeedsManualRefresh ? "Refresh stale selected job detail now" : "Refresh selected job detail"}
+                    aria-label={selectedJobNeedsManualRefresh ? literal("Refresh stale selected job detail now") : literal("Refresh selected job detail")}
                     className={`ui-button ui-button-chip px-3 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-50 ${
                       selectedJobNeedsManualRefresh
                         ? "ui-button-danger"
@@ -4725,10 +4761,10 @@ export function ModelOperationsPanel({
                     }}
                   >
                     {isLoadingJobDetail
-                      ? "Refreshing..."
+                      ? literal("Refreshing...")
                       : selectedJobNeedsManualRefresh
-                        ? "Refresh now"
-                        : "Refresh detail"}
+                        ? literal("Refresh now")
+                        : literal("Refresh detail")}
                   </button>
                   {selectedJobIsVisibleInList ? (
                     <button
@@ -4737,7 +4773,7 @@ export function ModelOperationsPanel({
                       type="button"
                       onClick={jumpToSelectedJobInList}
                     >
-                      Jump to row
+                      {literal("Jump to row")}
                     </button>
                   ) : null}
                   {!selectedJobIsVisibleInList ? (
@@ -4747,7 +4783,7 @@ export function ModelOperationsPanel({
                       type="button"
                       onClick={revealSelectedJobInList}
                     >
-                      Reveal in list
+                      {literal("Reveal in list")}
                     </button>
                   ) : null}
                   <button
@@ -4756,7 +4792,7 @@ export function ModelOperationsPanel({
                     type="button"
                     onClick={() => setSelectedJobId(null)}
                   >
-                    Clear selection
+                    {literal("Clear selection")}
                   </button>
                 </div>
               </div>
@@ -4764,16 +4800,16 @@ export function ModelOperationsPanel({
               {selectedJobNeedsManualRefresh ? (
                 <div className="mt-3 flex flex-wrap items-center gap-2 rounded-[18px] bg-amber-50 px-3 py-2 text-xs text-amber-900">
                   <span className="rounded-full bg-amber-100 px-3 py-1 font-semibold text-amber-900">
-                    Manual refresh recommended
+                    {literal("Manual refresh recommended")}
                   </span>
                   <span>
-                    The jobs list is still active, but this selected detail is stale. Use Refresh now to compare it with the latest queue state.
+                    {literal("The jobs list is still active, but this selected detail is stale. Use Refresh now to compare it with the latest queue state.")}
                   </span>
                 </div>
               ) : null}
               {!selectedJobIsVisibleInList ? (
                 <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <span className="text-xs font-semibold text-muted">Current view</span>
+                  <span className="text-xs font-semibold text-muted">{literal("Current view")}</span>
                   {visibleSectionCounts.length > 0 ? visibleSectionCounts.map((section) => (
                     <span
                       key={section.key}
@@ -4783,7 +4819,7 @@ export function ModelOperationsPanel({
                     </span>
                   )) : (
                     <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-foreground">
-                      No visible jobs
+                      {literal("No visible jobs")}
                     </span>
                   )}
                 </div>
@@ -4843,7 +4879,7 @@ export function ModelOperationsPanel({
                     {currentUser?.displayName ? (
                       <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted">
                         <span className="rounded-full bg-white/70 px-3 py-1 font-semibold text-foreground">
-                          {getJobSectionInsight(section, currentUser)}
+                          {getJobSectionInsight(section, currentUser, uiLanguagePreference)}
                         </span>
                         {sectionDeltaInsight ? (
                           <span className="rounded-full bg-white/70 px-3 py-1 font-semibold text-foreground">
@@ -4854,7 +4890,7 @@ export function ModelOperationsPanel({
                     ) : null}
                   </div>
                   <span className="text-xs text-muted">
-                    {collapsedSections[section.key] ? "Show" : "Hide"}
+                    {collapsedSections[section.key] ? literal("Show") : literal("Hide")}
                   </span>
                 </button>
                 {!collapsedSections[section.key] ? section.jobs.map((job) => (
@@ -4862,7 +4898,12 @@ export function ModelOperationsPanel({
                     ref={(node) => {
                       jobRowRefs.current[getJobRowId(job.id)] = node;
                     }}
-                    aria-label={`${job.target}. ${formatJobType(job.type)} job requested by ${job.requestedBy}. Status ${job.status}.`}
+                    aria-label={literal("{target}. {type} job requested by {requestedBy}. Status {status}.", {
+                      target: job.target,
+                      type: formatJobType(job.type, uiLanguagePreference),
+                      requestedBy: job.requestedBy,
+                      status: getJobSectionTitle(job.status, uiLanguagePreference),
+                    })}
                     aria-pressed={selectedJobId === job.id}
                     key={job.id}
                     id={getJobRowId(job.id)}
@@ -4890,7 +4931,7 @@ export function ModelOperationsPanel({
                             {job.target}
                           </p>
                           <p className="mt-1 text-xs text-muted">
-                            {formatJobType(job.type)} job
+                            {literal("{type} job", { type: formatJobType(job.type, uiLanguagePreference) })}
                           </p>
                         </button>
                       </div>
@@ -4898,10 +4939,10 @@ export function ModelOperationsPanel({
                         {currentUser?.displayName ? (
                           <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-foreground">
                             {jobOwnershipFilter === "mine"
-                              ? "In your scope"
+                              ? literal("In your scope")
                               : job.requestedBy === currentUser.displayName
-                                ? "Your job"
-                                : "Other operator"}
+                                ? literal("Your job")
+                                : literal("Other operator")}
                           </span>
                         ) : null}
                         {job.status === "queued" && typeof job.queuePosition === "number" ? (
@@ -4963,16 +5004,16 @@ export function ModelOperationsPanel({
           ) : (
             <div className="rounded-[24px] border border-dashed border-line bg-white/45 px-4 py-4 text-sm text-muted">
               {adminLocked
-                ? "Unlock admin access to inspect job history."
+                ? literal("Unlock admin access to inspect job history.")
                 : jobSummary.total === 0
-                  ? "No model jobs have been recorded yet."
-                  : "No jobs match the current filter."}
+                  ? literal("No model jobs have been recorded yet.")
+                  : literal("No jobs match the current filter.")}
             </div>
           )}
         </div>
         {!adminLocked && hasActiveJobs ? (
           <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-muted">
-            <p>Auto-refresh is active while queued or running jobs exist.</p>
+            <p>{literal("Auto-refresh is active while queued or running jobs exist.")}</p>
             <span className={`rounded-full px-3 py-1 font-semibold ${jobsRefreshStatus.classes}`}>
               {jobsRefreshStatus.label}
             </span>
@@ -4985,7 +5026,7 @@ export function ModelOperationsPanel({
             ) : null}
             {jobsChangedSinceManualRefresh ? (
               <span className="rounded-full bg-amber-100 px-3 py-1 font-semibold text-amber-900">
-                Changed since manual refresh
+                {literal("Changed since manual refresh")}
               </span>
             ) : null}
           </div>
@@ -5004,19 +5045,19 @@ export function ModelOperationsPanel({
             ) : null}
             {jobsChangedSinceManualRefresh ? (
               <span className="rounded-full bg-amber-100 px-3 py-1 font-semibold text-amber-900">
-                Changed since manual refresh
+                {literal("Changed since manual refresh")}
               </span>
             ) : null}
           </div>
         ) : null}
         {groupedJobs.length > 0 ? (
           <p className="mt-2 hidden text-xs text-muted sm:block">
-            Keyboard: focus a section header or job row, then use Up and Down to move, Enter or Space to pin a row, Left or Right to collapse or expand a section, R to refresh jobs, D to refresh pinned detail, J to jump to the pinned job, and Escape to clear selection.
+            {literal("Keyboard: focus a section header or job row, then use Up and Down to move, Enter or Space to pin a row, Left or Right to collapse or expand a section, R to refresh jobs, D to refresh pinned detail, J to jump to the pinned job, and Escape to clear selection.")}
           </p>
         ) : null}
         {(confirmBulkRetry || confirmBulkCancel) && !isRunningBulkAction ? (
           <p aria-live="polite" className="mt-2 text-xs text-muted">
-            Bulk actions require a second click to confirm.
+            {literal("Bulk actions require a second click to confirm.")}
           </p>
         ) : null}
         {actionSummary ? (
@@ -5035,7 +5076,7 @@ export function ModelOperationsPanel({
               type="button"
               onClick={() => setActionSummary(null)}
             >
-              Dismiss
+              {literal("Dismiss")}
             </button>
           </div>
         ) : null}
@@ -5046,9 +5087,9 @@ export function ModelOperationsPanel({
       <div className={panelShellClassName} data-help-context="jobs">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <p className="section-label text-xs font-semibold">Job detail</p>
+            <p className="section-label text-xs font-semibold">{literal("Job detail")}</p>
             <h2 className="mt-3 text-2xl font-semibold tracking-tight text-foreground">
-              Selected job timeline
+              {literal("Selected job timeline")}
             </h2>
           </div>
           {selectedJobId ? (
@@ -5061,7 +5102,7 @@ export function ModelOperationsPanel({
                 void refreshSelectedJob();
               }}
             >
-              {isLoadingJobDetail ? "Refreshing..." : "Refresh detail"}
+              {isLoadingJobDetail ? literal("Refreshing...") : literal("Refresh detail")}
             </button>
           ) : null}
         </div>
@@ -5071,7 +5112,7 @@ export function ModelOperationsPanel({
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="text-sm font-semibold text-foreground">{selectedJob.target}</p>
-                  <p className="mt-1 text-xs text-muted">{formatJobType(selectedJob.type)} job</p>
+                  <p className="mt-1 text-xs text-muted">{literal("{type} job", { type: formatJobType(selectedJob.type, uiLanguagePreference) })}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="rounded-full bg-stone-200 px-3 py-1 text-xs font-semibold text-stone-900">
@@ -5083,7 +5124,10 @@ export function ModelOperationsPanel({
                 </div>
               </div>
               <p className="mt-3 text-xs text-muted">
-                Requested by {selectedJob.requestedBy} · latest update {new Date(selectedJob.updatedAt).toLocaleString()}
+                {literal("Requested by {requestedBy} · latest update {time}", {
+                  requestedBy: selectedJob.requestedBy,
+                  time: new Date(selectedJob.updatedAt).toLocaleString(),
+                })}
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted">
                 {selectedJobScopeReasonLabel ? (
@@ -5108,7 +5152,7 @@ export function ModelOperationsPanel({
               ) : null}
               {selectedJob.status === "queued" && typeof selectedJob.queuePosition === "number" ? (
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted">
-                  <span>Queue position {selectedJob.queuePosition}</span>
+                  <span>{literal("Queue position {position}", { position: selectedJob.queuePosition })}</span>
                   {selectedJobLatestQueueMovement ? (
                     <span className="rounded-full bg-white px-3 py-1 font-semibold text-foreground">
                       {selectedJobLatestQueueMovement}
@@ -5128,7 +5172,7 @@ export function ModelOperationsPanel({
                       void cancelSelectedJob();
                     }}
                   >
-                    {isCancellingJob ? "Cancelling..." : selectedJob.status === "queued" ? "Cancel queued job" : "Cancel running job"}
+                    {isCancellingJob ? literal("Cancelling...") : selectedJob.status === "queued" ? literal("Cancel queued job") : literal("Cancel running job")}
                   </button>
                 </div>
               ) : null}
@@ -5143,7 +5187,7 @@ export function ModelOperationsPanel({
                       void reorderQueuedJob(selectedJob, "up");
                     }}
                   >
-                    {isReorderingJob ? "Moving..." : "Move earlier"}
+                    {isReorderingJob ? literal("Moving...") : literal("Move earlier")}
                   </button>
                   <button
                     className="ui-button ui-button-secondary px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
@@ -5154,7 +5198,7 @@ export function ModelOperationsPanel({
                       void reorderQueuedJob(selectedJob, "down");
                     }}
                   >
-                    Move later
+                    {literal("Move later")}
                   </button>
                 </div>
               ) : null}
@@ -5170,7 +5214,7 @@ export function ModelOperationsPanel({
                       void retrySelectedJobOnServer();
                     }}
                   >
-                    {isPulling ? "Retrying..." : "Retry pull"}
+                    {isPulling ? literal("Retrying...") : literal("Retry pull")}
                   </button>
                 </div>
               ) : null}
@@ -5179,7 +5223,7 @@ export function ModelOperationsPanel({
               <div className="theme-surface-panel rounded-[24px] px-4 py-4 text-sm text-foreground">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-foreground">
-                    Since last detail refresh
+                    {literal("Since last detail refresh")}
                   </span>
                   {jobDetailRefreshDiff.items.length > 0 ? (
                     jobDetailRefreshDiff.items.map((item) => (
@@ -5189,7 +5233,7 @@ export function ModelOperationsPanel({
                     ))
                   ) : (
                     <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-medium text-stone-900">
-                      No visible change
+                      {literal("No visible change")}
                     </span>
                   )}
                 </div>
@@ -5197,9 +5241,9 @@ export function ModelOperationsPanel({
             ) : null}
             {jobDetailRefreshDiff.newEntryStartIndex !== null || selectedJob.progressEntries.length > 0 ? (
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs font-semibold text-muted">Timeline</span>
+                <span className="text-xs font-semibold text-muted">{literal("Timeline")}</span>
                 <button
-                  aria-label="Show all timeline entries for the selected job"
+                  aria-label={literal("Show all timeline entries for the selected job")}
                   aria-pressed={timelineEntryFilter === "all"}
                   className={`ui-button ui-button-chip px-3 py-1 text-xs ${
                     timelineEntryFilter === "all"
@@ -5210,10 +5254,10 @@ export function ModelOperationsPanel({
                   type="button"
                   onClick={() => setTimelineEntryFilter("all")}
                 >
-                  All entries
+                  {literal("All entries")}
                 </button>
                 <button
-                  aria-label="Show only new timeline entries since the last detail refresh"
+                  aria-label={literal("Show only new timeline entries since the last detail refresh")}
                   aria-pressed={timelineEntryFilter === "new"}
                   className={`ui-button ui-button-chip px-3 py-1 text-xs ${
                     timelineEntryFilter === "new"
@@ -5225,10 +5269,10 @@ export function ModelOperationsPanel({
                   type="button"
                   onClick={() => setTimelineEntryFilter("new")}
                 >
-                  New since refresh
+                  {literal("New since refresh")}
                 </button>
                 <button
-                  aria-label="Show only changed timeline entries for the selected job"
+                  aria-label={literal("Show only changed timeline entries for the selected job")}
                   aria-pressed={timelineEntryFilter === "changed"}
                   className={`ui-button ui-button-chip px-3 py-1 text-xs ${
                     timelineEntryFilter === "changed"
@@ -5239,7 +5283,7 @@ export function ModelOperationsPanel({
                   type="button"
                   onClick={() => setTimelineEntryFilter("changed")}
                 >
-                  Changed only
+                  {literal("Changed only")}
                 </button>
               </div>
             ) : null}
@@ -5267,7 +5311,7 @@ export function ModelOperationsPanel({
                     ) : null}
                     {jobDetailRefreshDiff.newEntryStartIndex !== null && actualIndex >= jobDetailRefreshDiff.newEntryStartIndex ? (
                       <span className="rounded-full bg-[#d57a42] px-2 py-0.5 text-[10px] font-semibold text-white">
-                        New
+                        {literal("New")}
                       </span>
                     ) : null}
                   </div>
@@ -5291,10 +5335,10 @@ export function ModelOperationsPanel({
               {visibleSelectedJobProgressEntries.length === 0 ? (
                 <div className="py-2 text-[#cdbfaa]">
                   {timelineEntryFilter === "new"
-                    ? "No new timeline entries since the last detail refresh."
+                    ? literal("No new timeline entries since the last detail refresh.")
                     : timelineEntryFilter === "changed"
-                      ? "No changed timeline entries match the current filter."
-                      : "No timeline entries available."}
+                      ? literal("No changed timeline entries match the current filter.")
+                      : literal("No timeline entries available.")}
                 </div>
               ) : null}
             </div>
@@ -5302,8 +5346,8 @@ export function ModelOperationsPanel({
         ) : (
           <div className="theme-surface-panel mt-5 rounded-[24px] border-dashed px-4 py-4 text-sm text-muted">
             {adminLocked
-              ? "Unlock admin access to inspect job details."
-              : "Select a job to inspect its full progress trail."}
+              ? literal("Unlock admin access to inspect job details.")
+              : literal("Select a job to inspect its full progress trail.")}
           </div>
         )}
       </div>
@@ -5313,13 +5357,13 @@ export function ModelOperationsPanel({
       <div className={panelShellClassName} data-help-context="activity">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <p className="section-label text-xs font-semibold">Activity</p>
+            <p className="section-label text-xs font-semibold">{literal("Activity")}</p>
             <h2 className="mt-3 text-2xl font-semibold tracking-tight text-foreground">
-              Recent control-plane events
+              {literal("Recent control-plane events")}
             </h2>
             {isPageSurface ? (
               <p className="mt-3 max-w-3xl text-sm leading-6 text-muted">
-                Administrative events stay visible here so queue operations, model changes, auth actions, and recovery work can be reviewed without competing with the chat transcript.
+                {literal("Administrative events stay visible here so queue operations, model changes, auth actions, and recovery work can be reviewed without competing with the chat transcript.")}
               </p>
             ) : null}
           </div>
@@ -5330,25 +5374,25 @@ export function ModelOperationsPanel({
             type="button"
             onClick={refreshActivity}
           >
-            {isLoadingActivity ? "Refreshing..." : "Refresh log"}
+            {isLoadingActivity ? literal("Refreshing...") : literal("Refresh log")}
           </button>
         </div>
         {isPageSurface ? (
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
             <div className="theme-surface-soft rounded-[24px] px-4 py-4">
-              <p className="eyebrow text-muted">Entries loaded</p>
+              <p className="eyebrow text-muted">{literal("Entries loaded")}</p>
               <p className="mt-2 text-base font-semibold text-foreground">{activityEvents.length}</p>
-              <p className="mt-1 text-xs leading-5 text-muted">Recent control-plane events currently visible in this snapshot.</p>
+              <p className="mt-1 text-xs leading-5 text-muted">{literal("Recent control-plane events currently visible in this snapshot.")}</p>
             </div>
             <div className="theme-surface-soft rounded-[24px] px-4 py-4">
-              <p className="eyebrow text-muted">Warnings</p>
+              <p className="eyebrow text-muted">{literal("Warnings")}</p>
               <p className="mt-2 text-base font-semibold text-foreground">{activityWarningCount}</p>
-              <p className="mt-1 text-xs leading-5 text-muted">Events marked warning severity in the current activity slice.</p>
+              <p className="mt-1 text-xs leading-5 text-muted">{literal("Events marked warning severity in the current activity slice.")}</p>
             </div>
             <div className="theme-surface-soft rounded-[24px] px-4 py-4">
-              <p className="eyebrow text-muted">Access state</p>
-              <p className="mt-2 text-base font-semibold text-foreground">{adminLocked ? "Restricted" : "Readable"}</p>
-              <p className="mt-1 text-xs leading-5 text-muted">Activity visibility stays aligned to the admin gate and session state.</p>
+              <p className="eyebrow text-muted">{literal("Access state")}</p>
+              <p className="mt-2 text-base font-semibold text-foreground">{adminLocked ? literal("Restricted") : literal("Readable")}</p>
+              <p className="mt-1 text-xs leading-5 text-muted">{literal("Activity visibility stays aligned to the admin gate and session state.")}</p>
             </div>
           </div>
         ) : null}
@@ -5385,9 +5429,9 @@ export function ModelOperationsPanel({
             <div className="theme-surface-panel rounded-[24px] border-dashed px-4 py-4 text-sm text-muted">
               {auth.authEnabled && !auth.authenticated
                 ? userCount > 0
-                  ? "Sign in as an admin user to read the activity log."
-                  : "Unlock admin to read the activity log."
-                : "No activity recorded yet."}
+                  ? literal("Sign in as an admin user to read the activity log.")
+                  : literal("Unlock admin to read the activity log.")
+                : literal("No activity recorded yet.")}
             </div>
           )}
         </div>

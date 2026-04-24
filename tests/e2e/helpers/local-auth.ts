@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { APIRequestContext, Page } from "@playwright/test";
@@ -25,15 +25,52 @@ function getPlaywrightDataDirCandidates() {
   ];
 }
 
+function getTemporaryStorePath(filePath: string) {
+  return `${filePath}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+async function waitForRetry(delayMs: number) {
+  await new Promise((resolve) => {
+    setTimeout(resolve, delayMs);
+  });
+}
+
+function shouldRetryAtomicRename(error: unknown) {
+  return error instanceof Error
+    && "code" in error
+    && (error.code === "EPERM" || error.code === "EACCES");
+}
+
+export async function writeSharedJsonFixture(dataDir: string, fileName: string, value: unknown) {
+  await mkdir(dataDir, { recursive: true });
+  const filePath = path.join(dataDir, fileName);
+  const temporaryPath = getTemporaryStorePath(filePath);
+
+  await writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      await rename(temporaryPath, filePath);
+      return;
+    } catch (error) {
+      if (!shouldRetryAtomicRename(error) || attempt === 4) {
+        throw error;
+      }
+
+      await waitForRetry(20 * (attempt + 1));
+    }
+  }
+}
+
 export async function resetPlaywrightData() {
   await Promise.all(getPlaywrightDataDirCandidates().map(async (dataDir) => {
     await mkdir(dataDir, { recursive: true });
     await Promise.all([
-      writeFile(path.join(dataDir, "users.json"), "[]\n", "utf8"),
-      writeFile(path.join(dataDir, "conversations.json"), "[]\n", "utf8"),
-      writeFile(path.join(dataDir, "activity-log.json"), "[]\n", "utf8"),
-      writeFile(path.join(dataDir, "job-history.json"), "[]\n", "utf8"),
-      writeFile(path.join(dataDir, "email-outbox.json"), "[]\n", "utf8"),
+      writeSharedJsonFixture(dataDir, "users.json", []),
+      writeSharedJsonFixture(dataDir, "conversations.json", []),
+      writeSharedJsonFixture(dataDir, "activity-log.json", []),
+      writeSharedJsonFixture(dataDir, "job-history.json", []),
+      writeSharedJsonFixture(dataDir, "email-outbox.json", []),
     ]);
   }));
 }

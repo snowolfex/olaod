@@ -1,25 +1,28 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { PlushLlamaHero } from "@/components/plush-llama-hero";
 import {
   helpGlossary,
   helpReferences,
-  HELP_MANUAL_SUBTITLE,
-  HELP_MANUAL_TITLE,
   helpSections,
   type HelpContext,
 } from "@/lib/help-manual";
 import type { OllamaStatus } from "@/lib/ollama";
-import type { SessionUser } from "@/lib/user-types";
+import { parseAppTheme } from "@/lib/theme";
+import { translateUi, translateUiText } from "@/lib/ui-language";
+import type { SessionUser, VoiceTranscriptionLanguage } from "@/lib/user-types";
 
 type HelpPanelProps = {
   context: HelpContext;
   currentUser: SessionUser | null;
+  onReplayWalkthrough?: () => void;
   requestedSectionId: string | null;
   requestedSectionNonce: number;
   surface?: "embedded" | "page";
   status: OllamaStatus;
+  uiLanguagePreference: VoiceTranscriptionLanguage;
 };
 
 const contextSummary: Record<HelpContext, { badge: string; title: string; intro: string }> = {
@@ -80,19 +83,72 @@ function wrapText(text: string, maxCharacters: number) {
 export function HelpPanel({
   context,
   currentUser,
+  onReplayWalkthrough,
   requestedSectionId,
   requestedSectionNonce,
   surface = "embedded",
   status,
+  uiLanguagePreference,
 }: HelpPanelProps) {
   const [isExportingPdf, setIsExportingPdf] = useState(false);
-  const focusSummary = contextSummary[context];
+  const t = (key: Parameters<typeof translateUi>[1], variables?: Record<string, string | number>) =>
+    translateUi(uiLanguagePreference, key, variables);
+  const literal = useCallback(
+    (sourceText: string, variables?: Record<string, string | number>) =>
+      translateUiText(uiLanguagePreference, sourceText, variables),
+    [uiLanguagePreference],
+  );
   const isPageSurface = surface === "page";
+  const localizedHelpSections = useMemo(
+    () => helpSections.map((section) => ({
+      ...section,
+      title: literal(section.title),
+      summary: literal(section.summary),
+      body: section.body.map((paragraph) => literal(paragraph)),
+      plainLanguage: section.plainLanguage.map((paragraph) => literal(paragraph)),
+      comparison: section.comparison ? literal(section.comparison) : undefined,
+      keyPoints: section.keyPoints.map((point) => literal(point)),
+    })),
+    [literal],
+  );
+  const localizedGlossary = useMemo(
+    () => helpGlossary.map((item) => ({
+      ...item,
+      term: literal(item.term),
+      definition: literal(item.definition),
+      links: item.links?.map((link) => ({
+        ...link,
+        title: literal(link.title),
+      })),
+    })),
+    [literal],
+  );
+  const localizedReferences = useMemo(
+    () => helpReferences.map((item) => ({
+      ...item,
+      title: literal(item.title),
+      description: literal(item.description),
+      category: literal(item.category),
+    })),
+    [literal],
+  );
   const totalSectionCount = helpSections.length;
   const contextSections = useMemo(
-    () => helpSections.filter((section) => section.context === context),
-    [context],
+    () => localizedHelpSections.filter((section) => section.context === context),
+    [context, localizedHelpSections],
   );
+  const contextLabel = (value: HelpContext) => {
+    if (value === "chat") return t("chat");
+    if (value === "access") return t("access");
+    if (value === "models") return t("models");
+    if (value === "jobs") return t("jobs");
+    return t("activity");
+  };
+  const focusSummary = {
+    badge: contextLabel(context),
+    title: literal(contextSummary[context].title),
+    intro: literal(contextSummary[context].intro),
+  };
 
   useEffect(() => {
     if (!requestedSectionId) {
@@ -112,39 +168,195 @@ export function HelpPanel({
     setIsExportingPdf(true);
 
     try {
-      const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
+      const appTheme = parseAppTheme(document.documentElement.dataset.theme);
+      const { PDFArray, PDFDocument, PDFName, PDFString, StandardFonts, rgb } = await import("pdf-lib");
       const pdfDocument = await PDFDocument.create();
       const regularFont = await pdfDocument.embedFont(StandardFonts.Helvetica);
       const boldFont = await pdfDocument.embedFont(StandardFonts.HelveticaBold);
       const pageSize = { width: 612, height: 792 };
-      const margin = 48;
-      const lineHeight = 16;
+      const margin = 38;
+      const contentWidth = pageSize.width - margin * 2;
+      const baseLineHeight = 15;
+      const contextPalette: Record<HelpContext, {
+        accent: [number, number, number];
+        soft: [number, number, number];
+        line: [number, number, number];
+        ink: [number, number, number];
+      }> = {
+        chat: {
+          accent: [0.78, 0.43, 0.28],
+          soft: [0.98, 0.94, 0.9],
+          line: [0.86, 0.73, 0.62],
+          ink: [0.27, 0.16, 0.11],
+        },
+        access: {
+          accent: [0.34, 0.47, 0.73],
+          soft: [0.92, 0.95, 0.99],
+          line: [0.73, 0.8, 0.9],
+          ink: [0.12, 0.2, 0.34],
+        },
+        models: {
+          accent: [0.18, 0.57, 0.52],
+          soft: [0.91, 0.98, 0.96],
+          line: [0.68, 0.85, 0.81],
+          ink: [0.08, 0.25, 0.22],
+        },
+        jobs: {
+          accent: [0.79, 0.56, 0.19],
+          soft: [0.99, 0.96, 0.9],
+          line: [0.9, 0.81, 0.61],
+          ink: [0.35, 0.24, 0.09],
+        },
+        activity: {
+          accent: [0.59, 0.39, 0.67],
+          soft: [0.95, 0.92, 0.98],
+          line: [0.83, 0.75, 0.89],
+          ink: [0.25, 0.15, 0.31],
+        },
+      };
+
       let page = pdfDocument.addPage([pageSize.width, pageSize.height]);
       let cursorY = pageSize.height - margin;
+      const anchors = new Map<string, { page: typeof page; x: number; y: number }>();
+      const pendingInternalLinks: Array<{ sourcePage: typeof page; rect: [number, number, number, number]; targetId: string }> = [];
 
-      const ensureSpace = (requiredHeight: number) => {
-        if (cursorY - requiredHeight >= margin) {
+      const color = (value: [number, number, number]) => rgb(value[0], value[1], value[2]);
+
+      const resetPageChrome = () => {
+        page.drawRectangle({
+          x: 0,
+          y: pageSize.height - 26,
+          width: pageSize.width,
+          height: 26,
+          color: rgb(0.98, 0.96, 0.93),
+        });
+        page.drawRectangle({
+          x: margin,
+          y: pageSize.height - 30,
+          width: contentWidth,
+          height: 2,
+          color: rgb(0.82, 0.67, 0.53),
+        });
+      };
+
+      const addPage = () => {
+        page = pdfDocument.addPage([pageSize.width, pageSize.height]);
+        cursorY = pageSize.height - margin;
+        resetPageChrome();
+      };
+
+      const toPdfRect = (x: number, topY: number, width: number, height: number): [number, number, number, number] => [
+        x,
+        topY - height,
+        x + width,
+        topY,
+      ];
+
+      const ensureAnnotations = (targetPage: typeof page) => {
+        let annotations = targetPage.node.lookupMaybe(PDFName.of("Annots"), PDFArray);
+        if (!annotations) {
+          targetPage.node.set(PDFName.of("Annots"), pdfDocument.context.obj([]));
+          annotations = targetPage.node.lookup(PDFName.of("Annots"), PDFArray);
+        }
+        return annotations;
+      };
+
+      const addAnnotation = (targetPage: typeof page, annotation: any) => {
+        const annotationRef = pdfDocument.context.register(pdfDocument.context.obj(annotation));
+        ensureAnnotations(targetPage).push(annotationRef);
+      };
+
+      const addUriLink = (targetPage: typeof page, rect: [number, number, number, number], url: string) => {
+        addAnnotation(targetPage, {
+          Type: "Annot",
+          Subtype: "Link",
+          Rect: rect,
+          Border: [0, 0, 0],
+          A: {
+            Type: "Action",
+            S: "URI",
+            URI: PDFString.of(url),
+          },
+        });
+      };
+
+      const addInternalLink = (
+        targetPage: typeof page,
+        rect: [number, number, number, number],
+        destination: { page: typeof page; x: number; y: number },
+      ) => {
+        addAnnotation(targetPage, {
+          Type: "Annot",
+          Subtype: "Link",
+          Rect: rect,
+          Border: [0, 0, 0],
+          Dest: [destination.page.ref, PDFName.of("XYZ"), destination.x, destination.y, null],
+        });
+      };
+
+      const setAnchor = (anchorId: string, targetPage: typeof page, topY: number) => {
+        anchors.set(anchorId, {
+          page: targetPage,
+          x: margin,
+          y: topY,
+        });
+      };
+
+      resetPageChrome();
+
+      const ensureSpace = (requiredHeight: number, forceNewPage = false) => {
+        if (!forceNewPage && cursorY - requiredHeight >= margin) {
           return;
         }
 
-        page = pdfDocument.addPage([pageSize.width, pageSize.height]);
-        cursorY = pageSize.height - margin;
+        addPage();
       };
 
-      const drawLines = (lines: string[], options?: { fontSize?: number; bold?: boolean; color?: [number, number, number] }) => {
+      const drawPanel = (
+        x: number,
+        topY: number,
+        width: number,
+        height: number,
+        fillColor: [number, number, number],
+        borderColor: [number, number, number],
+      ) => {
+        page.drawRectangle({
+          x,
+          y: topY - height,
+          width,
+          height,
+          color: color(fillColor),
+          borderColor: color(borderColor),
+          borderWidth: 1,
+        });
+      };
+
+      const drawLines = (
+        lines: string[],
+        options?: {
+          bold?: boolean;
+          color?: [number, number, number];
+          fontSize?: number;
+          lineHeight?: number;
+          x?: number;
+        },
+      ) => {
         const fontSize = options?.fontSize ?? 11;
+        const lineHeight = options?.lineHeight ?? baseLineHeight;
         const font = options?.bold ? boldFont : regularFont;
-        const color = options?.color ?? [0.12, 0.12, 0.1];
+        const textColor = options?.color ?? [0.12, 0.12, 0.1];
+        const x = options?.x ?? margin;
         const neededHeight = lines.length * lineHeight + 4;
+
         ensureSpace(neededHeight);
 
         for (const line of lines) {
           page.drawText(line, {
-            x: margin,
+            x,
             y: cursorY,
             size: fontSize,
             font,
-            color: rgb(color[0], color[1], color[2]),
+            color: color(textColor),
           });
           cursorY -= lineHeight;
         }
@@ -152,52 +364,812 @@ export function HelpPanel({
         cursorY -= 4;
       };
 
-      drawLines([HELP_MANUAL_TITLE], { bold: true, fontSize: 20, color: [0.45, 0.2, 0.1] });
-      drawLines(wrapText(HELP_MANUAL_SUBTITLE, 80), { fontSize: 11, color: [0.32, 0.28, 0.24] });
-      drawLines([`Current focus: ${focusSummary.title}`], { bold: true, fontSize: 12 });
-      drawLines(wrapText(focusSummary.intro, 82), { fontSize: 10, color: [0.34, 0.34, 0.34] });
+      const drawParagraph = (
+        text: string,
+        options?: {
+          bold?: boolean;
+          color?: [number, number, number];
+          fontSize?: number;
+          lineHeight?: number;
+          maxCharacters?: number;
+          x?: number;
+        },
+      ) => {
+        drawLines(wrapText(text, options?.maxCharacters ?? 84), options);
+      };
 
-      for (const section of helpSections) {
-        drawLines([section.title], { bold: true, fontSize: 15, color: [0.2, 0.2, 0.2] });
-        drawLines(wrapText(section.summary, 82), { fontSize: 10, color: [0.34, 0.34, 0.34] });
+      const drawPill = (
+        label: string,
+        x: number,
+        topY: number,
+        fillColor: [number, number, number],
+        textColor: [number, number, number],
+      ) => {
+        const width = Math.max(72, label.length * 5.4 + 20);
+        const height = 18;
+        page.drawRectangle({
+          x,
+          y: topY - height,
+          width,
+          height,
+          color: color(fillColor),
+        });
+        page.drawText(label, {
+          x: x + 8,
+          y: topY - 12.5,
+          size: 8.5,
+          font: boldFont,
+          color: color(textColor),
+        });
+      };
 
-        drawLines(["Technical detail"], { bold: true, fontSize: 11 });
-
-        for (const paragraph of section.body) {
-          drawLines(wrapText(paragraph, 84), { fontSize: 10 });
+      const drawQuickStepCard = (
+        stepNumber: number,
+        title: string,
+        detail: string,
+        topY: number,
+      ) => {
+        const height = 62;
+        drawPanel(margin, topY, contentWidth, height, [0.985, 0.98, 0.965], [0.86, 0.77, 0.68]);
+        page.drawCircle({
+          x: margin + 22,
+          y: topY - 21,
+          size: 11,
+          color: rgb(0.77, 0.43, 0.28),
+        });
+        page.drawText(String(stepNumber), {
+          x: margin + 18.5,
+          y: topY - 25,
+          size: 9,
+          font: boldFont,
+          color: rgb(1, 1, 1),
+        });
+        page.drawText(title, {
+          x: margin + 44,
+          y: topY - 19,
+          size: 11,
+          font: boldFont,
+          color: rgb(0.23, 0.17, 0.13),
+        });
+        const detailLines = wrapText(detail, 78).slice(0, 2);
+        let detailY = topY - 35;
+        for (const line of detailLines) {
+          page.drawText(line, {
+            x: margin + 44,
+            y: detailY,
+            size: 9,
+            font: regularFont,
+            color: rgb(0.34, 0.3, 0.25),
+          });
+          detailY -= 11;
         }
 
-        drawLines(["Plain-language explanation"], { bold: true, fontSize: 11 });
+        return {
+          x: margin,
+          topY,
+          width: contentWidth,
+          height,
+        };
+      };
 
+      const drawLlamaMascot = (
+        x: number,
+        topY: number,
+        palette: (typeof contextPalette)[HelpContext],
+        options?: {
+          accent?: [number, number, number];
+          scarf?: boolean;
+          visor?: boolean;
+          badge?: boolean;
+          glow?: boolean;
+        },
+      ) => {
+        const accent = options?.accent ?? palette.accent;
+        const themeVariant = appTheme === "dark"
+          ? {
+            wool: [0.4, 0.32, 0.3] as [number, number, number],
+            woolShadow: [0.27, 0.21, 0.2] as [number, number, number],
+            face: [0.71, 0.61, 0.52] as [number, number, number],
+            nose: [0.18, 0.12, 0.11] as [number, number, number],
+            eye: [0.08, 0.06, 0.05] as [number, number, number],
+            blush: [0.77, 0.6, 0.55] as [number, number, number],
+            hoof: [0.27, 0.21, 0.2] as [number, number, number],
+          }
+          : appTheme === "tech"
+            ? {
+              wool: [0.91, 0.86, 0.79] as [number, number, number],
+              woolShadow: [0.71, 0.64, 0.55] as [number, number, number],
+              face: [0.83, 0.75, 0.64] as [number, number, number],
+              nose: [0.35, 0.25, 0.21] as [number, number, number],
+              eye: [0.08, 0.1, 0.12] as [number, number, number],
+              blush: [0.8, 0.7, 0.62] as [number, number, number],
+              hoof: [0.38, 0.3, 0.27] as [number, number, number],
+            }
+            : {
+              wool: [0.95, 0.89, 0.81] as [number, number, number],
+              woolShadow: [0.84, 0.72, 0.6] as [number, number, number],
+              face: [0.84, 0.74, 0.6] as [number, number, number],
+              nose: [0.42, 0.29, 0.22] as [number, number, number],
+              eye: [0.14, 0.1, 0.09] as [number, number, number],
+              blush: [0.94, 0.8, 0.76] as [number, number, number],
+              hoof: [0.46, 0.35, 0.29] as [number, number, number],
+            };
+        const wool = themeVariant.wool;
+        const woolShadow = themeVariant.woolShadow;
+        const face = themeVariant.face;
+        const nose = themeVariant.nose;
+        const eye = themeVariant.eye;
+        const blush = themeVariant.blush;
+        const hoof = themeVariant.hoof;
+
+        if (options?.glow) {
+          page.drawCircle({ x: x + 70, y: topY - 60, size: 40, color: color(palette.soft), opacity: 0.75 });
+        }
+
+        page.drawCircle({ x: x + 56, y: topY - 64, size: 18, color: color(woolShadow) });
+        page.drawCircle({ x: x + 76, y: topY - 64, size: 25, color: color(wool) });
+        page.drawCircle({ x: x + 98, y: topY - 63, size: 21, color: color(wool) });
+        page.drawCircle({ x: x + 80, y: topY - 84, size: 18, color: color(wool) });
+        page.drawCircle({ x: x + 86, y: topY - 76, size: 9, color: color(woolShadow), opacity: 0.35 });
+        page.drawCircle({ x: x + 92, y: topY - 84, size: 9, color: color(wool) });
+        page.drawCircle({ x: x + 113, y: topY - 41, size: 17, color: color(woolShadow) });
+        page.drawCircle({ x: x + 123, y: topY - 43, size: 20, color: color(wool) });
+        page.drawCircle({ x: x + 135, y: topY - 46, size: 10, color: color(woolShadow) });
+        page.drawCircle({ x: x + 122, y: topY - 33, size: 6, color: color(wool) });
+        page.drawCircle({ x: x + 131, y: topY - 35, size: 5, color: color(wool) });
+        page.drawCircle({ x: x + 122, y: topY - 45, size: 15, color: color(face) });
+        page.drawCircle({ x: x + 106, y: topY - 25, size: 8, color: color(wool) });
+        page.drawCircle({ x: x + 114, y: topY - 20, size: 7, color: color(wool) });
+        page.drawCircle({ x: x + 121, y: topY - 18, size: 6, color: color(wool) });
+        page.drawCircle({ x: x + 60, y: topY - 83, size: 8, color: color(wool) });
+        page.drawCircle({ x: x + 49, y: topY - 86, size: 7, color: color(wool) });
+
+        page.drawRectangle({ x: x + 61, y: topY - 107, width: 9, height: 24, color: color(hoof) });
+        page.drawRectangle({ x: x + 80, y: topY - 107, width: 9, height: 24, color: color(hoof) });
+        page.drawRectangle({ x: x + 98, y: topY - 107, width: 9, height: 24, color: color(hoof) });
+        page.drawRectangle({ x: x + 116, y: topY - 107, width: 9, height: 24, color: color(hoof) });
+        page.drawCircle({ x: x + 65.5, y: topY - 108, size: 4.5, color: color(hoof) });
+        page.drawCircle({ x: x + 84.5, y: topY - 108, size: 4.5, color: color(hoof) });
+        page.drawCircle({ x: x + 102.5, y: topY - 108, size: 4.5, color: color(hoof) });
+        page.drawCircle({ x: x + 120.5, y: topY - 108, size: 4.5, color: color(hoof) });
+
+        page.drawRectangle({ x: x + 47, y: topY - 88, width: 10, height: 30, color: color(wool) });
+        page.drawCircle({ x: x + 52, y: topY - 58, size: 5.5, color: color(wool) });
+        page.drawCircle({ x: x + 52, y: topY - 88, size: 5.5, color: color(wool) });
+        page.drawRectangle({ x: x + 49, y: topY - 86, width: 3, height: 25, color: color(woolShadow), opacity: 0.4 });
+
+        page.drawCircle({ x: x + 118, y: topY - 44, size: 2.5, color: color(eye) });
+        page.drawCircle({ x: x + 128, y: topY - 44, size: 2.5, color: color(eye) });
+        page.drawCircle({ x: x + 114, y: topY - 49, size: 2.6, color: color(blush), opacity: 0.45 });
+        page.drawCircle({ x: x + 132, y: topY - 49, size: 2.6, color: color(blush), opacity: 0.45 });
+        page.drawCircle({ x: x + 122, y: topY - 51, size: 3.1, color: color(nose) });
+        page.drawLine({
+          start: { x: x + 116, y: topY - 56 },
+          end: { x: x + 124, y: topY - 56 },
+          thickness: 1.4,
+          color: color(nose),
+        });
+
+        if (options?.scarf) {
+          page.drawRectangle({ x: x + 100, y: topY - 58, width: 35, height: 7, color: color(accent) });
+          page.drawRectangle({ x: x + 121, y: topY - 71, width: 7, height: 17, color: color(accent) });
+        }
+
+        if (options?.visor) {
+          page.drawRectangle({ x: x + 109, y: topY - 38, width: 25, height: 6, color: color(accent) });
+          page.drawRectangle({ x: x + 108, y: topY - 40, width: 3, height: 10, color: color(accent) });
+          page.drawRectangle({ x: x + 132, y: topY - 40, width: 3, height: 10, color: color(accent) });
+        }
+
+        if (options?.badge) {
+          page.drawCircle({ x: x + 90, y: topY - 61, size: 7, color: color(accent) });
+          page.drawCircle({ x: x + 90, y: topY - 61, size: 3, color: rgb(1, 1, 1) });
+        }
+      };
+
+      const drawSceneWindow = (
+        x: number,
+        topY: number,
+        width: number,
+        height: number,
+        palette: (typeof contextPalette)[HelpContext],
+      ) => {
+        drawPanel(x, topY, width, height, [1, 1, 1], palette.line);
+        page.drawRectangle({
+          x: x + 8,
+          y: topY - height + 8,
+          width: width - 16,
+          height: height - 16,
+          color: color(palette.soft),
+        });
+        page.drawCircle({ x: x + 18, y: topY - 12, size: 3.5, color: color(palette.accent) });
+        page.drawCircle({ x: x + 29, y: topY - 12, size: 3.5, color: color(palette.line) });
+        page.drawCircle({ x: x + 40, y: topY - 12, size: 3.5, color: rgb(1, 1, 1) });
+      };
+
+      const drawSpeechBubble = (
+        x: number,
+        topY: number,
+        width: number,
+        height: number,
+        palette: (typeof contextPalette)[HelpContext],
+        lines: number,
+      ) => {
+        drawPanel(x, topY, width, height, [1, 1, 1], palette.line);
+        for (let lineIndex = 0; lineIndex < lines; lineIndex += 1) {
+          page.drawRectangle({
+            x: x + 8,
+            y: topY - 15 - lineIndex * 10,
+            width: width - 16 - lineIndex * 10,
+            height: 4,
+            color: color(lineIndex === 0 ? palette.accent : palette.line),
+          });
+        }
+      };
+
+      const drawSectionScene = (
+        sectionContext: HelpContext,
+        x: number,
+        topY: number,
+        width: number,
+        height: number,
+      ) => {
+        const palette = contextPalette[sectionContext];
+        drawSceneWindow(x, topY, width, height, palette);
+
+        if (sectionContext === "chat") {
+          drawSpeechBubble(x + 12, topY - 22, 66, 28, palette, 2);
+          drawSpeechBubble(x + 98, topY - 14, 70, 34, palette, 3);
+          drawLlamaMascot(x + 28, topY - 8, palette, { scarf: true, glow: true });
+          page.drawRectangle({ x: x + 100, y: topY - 90, width: 56, height: 9, color: color(palette.accent) });
+          page.drawRectangle({ x: x + 100, y: topY - 104, width: 42, height: 7, color: rgb(1, 1, 1) });
+        } else if (sectionContext === "access") {
+          drawLlamaMascot(x + 18, topY - 10, palette, { badge: true, accent: [0.29, 0.46, 0.78] });
+          drawPanel(x + 96, topY - 16, 64, 74, [1, 1, 1], palette.line);
+          page.drawRectangle({ x: x + 106, y: topY - 40, width: 28, height: 22, color: color(palette.accent) });
+          page.drawRectangle({ x: x + 102, y: topY - 61, width: 36, height: 10, color: rgb(1, 1, 1) });
+          page.drawRectangle({ x: x + 108, y: topY - 76, width: 44, height: 8, color: color(palette.line) });
+          page.drawCircle({ x: x + 145, y: topY - 36, size: 8, color: color(palette.accent) });
+          page.drawRectangle({ x: x + 142, y: topY - 49, width: 6, height: 10, color: color(palette.accent) });
+        } else if (sectionContext === "models") {
+          drawLlamaMascot(x + 20, topY - 8, palette, { visor: true, glow: true, accent: [0.15, 0.63, 0.59] });
+          page.drawCircle({ x: x + 134, y: topY - 42, size: 24, color: color(palette.accent) });
+          page.drawCircle({ x: x + 134, y: topY - 42, size: 13, color: rgb(1, 1, 1) });
+          page.drawRectangle({ x: x + 103, y: topY - 88, width: 62, height: 10, color: rgb(1, 1, 1) });
+          page.drawRectangle({ x: x + 103, y: topY - 103, width: 48, height: 8, color: color(palette.line) });
+          page.drawRectangle({ x: x + 103, y: topY - 116, width: 36, height: 8, color: color(palette.accent) });
+        } else if (sectionContext === "jobs") {
+          drawLlamaMascot(x + 16, topY - 8, palette, { scarf: true, accent: [0.83, 0.61, 0.23] });
+          for (let rowIndex = 0; rowIndex < 3; rowIndex += 1) {
+            const rowTop = topY - 30 - rowIndex * 22;
+            page.drawRectangle({ x: x + 92, y: rowTop - 14, width: 72, height: 14, color: rgb(1, 1, 1) });
+            page.drawRectangle({ x: x + 98, y: rowTop - 10, width: 18 + rowIndex * 14, height: 6, color: color(palette.accent) });
+            page.drawCircle({ x: x + 155, y: rowTop - 7, size: 4.5, color: rowIndex === 1 ? color(palette.line) : color(palette.accent) });
+          }
+          page.drawLine({ start: { x: x + 92, y: topY - 98 }, end: { x: x + 164, y: topY - 98 }, thickness: 2, color: color(palette.line) });
+        } else {
+          drawLlamaMascot(x + 16, topY - 8, palette, { badge: true, accent: [0.67, 0.47, 0.76], glow: true });
+          page.drawLine({ start: { x: x + 106, y: topY - 24 }, end: { x: x + 106, y: topY - 106 }, thickness: 2, color: color(palette.line) });
+          for (let nodeIndex = 0; nodeIndex < 3; nodeIndex += 1) {
+            const nodeY = topY - 34 - nodeIndex * 24;
+            page.drawCircle({ x: x + 106, y: nodeY, size: 5, color: color(palette.accent) });
+            page.drawRectangle({ x: x + 118, y: nodeY - 8, width: 40, height: 14, color: rgb(1, 1, 1) });
+          }
+          page.drawCircle({ x: x + 150, y: topY - 38, size: 10, color: color(palette.soft) });
+        }
+      };
+
+      const drawSectionOverview = (section: (typeof localizedHelpSections)[number], sectionNumber: number) => {
+        const palette = contextPalette[section.context];
+        const cardHeight = 228;
+        const illustrationWidth = 188;
+        const walkthroughWidth = (contentWidth - 44) / 3;
+        const sectionWalkthrough = [
+          {
+            label: literal("Spot it"),
+            text: section.summary,
+          },
+          {
+            label: literal("Use it"),
+            text: section.plainLanguage[0] ?? section.body[0] ?? section.summary,
+          },
+          {
+            label: literal("Remember"),
+            text: section.keyPoints[0] ?? section.summary,
+          },
+        ];
+
+        ensureSpace(cardHeight, sectionNumber > 1);
+        const cardTop = cursorY;
+        const illustrationTop = cardTop - 24;
+        drawPanel(margin, cardTop, contentWidth, cardHeight, palette.soft, palette.line);
+        drawPill(`${literal("Step")} ${sectionNumber}`, margin + 16, cardTop - 12, palette.accent, [1, 1, 1]);
+        drawPill(contextLabel(section.context), margin + 98, cardTop - 12, [1, 1, 1], palette.ink);
+
+        page.drawText(section.title, {
+          x: margin + 18,
+          y: cardTop - 44,
+          size: 18,
+          font: boldFont,
+          color: color(palette.ink),
+        });
+
+        let summaryY = cardTop - 64;
+        for (const line of wrapText(section.summary, 43).slice(0, 5)) {
+          page.drawText(line, {
+            x: margin + 18,
+            y: summaryY,
+            size: 10,
+            font: regularFont,
+            color: rgb(0.26, 0.23, 0.2),
+          });
+          summaryY -= 12;
+        }
+
+        drawSectionScene(section.context, margin + contentWidth - illustrationWidth - 16, illustrationTop, illustrationWidth, 118);
+
+        sectionWalkthrough.forEach((step, stepIndex) => {
+          const cardX = margin + 16 + stepIndex * (walkthroughWidth + 6);
+          const cardTopY = cardTop - 146;
+          drawPanel(cardX, cardTopY, walkthroughWidth, 62, [1, 1, 1], palette.line);
+          page.drawText(step.label, {
+            x: cardX + 8,
+            y: cardTopY - 16,
+            size: 9,
+            font: boldFont,
+            color: color(palette.ink),
+          });
+          let stepTextY = cardTopY - 30;
+          for (const line of wrapText(step.text, 20).slice(0, 2)) {
+            page.drawText(line, {
+              x: cardX + 8,
+              y: stepTextY,
+              size: 8.5,
+              font: regularFont,
+              color: rgb(0.3, 0.28, 0.24),
+            });
+            stepTextY -= 10;
+          }
+        });
+
+        cursorY = cardTop - cardHeight - 10;
+      };
+
+      const drawSectionHeading = (label: string, palette: (typeof contextPalette)[HelpContext], minimumFollowingHeight = 54) => {
+        ensureSpace(26 + minimumFollowingHeight);
+        drawLines([label], { bold: true, fontSize: 12, color: palette.ink });
+        page.drawRectangle({
+          x: margin,
+          y: cursorY + 2,
+          width: 52,
+          height: 2,
+          color: color(palette.accent),
+        });
+        cursorY -= 6;
+      };
+
+      const drawLinkBadge = (
+        label: string,
+        url: string,
+        x: number,
+        topY: number,
+        options?: {
+          fillColor?: [number, number, number];
+          textColor?: [number, number, number];
+        },
+      ) => {
+        const width = Math.min(contentWidth - 24, Math.max(96, label.length * 5.1 + 18));
+        const height = 16;
+        page.drawRectangle({
+          x,
+          y: topY - height,
+          width,
+          height,
+          color: color(options?.fillColor ?? [0.93, 0.96, 0.99]),
+        });
+        page.drawText(label, {
+          x: x + 7,
+          y: topY - 11.5,
+          size: 8,
+          font: boldFont,
+          color: color(options?.textColor ?? [0.18, 0.28, 0.44]),
+        });
+        addUriLink(page, toPdfRect(x, topY, width, height), url);
+        return width;
+      };
+
+      const renderTocPage = (tocPage: typeof page) => {
+        const previousPage = page;
+        const previousCursorY = cursorY;
+        const tocEntries = [
+          {
+            label: literal("Quick-start walkthrough"),
+            targetId: "quick-start",
+          },
+          ...localizedHelpSections.map((section) => ({
+            label: section.title,
+            targetId: section.id,
+          })),
+          {
+            label: t("glossary"),
+            targetId: "glossary",
+          },
+          {
+            label: literal("Licensing appendix"),
+            targetId: "licensing",
+          },
+          {
+            label: t("references"),
+            targetId: "references",
+          },
+        ];
+
+        page = tocPage;
+        cursorY = pageSize.height - margin;
+        resetPageChrome();
+
+        drawLines([literal("Table of contents")], { bold: true, fontSize: 18, color: [0.23, 0.18, 0.13] });
+        drawParagraph(literal("Use the links below to jump straight into the matching manual section, glossary, or licensing note."), {
+          fontSize: 10,
+          color: [0.34, 0.3, 0.25],
+          maxCharacters: 88,
+        });
+
+        for (const entry of tocEntries) {
+          const destination = anchors.get(entry.targetId);
+          if (!destination) {
+            continue;
+          }
+
+          ensureSpace(26);
+          const pageNumber = pdfDocument.getPages().indexOf(destination.page) + 1;
+          const rowTop = cursorY;
+
+          page.drawRectangle({
+            x: margin,
+            y: rowTop - 18,
+            width: contentWidth,
+            height: 18,
+            color: rgb(0.985, 0.98, 0.97),
+          });
+          page.drawText(entry.label, {
+            x: margin + 10,
+            y: rowTop - 12.5,
+            size: 10,
+            font: boldFont,
+            color: rgb(0.23, 0.18, 0.13),
+          });
+          page.drawText(String(pageNumber), {
+            x: pageSize.width - margin - 18,
+            y: rowTop - 12.5,
+            size: 9,
+            font: boldFont,
+            color: rgb(0.42, 0.36, 0.31),
+          });
+          addInternalLink(page, toPdfRect(margin, rowTop, contentWidth, 18), destination);
+          cursorY -= 24;
+        }
+
+        page = previousPage;
+        cursorY = previousCursorY;
+      };
+
+      const quickStartCards = [
+        {
+          title: literal("Open Chat"),
+          detail: literal("Start in the conversation surface to draft the request and watch replies stream back live."),
+          targetId: "chat-overview",
+        },
+        {
+          title: literal("Pick the route"),
+          detail: literal("Choose the model path, assistant profile, and reply style that fit the task before sending."),
+          targetId: "prompting-and-control",
+        },
+        {
+          title: literal("Use grounding deliberately"),
+          detail: literal("Turn on shared knowledge when you want retrieval-backed answers. That improves this run; it does not retrain the model."),
+          targetId: "knowledge-operations",
+        },
+        {
+          title: literal("Configure in Admin"),
+          detail: literal("Use Access, Models, Jobs, and Activity to handle identity, providers, runtime state, queue work, and audit review."),
+          targetId: "access-control",
+        },
+        {
+          title: literal("Keep Help nearby"),
+          detail: literal("The manual, glossary, references, and replay walkthrough give you the same guidance in both quick and deep formats."),
+          targetId: "glossary",
+        },
+      ];
+
+      const licensingAppendix = [
+        {
+          title: literal("Oload installer legal flow"),
+          body: literal("The shipped installers require explicit EULA acceptance and then present a source-available proprietary licensing notice before runtime setup continues on either Windows or Linux."),
+          links: [
+            {
+              title: literal("End-user license agreement overview"),
+              url: "https://en.wikipedia.org/wiki/End-user_license_agreement",
+            },
+            {
+              title: literal("Source-available software overview"),
+              url: "https://en.wikipedia.org/wiki/Source-available_software",
+            },
+          ],
+        },
+        {
+          title: literal("EULA note for operators"),
+          body: literal("Treat the EULA as the acceptance gate for using the installed product. In this workspace the installer documentation describes that legal flow as source-available proprietary licensing, not a blanket open-source grant."),
+          links: [
+            {
+              title: literal("End-user license agreement overview"),
+              url: "https://en.wikipedia.org/wiki/End-user_license_agreement",
+            },
+          ],
+        },
+        {
+          title: literal("GNU GPL reference context"),
+          body: literal("GNU GPL material matters when reviewing third-party copyleft components and redistribution duties. The installer README does not describe Oload itself as GPL software, so the GNU links here are included as legal reference context rather than as the primary Oload product license."),
+          links: [
+            {
+              title: literal("GNU GPL v3 text"),
+              url: "https://www.gnu.org/licenses/gpl-3.0.en.html",
+            },
+            {
+              title: literal("GNU GPL FAQ"),
+              url: "https://www.gnu.org/licenses/gpl-faq.html",
+            },
+          ],
+        },
+      ];
+
+      ensureSpace(260);
+      drawPanel(margin, cursorY, contentWidth, 208, [0.99, 0.965, 0.935], [0.84, 0.7, 0.57]);
+      page.drawText(t("helpManualTitle"), {
+        x: margin + 18,
+        y: cursorY - 38,
+        size: 24,
+        font: boldFont,
+        color: rgb(0.42, 0.19, 0.11),
+      });
+      let heroY = cursorY - 62;
+      for (const line of wrapText(t("helpManualSubtitle"), 62).slice(0, 3)) {
+        page.drawText(line, {
+          x: margin + 18,
+          y: heroY,
+          size: 11,
+          font: regularFont,
+          color: rgb(0.32, 0.28, 0.24),
+        });
+        heroY -= 14;
+      }
+      drawPill(`${t("currentFocus")}: ${focusSummary.badge}`, margin + 18, cursorY - 112, [0.84, 0.73, 0.63], [0.29, 0.19, 0.13]);
+      drawPill(status.isReachable ? t("gatewayOnline") : t("attentionNeeded"), margin + 134, cursorY - 112, [1, 1, 1], [0.25, 0.22, 0.18]);
+      drawPill(currentUser ? currentUser.displayName : t("localAccount"), margin + 252, cursorY - 112, [1, 1, 1], [0.25, 0.22, 0.18]);
+      drawSectionScene("chat", margin + contentWidth - 210, cursorY - 22, 186, 126);
+      cursorY -= 228;
+
+      addPage();
+      setAnchor("quick-start", page, cursorY);
+      drawLines([literal("Quick-start walkthrough")], { bold: true, fontSize: 15, color: [0.23, 0.18, 0.13] });
+      drawParagraph(literal("This PDF now mirrors the in-app walkthrough. Each card below links to the matching detailed section so you can jump directly from the quick-start to the full explanation."), {
+        color: [0.34, 0.3, 0.25],
+        fontSize: 10,
+        maxCharacters: 88,
+      });
+
+      for (const [quickStepIndex, step] of quickStartCards.entries()) {
+        ensureSpace(70);
+        const cardBounds = drawQuickStepCard(quickStepIndex + 1, step.title, step.detail, cursorY);
+        pendingInternalLinks.push({
+          sourcePage: page,
+          rect: toPdfRect(cardBounds.x, cardBounds.topY, cardBounds.width, cardBounds.height),
+          targetId: step.targetId,
+        });
+        cursorY -= 70;
+      }
+
+      for (const [sectionIndex, section] of localizedHelpSections.entries()) {
+        const palette = contextPalette[section.context];
+        drawSectionOverview(section, sectionIndex + 1);
+
+        addPage();
+        setAnchor(section.id, page, cursorY);
+        drawPill(contextLabel(section.context), margin, cursorY - 4, palette.accent, [1, 1, 1]);
+        cursorY -= 28;
+        drawLines([section.title], { bold: true, fontSize: 18, color: palette.ink });
+        drawParagraph(section.summary, {
+          fontSize: 10,
+          color: [0.34, 0.3, 0.25],
+          maxCharacters: 88,
+        });
+
+        drawSectionHeading(t("technicalDetail"), palette, 72);
+        for (const paragraph of section.body) {
+          drawParagraph(paragraph, { fontSize: 10, color: [0.2, 0.2, 0.2] });
+        }
+
+        drawSectionHeading(literal("Operator walkthrough"), palette, 72);
         for (const paragraph of section.plainLanguage) {
-          drawLines(wrapText(paragraph, 84), { fontSize: 10, color: [0.28, 0.28, 0.28] });
+          drawParagraph(paragraph, { fontSize: 10, color: [0.28, 0.28, 0.28] });
         }
 
         if (section.comparison) {
-          drawLines([`Think of it as: ${section.comparison}`], { fontSize: 10, color: [0.28, 0.28, 0.28] });
+          drawParagraph(`${t("thinkingOfItAs")} ${section.comparison}`, {
+            fontSize: 9,
+            color: [0.34, 0.3, 0.28],
+            maxCharacters: 86,
+          });
         }
 
-        drawLines(["Key procedures"], { bold: true, fontSize: 11 });
-
+        drawSectionHeading(t("operationalSteps"), palette, 72);
         for (const point of section.keyPoints) {
-          drawLines(wrapText(`- ${point}`, 82), { fontSize: 10 });
+          drawParagraph(`- ${point}`, { fontSize: 10, color: [0.2, 0.2, 0.2], maxCharacters: 82 });
         }
       }
 
-      drawLines(["Glossary"], { bold: true, fontSize: 15, color: [0.2, 0.2, 0.2] });
+      addPage();
+      setAnchor("glossary", page, cursorY);
+      drawLines([t("glossary")], { bold: true, fontSize: 18, color: [0.23, 0.18, 0.13] });
+      drawParagraph(literal("Shared language keeps operators aligned. Use the glossary as the quick reference layer when the walkthrough uses a term that deserves a tighter definition."), {
+        fontSize: 10,
+        color: [0.34, 0.3, 0.25],
+        maxCharacters: 88,
+      });
 
-      for (const entry of helpGlossary) {
-        drawLines([entry.term], { bold: true, fontSize: 11 });
-        drawLines(wrapText(entry.definition, 84), { fontSize: 10 });
+      for (const entry of localizedGlossary) {
+        const definitionLines = wrapText(entry.definition, 84).slice(0, 4);
+        const linkRows = entry.links?.length ? entry.links.length * 18 + 4 : 0;
+        const cardHeight = 28 + definitionLines.length * 11 + linkRows;
+        ensureSpace(cardHeight + 8);
+        drawPanel(margin, cursorY, contentWidth, cardHeight, [0.985, 0.98, 0.97], [0.86, 0.8, 0.74]);
+        page.drawText(entry.term, {
+          x: margin + 12,
+          y: cursorY - 16,
+          size: 10,
+          font: boldFont,
+          color: rgb(0.23, 0.18, 0.13),
+        });
+        for (const [definitionLineIndex, line] of definitionLines.entries()) {
+          page.drawText(line, {
+            x: margin + 12,
+            y: cursorY - 30 - definitionLineIndex * 11,
+            size: 9,
+            font: regularFont,
+            color: rgb(0.34, 0.3, 0.25),
+          });
+        }
+
+        if (entry.links && entry.links.length > 0) {
+          let linkTop = cursorY - 30 - definitionLines.length * 11 - 4;
+          for (const link of entry.links) {
+            drawLinkBadge(link.title, link.url, margin + 12, linkTop, {
+              fillColor: [0.93, 0.96, 0.99],
+              textColor: [0.18, 0.28, 0.44],
+            });
+            linkTop -= 18;
+          }
+        }
+
+        cursorY -= cardHeight + 8;
       }
 
-      drawLines(["References"], { bold: true, fontSize: 15, color: [0.2, 0.2, 0.2] });
+      addPage();
+      setAnchor("licensing", page, cursorY);
+      drawLines([literal("Licensing appendix")], { bold: true, fontSize: 18, color: [0.23, 0.18, 0.13] });
+      drawParagraph(literal("This appendix stays grounded in the shipped installer flow. Oload requires EULA acceptance and then presents a source-available proprietary notice before runtime setup continues; GNU GPL material is included here as external legal reference context for third-party evaluation."), {
+        fontSize: 10,
+        color: [0.34, 0.3, 0.25],
+        maxCharacters: 88,
+      });
 
-      for (const entry of helpReferences) {
-        drawLines([`${entry.category}: ${entry.title}`], { bold: true, fontSize: 11 });
-        drawLines(wrapText(entry.description, 84), { fontSize: 10 });
-        drawLines(wrapText(entry.url, 84), { fontSize: 9, color: [0.2, 0.32, 0.45] });
+      for (const note of licensingAppendix) {
+        const bodyLines = wrapText(note.body, 84).slice(0, 5);
+        const cardHeight = 30 + bodyLines.length * 11 + note.links.length * 18 + 6;
+        ensureSpace(cardHeight + 10);
+        drawPanel(margin, cursorY, contentWidth, cardHeight, [0.975, 0.98, 0.99], [0.78, 0.82, 0.9]);
+        page.drawText(note.title, {
+          x: margin + 12,
+          y: cursorY - 16,
+          size: 10,
+          font: boldFont,
+          color: rgb(0.18, 0.28, 0.44),
+        });
+        for (const [lineIndex, line] of bodyLines.entries()) {
+          page.drawText(line, {
+            x: margin + 12,
+            y: cursorY - 30 - lineIndex * 11,
+            size: 9,
+            font: regularFont,
+            color: rgb(0.28, 0.36, 0.45),
+          });
+        }
+
+        let linkTop = cursorY - 30 - bodyLines.length * 11 - 4;
+        for (const link of note.links) {
+          drawLinkBadge(link.title, link.url, margin + 12, linkTop);
+          linkTop -= 18;
+        }
+
+        cursorY -= cardHeight + 10;
       }
+
+      addPage();
+      setAnchor("references", page, cursorY);
+      drawLines([t("references")], { bold: true, fontSize: 18, color: [0.23, 0.18, 0.13] });
+      drawParagraph(literal("Use these external references when the local walkthrough tells you what the app is doing but you want the underlying provider, model, or retrieval concepts in their broader context."), {
+        fontSize: 10,
+        color: [0.34, 0.3, 0.25],
+        maxCharacters: 88,
+      });
+
+      for (const entry of localizedReferences) {
+        const descriptionLines = wrapText(entry.description, 84).slice(0, 2);
+        const urlLines = wrapText(entry.url, 72).slice(0, 2);
+        const cardHeight = 34 + descriptionLines.length * 10 + urlLines.length * 9;
+        const categoryPillWidth = Math.max(72, entry.category.length * 5.4 + 20);
+
+        ensureSpace(cardHeight + 8);
+        drawPanel(margin, cursorY, contentWidth, cardHeight, [0.975, 0.985, 0.995], [0.77, 0.84, 0.91]);
+        drawPill(entry.category, margin + contentWidth - categoryPillWidth - 12, cursorY - 10, [0.82, 0.9, 0.98], [0.18, 0.28, 0.44]);
+        page.drawText(entry.title, {
+          x: margin + 12,
+          y: cursorY - 26,
+          size: 10,
+          font: boldFont,
+          color: rgb(0.18, 0.28, 0.44),
+        });
+        for (const [descriptionLineIndex, line] of descriptionLines.entries()) {
+          page.drawText(line, {
+            x: margin + 12,
+            y: cursorY - 39 - descriptionLineIndex * 10,
+            size: 8.5,
+            font: regularFont,
+            color: rgb(0.28, 0.36, 0.45),
+          });
+        }
+
+        for (const [urlLineIndex, line] of urlLines.entries()) {
+          page.drawText(line, {
+            x: margin + 12,
+            y: cursorY - 43 - descriptionLines.length * 10 - urlLineIndex * 9,
+            size: 8,
+            font: regularFont,
+            color: rgb(0.2, 0.32, 0.45),
+          });
+        }
+
+        addUriLink(page, toPdfRect(margin, cursorY, contentWidth, cardHeight), entry.url);
+        cursorY -= cardHeight + 8;
+      }
+
+      const tocPage = pdfDocument.insertPage(1, [pageSize.width, pageSize.height]);
+      renderTocPage(tocPage);
+
+      for (const link of pendingInternalLinks) {
+        const destination = anchors.get(link.targetId);
+        if (!destination) {
+          continue;
+        }
+        addInternalLink(link.sourcePage, link.rect, destination);
+      }
+
+      pdfDocument.getPages().forEach((pdfPage, index) => {
+        pdfPage.drawText(t("helpManualTitle"), {
+          x: margin,
+          y: 18,
+          size: 8,
+          font: regularFont,
+          color: rgb(0.42, 0.36, 0.31),
+        });
+        pdfPage.drawText(`${index + 1}`, {
+          x: pageSize.width - margin - 8,
+          y: 18,
+          size: 8,
+          font: boldFont,
+          color: rgb(0.42, 0.36, 0.31),
+        });
+      });
 
       const pdfBytes = await pdfDocument.save();
       const pdfByteArray = Uint8Array.from(pdfBytes);
@@ -214,21 +1186,29 @@ export function HelpPanel({
   };
 
   return (
-    <section className={`glass-panel flex flex-col rounded-[32px] p-4 sm:rounded-[36px] sm:p-6 ${isPageSurface ? "" : "h-full min-h-0 overflow-hidden"}`}>
+    <section data-tour-id="help-shell" className={`glass-panel flex flex-col rounded-[32px] p-4 sm:rounded-[36px] sm:p-6 ${isPageSurface ? "" : "h-full min-h-0 overflow-hidden"}`}>
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="section-label text-xs font-semibold">Help</p>
+          <p className="section-label text-xs font-semibold">{t("help")}</p>
           <h2 className="mt-2 text-xl font-semibold tracking-tight text-foreground sm:mt-3 sm:text-2xl">
-            {HELP_MANUAL_TITLE}
+            {t("helpManualTitle")}
           </h2>
           <p className="mt-2 text-sm leading-6 text-muted sm:mt-3">
             {isPageSurface
-              ? "Technical reference first, plain-language translation second, and free outside reading links at the bottom."
-              : HELP_MANUAL_SUBTITLE}
+              ? t("helpPageIntro")
+              : t("helpManualSubtitle")}
           </p>
         </div>
-        <div className="flex flex-col items-end gap-2">
-          <span className="ui-pill ui-pill-surface">{focusSummary.badge}</span>
+        <div data-tour-id="help-actions" className="flex flex-col items-end gap-2">
+          <span className="ui-pill ui-pill-label">{contextLabel(context)}</span>
+          <button
+            data-tour-id="help-replay"
+            className="ui-button ui-button-secondary px-4 py-2 text-sm"
+            type="button"
+            onClick={() => onReplayWalkthrough?.()}
+          >
+            {literal("Replay walkthrough")}
+          </button>
           <button
             className="ui-button ui-button-secondary px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
             type="button"
@@ -237,7 +1217,7 @@ export function HelpPanel({
             }}
             disabled={isExportingPdf}
           >
-            {isExportingPdf ? "Building PDF..." : "Download PDF manual"}
+            {isExportingPdf ? t("saving") : t("downloadPdfManual")}
           </button>
         </div>
       </div>
@@ -246,22 +1226,22 @@ export function HelpPanel({
         <div className="theme-surface-elevated mt-5 rounded-[28px] px-5 py-5">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="max-w-3xl">
-              <p className="eyebrow text-muted">Current focus</p>
+              <p className="eyebrow text-muted">{t("currentFocus")}</p>
               <p className="mt-2 text-lg font-semibold text-foreground">{focusSummary.title}</p>
               <p className="mt-2 text-sm leading-6 text-muted">{focusSummary.intro}</p>
             </div>
 
             <div className="flex flex-wrap gap-2">
               <span className={`ui-pill ${status.isReachable ? "ui-pill-success" : "ui-pill-warning"}`}>
-                {status.isReachable ? "Gateway ready" : "Gateway attention"}
+                {status.isReachable ? t("gatewayOnline") : t("attentionNeeded")}
               </span>
-              <span className="ui-pill ui-pill-surface">
-                {currentUser ? currentUser.displayName : "Guest mode"}
+              <span className="ui-pill ui-pill-label">
+                {currentUser ? currentUser.displayName : t("localAccount")}
               </span>
             </div>
           </div>
 
-          <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,0.7fr)]">
+          <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.02fr)_minmax(360px,0.98fr)]">
             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
               {contextSections.map((section) => (
                 <button
@@ -273,23 +1253,35 @@ export function HelpPanel({
                   }}
                 >
                   <span>{section.title}</span>
-                  <span className="text-xs text-muted">Jump</span>
+                  <span className="text-xs text-muted">{literal("Jump")}</span>
                 </button>
               ))}
             </div>
 
-            <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-3">
-              <div className="theme-surface-soft rounded-[20px] px-3 py-3">
-                <p className="eyebrow text-muted">Sections in view</p>
-                <p className="mt-1 text-sm font-semibold text-foreground">{contextSections.length}</p>
-              </div>
-              <div className="theme-surface-soft rounded-[20px] px-3 py-3">
-                <p className="eyebrow text-muted">Manual sections</p>
-                <p className="mt-1 text-sm font-semibold text-foreground">{totalSectionCount}</p>
-              </div>
-              <div className="theme-surface-soft rounded-[20px] px-3 py-3">
-                <p className="eyebrow text-muted">Glossary terms</p>
-                <p className="mt-1 text-sm font-semibold text-foreground">{helpGlossary.length}</p>
+            <div className="grid gap-3 xl:gap-4">
+              <PlushLlamaHero
+                badge="Mascot direction"
+                title="Plush llama, shared family"
+                description="The Help surface now follows the shipped plush mascot lane instead of a generic llama placeholder."
+                summary="The same plush silhouette language now anchors the Help manual, PDF export illustrations, and the theme-aware mascot family."
+                detailLeftTitle="Recognition cues"
+                detailLeftBody="Oversized head, forehead tuft, rounded muzzle, and short plush forelimbs."
+                detailRightTitle="Theme variants"
+                detailRightBody="Light stays premium cream, Tech shifts cooler with cyan trim, and Dark moves into midnight plush with ember accents."
+              />
+              <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-3">
+                <div className="theme-surface-soft rounded-[20px] px-3 py-3">
+                  <p className="eyebrow text-muted">{literal("Sections in view")}</p>
+                  <p className="mt-1 text-sm font-semibold text-foreground">{contextSections.length}</p>
+                </div>
+                <div className="theme-surface-soft rounded-[20px] px-3 py-3">
+                  <p className="eyebrow text-muted">{t("manualSections")}</p>
+                  <p className="mt-1 text-sm font-semibold text-foreground">{totalSectionCount}</p>
+                </div>
+                <div className="theme-surface-soft rounded-[20px] px-3 py-3">
+                  <p className="eyebrow text-muted">{t("glossaryTerms")}</p>
+                  <p className="mt-1 text-sm font-semibold text-foreground">{localizedGlossary.length}</p>
+                </div>
               </div>
             </div>
           </div>
@@ -298,7 +1290,7 @@ export function HelpPanel({
 
       <div className="mt-5 grid gap-3 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
         <div className="theme-surface-soft rounded-[24px] px-4 py-4">
-          <p className="eyebrow text-muted">Focus</p>
+          <p className="eyebrow text-muted">{t("currentFocus")}</p>
           <p className="mt-2 text-base font-semibold text-foreground">
             {focusSummary.title}
           </p>
@@ -307,19 +1299,19 @@ export function HelpPanel({
           ) : null}
         </div>
         <div className="theme-surface-soft rounded-[24px] px-4 py-4">
-          <p className="eyebrow text-muted">Gateway</p>
+          <p className="eyebrow text-muted">{t("gatewayStatus")}</p>
           <p className="mt-2 text-base font-semibold text-foreground">
-            {status.isReachable ? "Ready" : "Needs attention"}
+            {status.isReachable ? t("online") : t("attentionNeeded")}
           </p>
           {isPageSurface ? (
-            <p className="mt-1 text-xs leading-5 text-muted">Status here helps explain whether local AI paths are currently usable.</p>
+            <p className="mt-1 text-xs leading-5 text-muted">{literal("Status here helps explain whether local AI paths are currently usable.")}</p>
           ) : null}
         </div>
         <div className="theme-surface-soft rounded-[24px] px-4 py-4">
-          <p className="eyebrow text-muted">User</p>
-          <p className="mt-2 text-base font-semibold text-foreground">{currentUser ? currentUser.displayName : "Guest mode"}</p>
+          <p className="eyebrow text-muted">{literal("User")}</p>
+          <p className="mt-2 text-base font-semibold text-foreground">{currentUser ? currentUser.displayName : t("localAccount")}</p>
           {isPageSurface ? (
-            <p className="mt-1 text-xs leading-5 text-muted">{currentUser ? `Signed in as ${currentUser.role}.` : "Manual is available without a signed-in identity."}</p>
+            <p className="mt-1 text-xs leading-5 text-muted">{currentUser ? `${t("signedInRole")}: ${currentUser.role}.` : t("manualAvailableWithoutSignIn")}</p>
           ) : null}
         </div>
       </div>
@@ -329,7 +1321,7 @@ export function HelpPanel({
           {isPageSurface ? (
             <div className="space-y-3 xl:sticky xl:top-3 xl:self-start">
               <div className="theme-surface-soft rounded-[28px] p-5">
-                <p className="eyebrow text-muted">Jump list</p>
+                <p className="eyebrow text-muted">{t("manualSections")}</p>
                 <p className="mt-2 text-base font-semibold text-foreground">{focusSummary.title}</p>
                 <p className="mt-2 text-sm leading-6 text-muted">{focusSummary.intro}</p>
                 <div className="mt-4 space-y-2">
@@ -343,7 +1335,7 @@ export function HelpPanel({
                       }}
                     >
                       <span>{index + 1}. {section.title}</span>
-                      <span className="text-xs text-muted">Focus</span>
+                      <span className="text-xs text-muted">{t("currentFocus")}</span>
                     </button>
                   ))}
                 </div>
@@ -353,27 +1345,27 @@ export function HelpPanel({
                 <div className="theme-surface-soft rounded-[28px] p-5">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="eyebrow text-muted">Your account</p>
+                      <p className="eyebrow text-muted">{t("yourAccount")}</p>
                       <p className="mt-2 text-base font-semibold text-foreground">{currentUser.displayName}</p>
                       <p className="mt-1 text-xs text-muted">@{currentUser.username}</p>
                     </div>
-                    <span className="ui-pill ui-pill-surface text-xs">{currentUser.role}</span>
+                      <span className="ui-pill ui-pill-meta text-xs">{currentUser.role}</span>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <span className="ui-pill ui-pill-soft border border-line text-xs text-muted">
-                      {currentUser.authProvider === "google" ? "Google sign-in" : "Local account"}
+                      <span className="ui-pill ui-pill-meta text-xs text-muted">
+                      {currentUser.authProvider === "google" ? literal("Google sign-in") : t("localAccount")}
                     </span>
                   </div>
                   <p className="mt-3 text-sm leading-6 text-muted">
-                    Your account details stay visible here even without full admin tooling. Use Access for your defaults and sign-in controls.
+                    {literal("Your account details stay visible here even without full admin tooling. Use Access for your defaults and sign-in controls.")}
                   </p>
                 </div>
               ) : null}
 
               <div className="theme-surface-soft rounded-[28px] p-5">
-                <p className="eyebrow text-muted">All sections</p>
+                <p className="eyebrow text-muted">{t("manualSections")}</p>
                 <div className="mt-3 space-y-2">
-                  {helpSections.map((section, index) => (
+                  {localizedHelpSections.map((section, index) => (
                     <button
                       key={section.id}
                       className="ui-button ui-button-secondary w-full justify-between rounded-[20px] px-4 py-3 text-left text-sm"
@@ -383,7 +1375,7 @@ export function HelpPanel({
                       }}
                     >
                       <span>{index + 1}. {section.title}</span>
-                      <span className="text-xs text-muted">{section.context}</span>
+                      <span className="text-xs text-muted">{contextLabel(section.context)}</span>
                     </button>
                   ))}
                 </div>
@@ -395,7 +1387,7 @@ export function HelpPanel({
             <div className="theme-surface-soft rounded-[28px] p-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="eyebrow text-muted">Overview</p>
+                  <p className="eyebrow text-muted">{t("overview")}</p>
                   <p className="mt-2 text-base font-semibold text-foreground">{focusSummary.title}</p>
                   <p className="mt-2 text-sm leading-6 text-muted">{focusSummary.intro}</p>
                 </div>
@@ -420,7 +1412,7 @@ export function HelpPanel({
               <div className="theme-surface-soft rounded-[28px] p-5">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="eyebrow text-muted">Your account</p>
+                    <p className="eyebrow text-muted">{t("yourAccount")}</p>
                     <p className="mt-2 text-base font-semibold text-foreground">{currentUser.displayName}</p>
                     <p className="mt-1 text-xs text-muted">@{currentUser.username}</p>
                   </div>
@@ -428,20 +1420,20 @@ export function HelpPanel({
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <span className="ui-pill ui-pill-soft border border-line text-xs text-muted">
-                    {currentUser.authProvider === "google" ? "Google sign-in" : "Local account"}
+                    {currentUser.authProvider === "google" ? literal("Google sign-in") : t("localAccount")}
                   </span>
                 </div>
                 <p className="mt-3 text-sm leading-6 text-muted">
-                  Your account details stay visible here even without full admin tooling. Use Access for your defaults and sign-in controls.
+                  {literal("Your account details stay visible here even without full admin tooling. Use Access for your defaults and sign-in controls.")}
                 </p>
               </div>
             ) : null}
 
             {!isPageSurface ? (
               <div className="theme-surface-soft rounded-[28px] p-5">
-                <p className="eyebrow text-muted">Table of contents</p>
+                <p className="eyebrow text-muted">{t("manualSections")}</p>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
-                  {helpSections.map((section, index) => (
+                  {localizedHelpSections.map((section, index) => (
                     <button
                       key={section.id}
                       className="ui-button ui-button-secondary justify-between rounded-[20px] px-4 py-3 text-left text-sm"
@@ -451,30 +1443,35 @@ export function HelpPanel({
                       }}
                     >
                       <span>{index + 1}. {section.title}</span>
-                      <span className="text-xs text-muted">{section.context}</span>
+                      <span className="text-xs text-muted">{contextLabel(section.context)}</span>
                     </button>
                   ))}
                 </div>
               </div>
             ) : null}
 
-            {helpSections.map((section, index) => (
-            <div id={`help-section-${section.id}`} key={section.id} className="theme-surface-soft rounded-[28px] p-5">
+            {localizedHelpSections.map((section, index) => (
+            <div
+              id={`help-section-${section.id}`}
+              key={section.id}
+              data-tour-id={`help-section-card-${section.id}`}
+              className="theme-surface-soft rounded-[28px] p-5"
+            >
               <div className="flex items-center gap-3">
                 <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--accent)] text-sm font-semibold text-white">
                   {index + 1}
                 </span>
                 <div>
                   <h3 className="text-base font-semibold text-foreground">{section.title}</h3>
-                  <p className="mt-1 text-xs uppercase tracking-[0.16em] text-muted">{section.context}</p>
+                  <p className="mt-1 text-xs uppercase tracking-[0.16em] text-muted">{contextLabel(section.context)}</p>
                 </div>
               </div>
               <div className="theme-surface-strong mt-4 rounded-[22px] px-4 py-4">
-                <p className="eyebrow text-muted">Technical summary</p>
+                <p className="eyebrow text-muted">{t("technicalSummary")}</p>
                 <p className="mt-3 text-sm leading-7 text-muted">{section.summary}</p>
               </div>
               <div className="mt-4 rounded-[22px] border border-line/70 px-4 py-4">
-                <p className="eyebrow text-muted">Technical detail</p>
+                <p className="eyebrow text-muted">{t("technicalDetail")}</p>
                 <div className="mt-3 space-y-3">
                   {section.body.map((paragraph) => (
                     <p key={paragraph} className="text-sm leading-7 text-muted">{paragraph}</p>
@@ -482,7 +1479,7 @@ export function HelpPanel({
                 </div>
               </div>
               <div className="theme-surface-panel mt-4 rounded-[22px] px-4 py-4">
-                <p className="eyebrow text-muted">In plain language</p>
+                <p className="eyebrow text-muted">{t("plainLanguage")}</p>
                 <div className="mt-3 space-y-3">
                   {section.plainLanguage.map((paragraph) => (
                     <p key={paragraph} className="text-sm leading-7 text-muted">{paragraph}</p>
@@ -490,12 +1487,12 @@ export function HelpPanel({
                 </div>
                 {section.comparison ? (
                   <div className="theme-surface-chip mt-4 rounded-[18px] px-3 py-3 text-sm leading-6 text-foreground">
-                    <span className="font-semibold">Think of it as:</span> {section.comparison}
+                    <span className="font-semibold">{t("thinkingOfItAs")}</span> {section.comparison}
                   </div>
                 ) : null}
               </div>
               <div className="theme-surface-elevated mt-4 rounded-[22px] px-4 py-4">
-                <p className="eyebrow text-muted">Operational steps</p>
+                <p className="eyebrow text-muted">{t("operationalSteps")}</p>
                 <div className="mt-3 space-y-2">
                   {section.keyPoints.map((point) => (
                     <div key={point} className="theme-surface-chip rounded-[18px] px-3 py-3 text-sm leading-6 text-foreground">
@@ -508,12 +1505,27 @@ export function HelpPanel({
           ))}
 
             <div className="theme-surface-soft rounded-[28px] p-5">
-              <p className="eyebrow text-muted">Glossary</p>
+              <p className="eyebrow text-muted">{t("glossary")}</p>
               <div className="mt-3 space-y-3">
-                {helpGlossary.map((item) => (
+                {localizedGlossary.map((item) => (
                   <div key={item.term} className="theme-surface-strong rounded-[22px] px-4 py-4">
                     <p className="text-sm font-semibold text-foreground">{item.term}</p>
                     <p className="mt-2 text-sm leading-6 text-muted">{item.definition}</p>
+                    {item.links && item.links.length > 0 ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {item.links.map((link) => (
+                          <a
+                            key={`${item.term}-${link.url}`}
+                            className="ui-pill ui-pill-soft border border-line px-3 py-1 text-xs font-semibold text-[var(--accent-strong)] underline-offset-2 hover:underline"
+                            href={link.url}
+                            rel="noreferrer"
+                            target="_blank"
+                          >
+                            {link.title}
+                          </a>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                 ))}
               </div>
@@ -522,14 +1534,14 @@ export function HelpPanel({
             <div className="theme-surface-soft rounded-[28px] p-5">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="eyebrow text-muted">References</p>
-                  <p className="mt-2 text-base font-semibold text-foreground">Free docs, courses, and blog-style explainers</p>
-                  <p className="mt-2 text-sm leading-6 text-muted">Official docs come first for accuracy. The blog and course links are useful when you want the same ideas explained in a more human teaching voice.</p>
+                  <p className="eyebrow text-muted">{t("references")}</p>
+                  <p className="mt-2 text-base font-semibold text-foreground">{t("referencesTitle")}</p>
+                  <p className="mt-2 text-sm leading-6 text-muted">{t("referencesIntro")}</p>
                 </div>
-                <span className="ui-pill ui-pill-surface">External</span>
+                <span className="ui-pill ui-pill-surface">{literal("External")}</span>
               </div>
               <div className="mt-4 space-y-3">
-                {helpReferences.map((item) => (
+                {localizedReferences.map((item) => (
                   <div key={item.url} className="theme-surface-strong rounded-[22px] px-4 py-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>

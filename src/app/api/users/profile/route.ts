@@ -1,12 +1,15 @@
+import { NextResponse } from "next/server";
+
 import { recordActivity } from "@/lib/activity";
-import { getCurrentUser } from "@/lib/auth";
-import { toPublicUser, updateUserProfile } from "@/lib/users";
+import { createUserSessionCookie, getCurrentUser, getUserSessionPersistence } from "@/lib/auth";
+import { toPublicUser, toSessionUser, updateUserProfile } from "@/lib/users";
 import type { VoiceTranscriptionLanguage } from "@/lib/user-types";
 
 export const dynamic = "force-dynamic";
 
 export async function PATCH(request: Request) {
-  const currentUser = await getCurrentUser(request.headers.get("cookie"));
+  const cookieHeader = request.headers.get("cookie");
+  const currentUser = await getCurrentUser(cookieHeader);
 
   if (!currentUser) {
     return Response.json({ error: "Sign in to update your account." }, { status: 401 });
@@ -43,7 +46,22 @@ export async function PATCH(request: Request) {
       type: "user.updated",
     });
 
-    return Response.json({ user: toPublicUser(updatedUser) });
+    const cookie = createUserSessionCookie(toSessionUser(updatedUser), {
+      persistent: getUserSessionPersistence(cookieHeader),
+    });
+    const response = NextResponse.json({ user: toPublicUser(updatedUser) });
+
+    response.cookies.set({
+      name: cookie.name,
+      value: cookie.value,
+      httpOnly: true,
+      maxAge: cookie.maxAge,
+      path: "/",
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+    });
+
+    return response;
   } catch (error) {
     return Response.json(
       { error: error instanceof Error ? error.message : "Unable to update the account profile." },

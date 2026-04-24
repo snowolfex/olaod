@@ -14,6 +14,12 @@ type SessionCookieOptions = {
   persistent?: boolean;
 };
 
+type SignedSessionPayload = {
+  exp?: number;
+  user?: SessionUser;
+  persistent?: boolean;
+};
+
 export function getSessionSecret() {
   return process.env.OLOAD_SESSION_SECRET ||
     (process.env.NODE_ENV !== "production" ? "oload-local-dev-secret" : undefined);
@@ -73,10 +79,7 @@ function parseSignedValue(rawValue: string | null, secret: string) {
   }
 
   try {
-    return JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as {
-      exp?: number;
-      user?: SessionUser;
-    };
+    return JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as SignedSessionPayload;
   } catch {
     return null;
   }
@@ -169,7 +172,7 @@ export function createUserSessionCookie(user: SessionUser, options?: SessionCook
   }
 
   const expiresAt = Date.now() + SESSION_TTL_MS;
-  const payload = encodeSessionPayload({ exp: expiresAt, user });
+  const payload = encodeSessionPayload({ exp: expiresAt, persistent: Boolean(options?.persistent), user });
   const signature = signPayload(payload, secret);
 
   return {
@@ -214,6 +217,17 @@ export function getUserSessionStatus(cookieHeader: string | null): UserSessionSt
     user: decoded.user,
     userCount: 0,
   };
+}
+
+export function getUserSessionPersistence(cookieHeader: string | null) {
+  const secret = getSessionSecret();
+
+  if (!secret) {
+    return false;
+  }
+
+  const decoded = parseSignedValue(parseCookieValue(cookieHeader, USER_COOKIE_NAME), secret);
+  return Boolean(decoded?.persistent);
 }
 
 export async function getCurrentUser(cookieHeader: string | null) {

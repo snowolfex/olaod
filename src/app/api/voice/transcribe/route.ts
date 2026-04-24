@@ -1,4 +1,5 @@
 import { transcribeAudioFile } from "@/lib/voice-transcription";
+import { getConfiguredDefaultVoiceTranscriptionLanguage } from "@/lib/default-voice-language";
 import { isVoiceTranscriptionLanguage } from "@/lib/voice-types";
 import type { VoiceTranscriptionLanguage } from "@/lib/user-types";
 
@@ -14,7 +15,7 @@ export async function POST(request: Request) {
       return Response.json({ error: "Recorded audio is required." }, { status: 400 });
     }
 
-    let language: VoiceTranscriptionLanguage = "auto";
+    let language: VoiceTranscriptionLanguage = getConfiguredDefaultVoiceTranscriptionLanguage();
 
     if (typeof languageValue === "string" && isVoiceTranscriptionLanguage(languageValue)) {
       language = languageValue as VoiceTranscriptionLanguage;

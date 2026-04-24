@@ -25,7 +25,10 @@ export type AiChatRequest = {
   temperature?: number;
   systemPrompt?: string;
   useKnowledge?: boolean;
+  groundingMode?: AiGroundingMode;
 };
+
+export type AiGroundingMode = "off" | "balanced" | "strict";
 
 export const AI_KNOWLEDGE_SOURCES_HEADER = "x-oload-knowledge-sources";
 
@@ -135,4 +138,17 @@ export type AiKnowledgeCitation = {
   modelIds: string[];
   excerpt: string;
   score: number;
+};
+
+export type AiWorkspaceProfile = {
+  id: string;
+  name: string;
+  description: string;
+  providerId: AiProviderId;
+  model: string;
+  systemPrompt: string;
+  temperature: number;
+  useKnowledge: boolean;
+  groundingMode: Exclude<AiGroundingMode, "off">;
+  updatedAt: string;
 };

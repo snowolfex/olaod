@@ -18,6 +18,7 @@ export type PendingEmailVerification = {
 
 export type VoiceTranscriptionLanguage =
   | "auto"
+  | "united-states"
   | "arabic"
   | "bengali"
   | "chinese"

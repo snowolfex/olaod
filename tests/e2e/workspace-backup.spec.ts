@@ -197,7 +197,7 @@ test("exports and restores workspace backups, including invalidating stale user 
       ]),
     });
 
-    await page.locator('input[type="file"]').setInputFiles({
+    await page.locator('input[type="file"][accept="application/json"]').setInputFiles({
       name: download.suggestedFilename(),
       mimeType: "application/json",
       buffer: Buffer.from(JSON.stringify(originalSnapshot, null, 2)),
@@ -207,7 +207,7 @@ test("exports and restores workspace backups, including invalidating stale user 
     await page.getByRole("button", { name: "Clear selected backup" }).click();
     await expect(page.getByText(/Loaded backup .* with 1 users, 1 conversations,/)).toHaveCount(0);
 
-    await page.locator('input[type="file"]').setInputFiles({
+    await page.locator('input[type="file"][accept="application/json"]').setInputFiles({
       name: download.suggestedFilename(),
       mimeType: "application/json",
       buffer: Buffer.from(JSON.stringify(originalSnapshot, null, 2)),
@@ -269,7 +269,7 @@ test("exports and restores workspace backups, including invalidating stale user 
       jobHistory: [],
     };
 
-    await page.locator('input[type="file"]').setInputFiles({
+    await page.locator('input[type="file"][accept="application/json"]').setInputFiles({
       name: "oload-backup-empty.json",
       mimeType: "application/json",
       buffer: Buffer.from(JSON.stringify(signedOutSnapshot, null, 2)),
@@ -356,7 +356,7 @@ test("recovers cleanly when a restore downgrades the current user's access", asy
       ),
     };
 
-    await page.locator('input[type="file"]').setInputFiles({
+    await page.locator('input[type="file"][accept="application/json"]').setInputFiles({
       name: "oload-backup-downgraded.json",
       mimeType: "application/json",
       buffer: Buffer.from(JSON.stringify(downgradedSnapshot, null, 2)),

@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" role="img" aria-label="Plush llama color board">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f7f0e5"/>
+      <stop offset="100%" stop-color="#efe5d7"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#927a65" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="760" fill="url(#bg)"/>
+
+  <text x="64" y="76" font-family="Segoe UI, Arial, sans-serif" font-size="34" font-weight="700" fill="#4e3a2d">Plush Llama Color Board</text>
+  <text x="64" y="112" font-family="Segoe UI, Arial, sans-serif" font-size="18" fill="#6d5847">Soft, plush, premium, and explicitly not pink.</text>
+
+  <g filter="url(#shadow)">
+    <rect x="64" y="148" width="332" height="250" rx="28" fill="#fffaf4"/>
+    <text x="92" y="192" font-family="Segoe UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#4e3a2d">Option A</text>
+    <text x="92" y="220" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#7a6654">Cream + oat + dusty teal</text>
+    <rect x="92" y="252" width="64" height="110" rx="20" fill="#F3E8D6"/>
+    <rect x="170" y="252" width="64" height="110" rx="20" fill="#D8C0A3"/>
+    <rect x="248" y="252" width="64" height="110" rx="20" fill="#6B4E3D"/>
+    <rect x="326" y="252" width="42" height="110" rx="20" fill="#5E8E88"/>
+    <text x="92" y="382" font-family="Consolas, monospace" font-size="14" fill="#6d5847">#F3E8D6  #D8C0A3  #6B4E3D  #5E8E88</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="434" y="148" width="332" height="250" rx="28" fill="#fffaf4"/>
+    <text x="462" y="192" font-family="Segoe UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#4e3a2d">Option B</text>
+    <text x="462" y="220" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#7a6654">Cloud white + caramel + sky blue</text>
+    <rect x="462" y="252" width="64" height="110" rx="20" fill="#F6F2EA"/>
+    <rect x="540" y="252" width="64" height="110" rx="20" fill="#C9A47D"/>
+    <rect x="618" y="252" width="64" height="110" rx="20" fill="#7A5942"/>
+    <rect x="696" y="252" width="42" height="110" rx="20" fill="#7EA9B8"/>
+    <text x="462" y="382" font-family="Consolas, monospace" font-size="14" fill="#6d5847">#F6F2EA  #C9A47D  #7A5942  #7EA9B8</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="804" y="148" width="332" height="250" rx="28" fill="#fffaf4"/>
+    <text x="832" y="192" font-family="Segoe UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#4e3a2d">Option C</text>
+    <text x="832" y="220" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#7a6654">Light mocha + cream + moss</text>
+    <rect x="832" y="252" width="64" height="110" rx="20" fill="#CBB59E"/>
+    <rect x="910" y="252" width="64" height="110" rx="20" fill="#F2E8DA"/>
+    <rect x="988" y="252" width="64" height="110" rx="20" fill="#5F4C41"/>
+    <rect x="1066" y="252" width="42" height="110" rx="20" fill="#72856A"/>
+    <text x="832" y="382" font-family="Consolas, monospace" font-size="14" fill="#6d5847">#CBB59E  #F2E8DA  #5F4C41  #72856A</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="64" y="444" width="1072" height="244" rx="28" fill="#fffaf4"/>
+    <text x="96" y="492" font-family="Segoe UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#4e3a2d">Recommended stack</text>
+    <text x="96" y="526" font-family="Segoe UI, Arial, sans-serif" font-size="18" fill="#6d5847">Warm cream wool, oat face, cocoa nose, espresso eyes, dusty teal accent.</text>
+
+    <circle cx="214" cy="602" r="54" fill="#F3E8D6"/>
+    <circle cx="330" cy="602" r="54" fill="#D8C0A3"/>
+    <circle cx="446" cy="602" r="54" fill="#6B4E3D"/>
+    <circle cx="562" cy="602" r="54" fill="#2A1E18"/>
+    <circle cx="678" cy="602" r="54" fill="#5E8E88"/>
+
+    <text x="156" y="676" font-family="Consolas, monospace" font-size="16" fill="#6d5847">wool</text>
+    <text x="270" y="676" font-family="Consolas, monospace" font-size="16" fill="#6d5847">face</text>
+    <text x="390" y="676" font-family="Consolas, monospace" font-size="16" fill="#6d5847">nose</text>
+    <text x="510" y="676" font-family="Consolas, monospace" font-size="16" fill="#6d5847">eyes</text>
+    <text x="612" y="676" font-family="Consolas, monospace" font-size="16" fill="#6d5847">accent</text>
+
+    <text x="800" y="566" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="700" fill="#4e3a2d">Avoid:</text>
+    <text x="800" y="596" font-family="Segoe UI, Arial, sans-serif" font-size="17" fill="#6d5847">Hot pink body</text>
+    <text x="800" y="624" font-family="Segoe UI, Arial, sans-serif" font-size="17" fill="#6d5847">Plastic shine</text>
+    <text x="800" y="652" font-family="Segoe UI, Arial, sans-serif" font-size="17" fill="#6d5847">Realistic fur strands</text>
+  </g>
+</svg>

@@ -1,4 +1,4 @@
-import type { AiProviderId } from "@/lib/ai-types";
+import type { AiGroundingMode, AiProviderId } from "@/lib/ai-types";
 import type { OllamaChatMessage } from "@/lib/ollama";
 
 export type ConversationSettings = {
@@ -6,6 +6,9 @@ export type ConversationSettings = {
   providerId: AiProviderId;
   systemPrompt: string;
   temperature: number;
+  useKnowledge?: boolean;
+  groundingMode?: AiGroundingMode;
+  assistantProfileId?: string | null;
 };
 
 export type StoredConversation = {

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { getHelpHint, type HelpContext, type HelpHint } from "@/lib/help-manual";
+import { translateUi, translateUiText } from "@/lib/ui-language";
 import {
   clearLegacyQuickHelpSessionState,
   muteQuickHelpHint,
@@ -10,11 +11,14 @@ import {
   QUICK_HELP_PREFERENCE_CHANGED_EVENT,
   readQuickHelpEnabled,
   readQuickHelpMutedHintIds,
+  writeQuickHelpEnabled,
 } from "@/lib/help-preferences";
+import type { VoiceTranscriptionLanguage } from "@/lib/user-types";
 
 type ContextualHelpLayerProps = {
   canUseHoverHelp: boolean;
   onOpenHelpSection: (sectionId: string) => void;
+  uiLanguagePreference: VoiceTranscriptionLanguage;
 };
 
 type OverlayState = {
@@ -54,7 +58,7 @@ const fallbackSectionByContext: Record<HelpContext, string> = {
   activity: "activity-audit",
 };
 
-function buildFallbackHint(target: HTMLElement) {
+function buildFallbackHint(target: HTMLElement, language: VoiceTranscriptionLanguage) {
   const contextHost = target.closest<HTMLElement>("[data-help-context]");
   const context = contextHost?.dataset.helpContext as HelpContext | undefined;
 
@@ -68,10 +72,23 @@ function buildFallbackHint(target: HTMLElement) {
     return null;
   }
 
+  const contextLabel = context === "chat"
+    ? translateUi(language, "chat")
+    : context === "access"
+      ? translateUi(language, "access")
+      : context === "models"
+        ? translateUi(language, "models")
+        : context === "jobs"
+          ? translateUi(language, "jobs")
+          : translateUi(language, "activity");
+
   return {
     id: `fallback:${context}:${label.toLowerCase()}`,
     title: label,
-    summary: `Runs the ${label.toLowerCase()} control in the ${context} workspace and links to the relevant operating guidance.`,
+    summary: translateUiText(language, "Runs the {label} control in the {context} workspace and links to the relevant operating guidance.", {
+      label: label.toLowerCase(),
+      context: contextLabel.toLowerCase(),
+    }),
     sectionId: fallbackSectionByContext[context],
   } satisfies HelpHint;
 }
@@ -140,10 +157,13 @@ function computePosition(state: OverlayState | null) {
   };
 }
 
-export function ContextualHelpLayer({ canUseHoverHelp, onOpenHelpSection }: ContextualHelpLayerProps) {
+export function ContextualHelpLayer({ canUseHoverHelp, onOpenHelpSection, uiLanguagePreference }: ContextualHelpLayerProps) {
+  const literal = (sourceText: string, variables?: Record<string, string | number>) =>
+    translateUiText(uiLanguagePreference, sourceText, variables);
   const [overlay, setOverlay] = useState<OverlayState | null>(null);
   const [isQuickHelpEnabled, setIsQuickHelpEnabled] = useState(readQuickHelpEnabled);
   const [mutedHintIds, setMutedHintIds] = useState<string[]>(readQuickHelpMutedHintIds);
+  const [showDisableAllConfirmation, setShowDisableAllConfirmation] = useState(false);
   const popupRef = useRef<HTMLDivElement | null>(null);
   const activeTargetRef = useRef<HTMLElement | null>(null);
   const hideTimerRef = useRef<number | null>(null);
@@ -211,7 +231,7 @@ export function ContextualHelpLayer({ canUseHoverHelp, onOpenHelpSection }: Cont
 
     const hint = target.dataset.helpId
       ? getHelpHint(target.dataset.helpId)
-      : buildFallbackHint(target);
+      : buildFallbackHint(target, uiLanguagePreference);
 
     if (!hint) {
       dismissOverlay();
@@ -232,7 +252,7 @@ export function ContextualHelpLayer({ canUseHoverHelp, onOpenHelpSection }: Cont
       placement: computePlacement(rect),
       rect,
     });
-  }, [canUseHoverHelp, dismissOverlay, isQuickHelpEnabled, mutedHintIds, overlay]);
+  }, [canUseHoverHelp, dismissOverlay, isQuickHelpEnabled, mutedHintIds, overlay, uiLanguagePreference]);
 
   useEffect(() => {
     clearLegacyQuickHelpSessionState();
@@ -469,83 +489,125 @@ export function ContextualHelpLayer({ canUseHoverHelp, onOpenHelpSection }: Cont
     };
   }, [dismissOverlay, overlay]);
 
-  if (!isQuickHelpEnabled || !overlay || !position) {
-    return null;
-  }
+  const shouldRenderOverlay = isQuickHelpEnabled && Boolean(overlay) && Boolean(position);
 
   return (
-    <div
-      ref={popupRef}
-      className={`help-popover glass-panel theme-surface-elevated fixed z-[80] w-[20rem] rounded-[24px] backdrop-blur ${canUseHoverHelp ? "px-3 py-3" : "px-4 py-4"}`}
-      style={{
-        left: `${position.left}px`,
-        top: `${position.top}px`,
-      }}
-      onClick={() => {
-        if (!canUseHoverHelp) {
-          dismissOverlay();
-        }
-      }}
-      onPointerEnter={() => {
-        clearHideTimer();
-      }}
-    >
-      <p className="eyebrow text-muted">Quick orientation</p>
-      <h3 className={`${canUseHoverHelp ? "mt-1" : "mt-2"} text-sm font-semibold text-foreground`}>{overlay.hint.title}</h3>
-      <p
-        className={`${canUseHoverHelp ? "mt-1 text-sm leading-5" : "mt-2 text-sm leading-6"} text-muted`}
-        style={canUseHoverHelp ? {
-          display: "-webkit-box",
-          WebkitBoxOrient: "vertical",
-          WebkitLineClamp: 2,
-          overflow: "hidden",
-        } : undefined}
-      >
-        {overlay.hint.summary}
-      </p>
-      {canUseHoverHelp ? (
-        <label className={`${canUseHoverHelp ? "mt-2 gap-2 px-3 py-2" : "mt-3 gap-3 px-3 py-3"} theme-surface-soft flex items-start rounded-[18px] text-sm text-foreground`}>
-          <input
-            className="mt-1 h-4 w-4 accent-[var(--accent)]"
-            type="checkbox"
-            onChange={(event) => {
-              if (!event.target.checked) {
-                return;
-              }
-
-              muteQuickHelpHint(overlay.hint.id);
-              setMutedHintIds((current) => current.includes(overlay.hint.id) ? current : [...current, overlay.hint.id]);
+    <>
+      {shouldRenderOverlay && overlay && position ? (
+        <div
+          ref={popupRef}
+          className={`help-popover glass-panel theme-surface-elevated fixed z-[80] w-[20rem] rounded-[24px] backdrop-blur ${canUseHoverHelp ? "px-3 py-3" : "px-4 py-4"}`}
+          style={{
+            left: `${position.left}px`,
+            top: `${position.top}px`,
+          }}
+          onClick={() => {
+            if (!canUseHoverHelp) {
               dismissOverlay();
-            }}
-          />
-          <span>
-            <span className="block font-semibold text-foreground">Do not show this again</span>
-          </span>
-        </label>
+            }
+          }}
+          onPointerEnter={() => {
+            clearHideTimer();
+          }}
+        >
+          <p className="eyebrow text-muted">{literal("Quick orientation")}</p>
+          <h3 className={`${canUseHoverHelp ? "mt-1" : "mt-2"} text-sm font-semibold text-foreground`}>{literal(overlay.hint.title)}</h3>
+          <p
+            className={`${canUseHoverHelp ? "mt-1 text-sm leading-5" : "mt-2 text-sm leading-6"} text-muted`}
+            style={canUseHoverHelp ? {
+              display: "-webkit-box",
+              WebkitBoxOrient: "vertical",
+              WebkitLineClamp: 2,
+              overflow: "hidden",
+            } : undefined}
+          >
+            {literal(overlay.hint.summary)}
+          </p>
+          {canUseHoverHelp ? (
+            <label className={`${canUseHoverHelp ? "mt-2 gap-2 px-3 py-2" : "mt-3 gap-3 px-3 py-3"} theme-surface-soft flex items-start rounded-[18px] text-sm text-foreground`}>
+              <input
+                className="mt-1 h-4 w-4 accent-[var(--accent)]"
+                type="checkbox"
+                onChange={(event) => {
+                  if (!event.target.checked) {
+                    return;
+                  }
+
+                  muteQuickHelpHint(overlay.hint.id);
+                  setMutedHintIds((current) => current.includes(overlay.hint.id) ? current : [...current, overlay.hint.id]);
+                  dismissOverlay();
+                }}
+              />
+              <span>
+                <span className="block font-semibold text-foreground">{literal("Do not show this again")}</span>
+              </span>
+            </label>
+          ) : null}
+          <div className={`${canUseHoverHelp ? "mt-3" : "mt-4"} grid grid-cols-2 gap-2`}>
+            <button
+              className={`ui-button ui-button-secondary ${canUseHoverHelp ? "px-3 py-2 text-xs" : "px-4 py-2 text-sm"}`}
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                dismissOverlay();
+                onOpenHelpSection(overlay.hint.sectionId);
+              }}
+            >
+              {literal("Open manual section")}
+            </button>
+            <button
+              className={`ui-button ui-button-secondary ${canUseHoverHelp ? "px-3 py-2 text-xs" : "px-4 py-2 text-sm"}`}
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                dismissOverlay();
+              }}
+            >
+              {literal("Dismiss")}
+            </button>
+          </div>
+          <div className="mt-3 border-t border-line/70 pt-3">
+            <button
+              className={`ui-button ui-button-secondary w-full justify-center text-center font-semibold ${canUseHoverHelp ? "px-3 py-2 text-xs leading-5" : "px-4 py-3 text-sm leading-6"}`}
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                writeQuickHelpEnabled(false);
+                setIsQuickHelpEnabled(false);
+                dismissOverlay();
+                setShowDisableAllConfirmation(true);
+              }}
+            >
+              {literal("Send the whole llama herd home. Turn off all popups.")}
+            </button>
+          </div>
+        </div>
       ) : null}
-      <div className={`${canUseHoverHelp ? "mt-3" : "mt-4"} grid grid-cols-2 gap-2`}>
-        <button
-          className={`ui-button ui-button-secondary ${canUseHoverHelp ? "px-3 py-2 text-xs" : "px-4 py-2 text-sm"}`}
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            dismissOverlay();
-            onOpenHelpSection(overlay.hint.sectionId);
-          }}
-        >
-          Open manual section
-        </button>
-        <button
-          className={`ui-button ui-button-secondary ${canUseHoverHelp ? "px-3 py-2 text-xs" : "px-4 py-2 text-sm"}`}
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            dismissOverlay();
-          }}
-        >
-          Dismiss
-        </button>
-      </div>
-    </div>
+
+      {showDisableAllConfirmation ? (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-[rgba(15,23,42,0.52)] px-4 py-6 backdrop-blur-sm">
+          <div className="theme-surface-elevated w-full max-w-[28rem] rounded-[30px] border border-line/80 p-3 shadow-[0_28px_90px_rgba(15,23,42,0.22)]">
+            <div className="glass-panel rounded-[24px] p-6 sm:p-7">
+              <p className="section-label text-xs font-semibold text-muted">{literal("Llama silence engaged")}</p>
+              <h3 className="mt-3 text-xl font-semibold tracking-[-0.04em] text-foreground">
+                {literal("All quick popups are off.")}
+              </h3>
+              <p className="mt-3 text-sm leading-7 text-muted">
+                {literal("If the herd gets a little too quiet, you can always turn these back on in Admin.")}
+              </p>
+              <div className="mt-6 flex justify-end">
+                <button
+                  className="ui-button ui-button-primary px-5 py-3 text-sm"
+                  type="button"
+                  onClick={() => setShowDisableAllConfirmation(false)}
+                >
+                  {literal("Understood")}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }

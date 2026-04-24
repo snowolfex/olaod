@@ -1,6 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+
+import { translateUiText } from "@/lib/ui-language";
+import type { VoiceTranscriptionLanguage } from "@/lib/user-types";
 
 type AppUpdateStatus = {
   canApplyUpdate: boolean;
@@ -19,6 +22,7 @@ type AppUpdateStatus = {
 
 type AppUpdateMonitorProps = {
   canManageUpdates: boolean;
+  uiLanguagePreference: VoiceTranscriptionLanguage;
 };
 
 async function readErrorMessage(response: Response) {
@@ -30,7 +34,12 @@ async function readErrorMessage(response: Response) {
   }
 }
 
-export function AppUpdateMonitor({ canManageUpdates }: AppUpdateMonitorProps) {
+export function AppUpdateMonitor({ canManageUpdates, uiLanguagePreference }: AppUpdateMonitorProps) {
+  const literal = useCallback(
+    (sourceText: string, variables?: Record<string, string | number>) =>
+      translateUiText(uiLanguagePreference, sourceText, variables),
+    [uiLanguagePreference],
+  );
   const [status, setStatus] = useState<AppUpdateStatus | null>(null);
   const [isChecking, setIsChecking] = useState(true);
   const [isApplying, setIsApplying] = useState(false);
@@ -58,7 +67,7 @@ export function AppUpdateMonitor({ canManageUpdates }: AppUpdateMonitorProps) {
         }
       } catch (error) {
         if (!cancelled) {
-          setApplyError(error instanceof Error ? error.message : "Unable to check for updates.");
+          setApplyError(error instanceof Error ? error.message : literal("Unable to check for updates."));
         }
       } finally {
         if (!cancelled) {
@@ -72,7 +81,7 @@ export function AppUpdateMonitor({ canManageUpdates }: AppUpdateMonitorProps) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [literal]);
 
   useEffect(() => {
     if (!isApplying || !targetVersion) {
@@ -99,7 +108,7 @@ export function AppUpdateMonitor({ canManageUpdates }: AppUpdateMonitorProps) {
         setStatus(nextStatus);
 
         if (nextStatus.currentVersion === targetVersion || (!nextStatus.updateAvailable && nextStatus.currentVersion === targetVersion)) {
-          setApplySummary(`Updated to ${targetVersion}. Reloading the interface.`);
+          setApplySummary(literal("Updated to {version}. Reloading the interface.", { version: targetVersion }));
           setIsApplying(false);
           window.setTimeout(() => {
             window.location.reload();
@@ -114,7 +123,7 @@ export function AppUpdateMonitor({ canManageUpdates }: AppUpdateMonitorProps) {
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [isApplying, targetVersion]);
+  }, [isApplying, literal, targetVersion]);
 
   const applyUpdate = async () => {
     setApplyError(null);
@@ -134,10 +143,10 @@ export function AppUpdateMonitor({ canManageUpdates }: AppUpdateMonitorProps) {
       setTargetVersion(nextTargetVersion);
       setIsApplying(true);
       setApplySummary(nextTargetVersion
-        ? `Applying ${nextTargetVersion}. The app will restart automatically.`
-        : "Applying the live patch. The app will restart automatically.");
+        ? literal("Applying {version}. The app will restart automatically.", { version: nextTargetVersion })
+        : literal("Applying the live patch. The app will restart automatically."));
     } catch (error) {
-      setApplyError(error instanceof Error ? error.message : "Unable to start the live patch.");
+      setApplyError(error instanceof Error ? error.message : literal("Unable to start the live patch."));
       setIsApplying(false);
     }
   };
@@ -151,12 +160,17 @@ export function AppUpdateMonitor({ canManageUpdates }: AppUpdateMonitorProps) {
       <div className="pointer-events-auto w-full max-w-[30rem] rounded-[28px] border border-line/80 bg-[linear-gradient(145deg,rgba(255,252,247,0.98),rgba(247,239,227,0.96))] p-4 shadow-[0_26px_70px_rgba(71,44,20,0.18)] backdrop-blur-xl sm:max-w-[32rem]">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="section-label text-xs font-semibold">Live update ready</p>
+            <p className="section-label text-xs font-semibold">{literal("Live update ready")}</p>
             <h2 className="mt-2 text-lg font-semibold tracking-[-0.04em] text-foreground">
-              {status.latestVersion ? `Version ${status.latestVersion} is available` : "A newer version is available"}
+              {status.latestVersion ? literal("Version {version} is available", { version: status.latestVersion }) : literal("A newer version is available")}
             </h2>
             <p className="mt-2 text-sm leading-6 text-muted">
-              Running {status.currentVersion}{status.channel ? ` on the ${status.channel} channel.` : "."}
+              {status.channel
+                ? literal("Running {version} on the {channel} channel.", {
+                  version: status.currentVersion,
+                  channel: status.channel,
+                })
+                : literal("Running {version}.", { version: status.currentVersion })}
             </p>
           </div>
           <span className="ui-pill ui-pill-soft border border-line text-xs text-muted">
@@ -191,12 +205,12 @@ export function AppUpdateMonitor({ canManageUpdates }: AppUpdateMonitorProps) {
             type="button"
             onClick={applyUpdate}
           >
-            {isApplying ? "Applying update..." : "Apply live update"}
+            {isApplying ? literal("Applying update...") : literal("Apply live update")}
           </button>
           <span className="text-xs text-muted">
             {status.canApplyUpdate
-              ? "The server will restart automatically after the patch is staged."
-              : "This deployment can see the update, but it cannot patch itself in place from the current runtime."}
+              ? literal("The server will restart automatically after the patch is staged.")
+              : literal("This deployment can see the update, but it cannot patch itself in place from the current runtime.")}
           </span>
         </div>
       </div>

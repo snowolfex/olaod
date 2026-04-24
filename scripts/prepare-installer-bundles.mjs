@@ -10,7 +10,11 @@ const outputDir = path.join(rootDir, "dist", "installers");
 
 const cleanDataFiles = {
   "activity-log.json": [],
+  "ai-knowledge.json": [],
+  "ai-profiles.json": [],
+  "ai-provider-secrets.json": {},
   "conversations.json": [],
+  "email-outbox.json": [],
   "job-history.json": [],
   "users.json": [],
 };
@@ -36,6 +40,7 @@ async function ensureBuildArtifacts() {
 
 async function writeCleanDataDirectory(targetAppDir) {
   const dataDir = path.join(targetAppDir, "data");
+  await rm(dataDir, { recursive: true, force: true });
   await mkdir(dataDir, { recursive: true });
 
   await Promise.all(
@@ -47,7 +52,11 @@ async function writeCleanDataDirectory(targetAppDir) {
 
 async function copyAppPayload(bundleDir) {
   const appDir = path.join(bundleDir, "app");
-  await cp(buildStandaloneDir, appDir, { recursive: true, force: true });
+  await cp(buildStandaloneDir, appDir, {
+    recursive: true,
+    force: true,
+    dereference: true,
+  });
 
   await mkdir(path.join(appDir, ".next"), { recursive: true });
   await cp(buildStaticDir, path.join(appDir, ".next", "static"), {
@@ -76,7 +85,12 @@ async function copyInstallerFiles(targetOs) {
 
 async function main() {
   await ensureBuildArtifacts();
-  await rm(outputDir, { recursive: true, force: true });
+  await rm(outputDir, {
+    recursive: true,
+    force: true,
+    maxRetries: 10,
+    retryDelay: 200,
+  });
   await mkdir(outputDir, { recursive: true });
 
   const targets = await readdir(installerDir, { withFileTypes: true });

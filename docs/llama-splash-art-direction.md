@@ -1,14 +1,50 @@
 # Llama Splash Art Direction
 
-This document defines the approved candidate pool for the limited splash-page llama system.
+This document defines the approved candidate pool for the limited splash-page plush-llama system.
 
 For a faster sign-off workflow, use `docs/llama-splash-review-board.md` alongside this file.
 
-Goal:
+Technical:
+
+- The splash system should use one shared llama design language across all themes so theme changes do not look like unrelated mascots.
+- Each theme should have three approved variants, with runtime selection choosing from the active theme pool only.
+- Motion has to stay light enough for desktop and mobile shells, with a reduced-motion fallback that still preserves identity.
+
+Layman's terms:
+
+- The llama should always feel like the same character, even when the theme changes.
+- Each theme gets a small set of mascot versions so the splash feels fresh without becoming visually inconsistent.
+- The animation should feel lively but never heavy, distracting, or too expensive for smaller devices.
+
+## Goal
+
+Technical:
+
 - Keep a shared llama identity across themes.
 - Offer three visual variants per theme.
 - Randomly choose one approved llama from the active theme when the splash screen appears.
 - Keep motion lightweight enough for desktop and mobile.
+
+Layman's terms:
+
+- Make one mascot family, not three unrelated mascots.
+- Give each theme enough variety to avoid repetition.
+- Show a random approved llama that matches the current theme.
+- Keep the animation simple enough that it still feels smooth on phones and laptops.
+
+## Current Approved Base
+
+Technical:
+
+- The shared base mascot direction is now a plush llama rather than a flat generic cartoon llama.
+- The canonical palette is warm cream wool, oat face and ears, cocoa nose, espresso eyes, and muted dusty-teal accents.
+- Accessories and theme accents can vary, but the plush silhouette, oversized head, forehead tuft, rounded muzzle, and short plush forelimbs should remain stable.
+
+Layman's terms:
+
+- The mascot should feel like a soft stuffed llama first.
+- Keep the same cream-and-oat llama across themes, then change trim and mood around it.
+- Do not drift into pink body tones, realistic animal fur, or hard plastic toy rendering.
 
 ## Shared Base Rules
 
@@ -18,6 +54,8 @@ All nine llamas should share the same base design language:
 - Same head-to-body ratio.
 - Same leg length.
 - Same face geometry.
+- Same plush stuffed-animal silhouette.
+- Same forehead tuft and rounded muzzle.
 - Same overall silhouette readability at small sizes.
 - Same animation budget and loop length.
 
@@ -36,8 +74,31 @@ Recommended implementation constraints:
 - In-place dance only, no roaming.
 - Loop length between 2.5 and 4 seconds.
 - Reduced-motion fallback should become blink plus subtle breathing only.
+- Base wool and face colors should stay inside the cream/oat/cocoa family.
+- Avoid pink body palettes and avoid glossy plastic rendering.
+
+Technical:
+
+- Shared silhouette, proportion, and loop-budget rules are mandatory so runtime swaps do not cause a visible style break.
+- Theme identity should come from trim, accessories, expression, and accent treatment rather than a different body plan.
+- Motion must remain in-place because the splash art is decorative UI chrome rather than a navigational scene element.
+
+Layman's terms:
+
+- No matter which llama shows up, people should recognize it as the same mascot at a glance.
+- Theme differences should come from styling details, not from redesigning the whole animal.
+- The llama should dance in place, not wander around the screen.
+- The mascot should still look plush and soft even in the more tech or dark variants.
 
 ## Theme Pools
+
+Technical:
+
+- The theme pools below define the approved variant inventory, prompt anchors, and tone boundaries for the splash system.
+
+Layman's terms:
+
+- These are the mascot options the app can draw from for each theme, along with the look and mood each one should carry.
 
 ### Plain Theme
 
@@ -278,6 +339,14 @@ Recommended approval states:
 - Needs revision.
 - Rejected.
 
+Technical:
+
+- Approval should prioritize silhouette consistency, small-size readability, and theme fit before novelty.
+
+Layman's terms:
+
+- Pick the versions that still look clear, on-brand, and recognizably related when they appear small on a real splash screen.
+
 ## Random Splash Selection Rule
 
 When the splash screen appears:
@@ -310,6 +379,14 @@ const llamaPools = {
 } as const;
 ```
 
+Technical:
+
+- Runtime selection should stay scoped to the active theme and should preferably avoid immediately repeating the prior variant for that same theme.
+
+Layman's terms:
+
+- When the app opens, it should choose a llama that matches the current theme and try not to show the exact same one twice in a row.
+
 ## Recommended First Build Order
 
 If implementation starts later, use this order:
@@ -318,6 +395,14 @@ If implementation starts later, use this order:
 2. Approve one visual per theme first.
 3. Add the remaining two variants per theme after the first trio feels correct.
 4. Add random theme-pool selection.
+
+Technical:
+
+- This order keeps production risk down by proving the shared rig first, then validating one representative variant per theme before expanding the asset set.
+
+Layman's terms:
+
+- Build the core mascot once, make sure one good version works for each theme, and only then spend time on the rest of the variants and random selection logic.
 5. Add reduced-motion and mobile-size tuning last.
 
 ## Current Preferred Leads
@@ -329,3 +414,5 @@ If a fast first implementation is needed before all nine are illustrated, start 
 - Dark: `dark-metal-wool`
 
 Those three are the strongest primary anchors for the family.
+
+For all three, start from the same plush base used in the Help/PDF mascot system rather than from a flat vector-only llama.

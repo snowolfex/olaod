@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { getDataStorePath } from "@/lib/data-store";
+import { getConfiguredDefaultVoiceTranscriptionLanguage } from "@/lib/default-voice-language";
 import { normalizeModelName, normalizeSystemPrompt, normalizeTemperature } from "@/lib/system-prompt";
 import type {
   AuthProvider,
@@ -72,6 +73,10 @@ function normalizeVoiceTranscriptionLanguage(value: unknown): VoiceTranscription
     : undefined;
 }
 
+function resolveStoredVoiceTranscriptionLanguage(value: unknown) {
+  return normalizeVoiceTranscriptionLanguage(value) ?? getConfiguredDefaultVoiceTranscriptionLanguage();
+}
+
 function isEmailVerificationPurpose(value: unknown): value is EmailVerificationPurpose {
   return value === "register" || value === "login" || value === "email-change" || value === "password-reset";
 }
@@ -129,7 +134,7 @@ function normalizeStoredUser(user: StoredUser): StoredUser {
     preferredModel: normalizeModelName(user.preferredModel),
     preferredTemperature: normalizeTemperature(user.preferredTemperature),
     preferredSystemPrompt: normalizeSystemPrompt(user.preferredSystemPrompt),
-    preferredVoiceTranscriptionLanguage: normalizeVoiceTranscriptionLanguage(user.preferredVoiceTranscriptionLanguage),
+    preferredVoiceTranscriptionLanguage: resolveStoredVoiceTranscriptionLanguage(user.preferredVoiceTranscriptionLanguage),
     providerSubject: normalizeOptionalString(user.providerSubject),
     avatarUrl: normalizeOptionalString(user.avatarUrl),
     passwordHash: typeof user.passwordHash === "string" ? user.passwordHash : undefined,
@@ -442,6 +447,7 @@ export async function createUser(input: {
     authProvider: "local",
     email,
     requireEmailVerificationOnLogin: false,
+    preferredVoiceTranscriptionLanguage: getConfiguredDefaultVoiceTranscriptionLanguage(),
     passwordHash: hashPassword(input.password, salt),
     passwordSalt: salt,
     createdAt: new Date().toISOString(),
@@ -523,6 +529,7 @@ export async function upsertGoogleUser(input: {
     role: resolveRoleForEmail(email, users.length === 0),
     authProvider: "google",
     email,
+    preferredVoiceTranscriptionLanguage: getConfiguredDefaultVoiceTranscriptionLanguage(),
     providerSubject,
     avatarUrl: normalizeOptionalString(input.avatarUrl),
     createdAt: new Date().toISOString(),

@@ -14,12 +14,16 @@ export type HelpSection = {
 export type HelpGlossaryEntry = {
   term: string;
   definition: string;
+  links?: Array<{
+    title: string;
+    url: string;
+  }>;
 };
 
 export type HelpReferenceEntry = {
   title: string;
   url: string;
-  category: "Docs" | "Course" | "Blog";
+  category: "Docs" | "Course" | "Blog" | "Legal";
   description: string;
 };
 
@@ -314,10 +318,26 @@ export const helpGlossary: HelpGlossaryEntry[] = [
   {
     term: "Embedding",
     definition: "A numerical vector representation of content used for similarity search, retrieval, clustering, and ranking.",
+    links: [
+      {
+        title: "OpenAI API Key Concepts",
+        url: "https://platform.openai.com/docs/guides/embeddings",
+      },
+    ],
   },
   {
     term: "Retrieval-augmented generation",
     definition: "A prompt-time grounding method that injects relevant indexed context into a request without retraining the model.",
+    links: [
+      {
+        title: "Ollama Documentation",
+        url: "https://docs.ollama.com/",
+      },
+      {
+        title: "DeepLearning.AI Short Courses",
+        url: "https://www.deeplearning.ai/short-courses/",
+      },
+    ],
   },
   {
     term: "Grounding",
@@ -330,6 +350,16 @@ export const helpGlossary: HelpGlossaryEntry[] = [
   {
     term: "Hosted provider",
     definition: "A remote AI service operated outside the local machine, typically accessed through an API key and network call.",
+    links: [
+      {
+        title: "OpenAI API Key Concepts",
+        url: "https://developers.openai.com/api/docs/concepts",
+      },
+      {
+        title: "Anthropic: Building with Claude",
+        url: "https://platform.claude.com/docs/en/docs/overview",
+      },
+    ],
   },
   {
     term: "Operator scope",
@@ -338,6 +368,34 @@ export const helpGlossary: HelpGlossaryEntry[] = [
   {
     term: "Audit trail",
     definition: "A structured event history used to confirm that an action occurred and to reconstruct control-plane activity over time.",
+  },
+  {
+    term: "EULA",
+    definition: "The installer requires explicit end-user license agreement acceptance before setup continues. In Oload, that acceptance sits alongside a source-available proprietary notice rather than a blanket open-source grant.",
+    links: [
+      {
+        title: "End-user license agreement overview",
+        url: "https://en.wikipedia.org/wiki/End-user_license_agreement",
+      },
+      {
+        title: "Source-available software overview",
+        url: "https://en.wikipedia.org/wiki/Source-available_software",
+      },
+    ],
+  },
+  {
+    term: "GNU GPL",
+    definition: "The GNU General Public License is a copyleft software license family with redistribution and source obligations. In this workspace it is reference context for third-party legal understanding, not the primary Oload installer license described in the installer README.",
+    links: [
+      {
+        title: "GNU GPL v3 text",
+        url: "https://www.gnu.org/licenses/gpl-3.0.en.html",
+      },
+      {
+        title: "GNU GPL FAQ",
+        url: "https://www.gnu.org/licenses/gpl-faq.html",
+      },
+    ],
   },
 ];
 
@@ -377,6 +435,24 @@ export const helpReferences: HelpReferenceEntry[] = [
     url: "https://simonwillison.net/tags/llms/",
     category: "Blog",
     description: "High-signal independent writing on local models, prompting, agents, vendor APIs, evaluation, and real-world AI engineering tradeoffs.",
+  },
+  {
+    title: "GNU GPL v3",
+    url: "https://www.gnu.org/licenses/gpl-3.0.en.html",
+    category: "Legal",
+    description: "Canonical GNU General Public License text for understanding copyleft redistribution, source availability, and derivative-work obligations.",
+  },
+  {
+    title: "GNU GPL FAQ",
+    url: "https://www.gnu.org/licenses/gpl-faq.html",
+    category: "Legal",
+    description: "Practical GNU guidance for common GPL interpretation questions around distribution, linking, and obligations.",
+  },
+  {
+    title: "End-user license agreement overview",
+    url: "https://en.wikipedia.org/wiki/End-user_license_agreement",
+    category: "Legal",
+    description: "General background on how EULAs are commonly used in installed software distribution and acceptance flows.",
   },
 ];
 

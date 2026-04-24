@@ -13,21 +13,37 @@ import type {
   ConversationSummary,
   StoredConversation,
 } from "@/lib/conversation-types";
+import {
+  AI_KNOWLEDGE_SOURCES_HEADER,
+  type AiGroundingMode,
+  type AiKnowledgeCitation,
+  type AiModelSummary,
+  type AiProviderId,
+  type AiProviderSummary,
+  type AiWorkspaceProfile,
+} from "@/lib/ai-types";
 import type { OllamaChatMessage, OllamaModel } from "@/lib/ollama";
 import { DEFAULT_USER_CHAT_TEMPERATURE, DEFAULT_USER_SYSTEM_PROMPT } from "@/lib/system-prompt";
+import { translateUi, translateUiText } from "@/lib/ui-language";
 import type { SessionUser } from "@/lib/user-types";
 import {
-  VOICE_TRANSCRIPTION_LANGUAGE_OPTIONS,
+  VOICE_LANGUAGE_META,
   type VoiceTranscriptionLanguage,
 } from "@/lib/voice-types";
+import { VoiceLanguageSelect } from "@/components/voice-language-select";
 
 type ChatWorkspaceProps = {
+  canManageModels?: boolean;
   currentUser: SessionUser | null;
   isReachable: boolean;
   initialConversation: StoredConversation | null;
   initialConversations: ConversationSummary[];
   models: OllamaModel[];
   onActiveConversationChange?: (conversation: ActiveConversationSnapshot | null) => void;
+  onRequestOpenModelOperations?: () => Promise<void> | void;
+  onUiLanguagePreferenceChange?: (language: VoiceTranscriptionLanguage) => void;
+  runningModels?: string[];
+  uiLanguagePreference: VoiceTranscriptionLanguage;
 };
 
 type AudioContextConstructor = {
@@ -37,6 +53,27 @@ type AudioContextConstructor = {
 type PersistedConversationResponse = {
   conversation: StoredConversation;
   summary: ConversationSummary;
+};
+
+type AssistantProfilesResponse = {
+  profiles: AiWorkspaceProfile[];
+};
+
+type AiProvidersResponse = {
+  providers: AiProviderSummary[];
+};
+
+type AiModelsResponse = {
+  models: AiModelSummary[];
+};
+
+type TalkToOption = {
+  key: string;
+  providerId: AiProviderId;
+  providerLabel: string;
+  model: string;
+  label: string;
+  kind: "local-running" | "hosted-configured";
 };
 
 const PROMPT_PRESETS = [
@@ -53,22 +90,6 @@ const PROMPT_PRESETS = [
     prompt: "Create a concise operator checklist for checking Ollama health, model availability, queue state, and active jobs.",
   },
 ] as const;
-
-const VOICE_LANGUAGE_LABELS: Record<VoiceTranscriptionLanguage, string> = {
-  auto: "Auto",
-  arabic: "Arabic",
-  bengali: "Bengali",
-  chinese: "Chinese",
-  english: "English",
-  farsi: "Farsi",
-  french: "French",
-  hindi: "Hindi",
-  japanese: "Japanese",
-  korean: "Korean",
-  portuguese: "Portuguese",
-  russian: "Russian",
-  spanish: "Spanish",
-};
 
 async function updatePreferredVoiceLanguage(
   currentUser: SessionUser,
@@ -94,7 +115,6 @@ async function updatePreferredVoiceLanguage(
   }
 }
 
-const CHAT_WORKSPACE_SIDEBAR_STORAGE_KEY = "oload:chat:workspace-sidebar";
 const CHAT_PROMPT_PRESETS_STORAGE_KEY = "oload:chat:prompt-presets";
 const CHAT_PINNED_CONVERSATIONS_STORAGE_KEY = "oload:chat:pinned-conversations";
 const CHAT_PINNED_ONLY_FILTER_STORAGE_KEY = "oload:chat:pinned-only-filter";
@@ -106,10 +126,6 @@ const ARCHIVED_RETENTION_DAYS = 30;
 const ARCHIVED_RETENTION_OPTIONS = [7, 14, 30, 90] as const;
 type ArchivedConversationFilter = "all" | "empty" | "old";
 type ArchivedConversationSort = "archived-newest" | "archived-oldest" | "recent-activity";
-
-function getWorkspaceSidebarStorageKey(userId?: string) {
-  return `${CHAT_WORKSPACE_SIDEBAR_STORAGE_KEY}:${userId ?? "guest"}`;
-}
 
 function getPromptPresetsStorageKey(userId?: string) {
   return `${CHAT_PROMPT_PRESETS_STORAGE_KEY}:${userId ?? "guest"}`;
@@ -137,14 +153,6 @@ function getArchivedFilterStorageKey(userId?: string) {
 
 function getArchivedSortStorageKey(userId?: string) {
   return `${CHAT_ARCHIVED_SORT_STORAGE_KEY}:${userId ?? "guest"}`;
-}
-
-function parseWorkspaceSidebarPreference(value: string | null) {
-  if (!value) {
-    return true;
-  }
-
-  return value === "true";
 }
 
 function parsePromptPresetsPreference(value: string | null, fallback: boolean) {
@@ -248,9 +256,9 @@ function isConversationOlderThanArchivedRetention(
   return archivedAtMs <= Date.now() - archivedRetentionDays * 24 * 60 * 60 * 1000;
 }
 
-function buildConversationTitle(messages: OllamaChatMessage[]) {
+function buildConversationTitle(messages: OllamaChatMessage[], fallbackTitle: string) {
   const firstUserMessage = messages.find((message) => message.role === "user");
-  return (firstUserMessage?.content.trim() || "New conversation").slice(0, 48);
+  return (firstUserMessage?.content.trim() || fallbackTitle).slice(0, 48);
 }
 
 function formatTimestamp(value: string) {
@@ -294,7 +302,10 @@ function formatRelativeDateLabel(value: string) {
   });
 }
 
-function getArchivedConversationMetaBadges(conversation: ConversationSummary) {
+function getArchivedConversationMetaBadges(
+  conversation: ConversationSummary,
+  literal: (text: string, variables?: Record<string, string | number>) => string,
+) {
   const archivedLabel = conversation.archivedAt
     ? formatRelativeDateLabel(conversation.archivedAt)
     : null;
@@ -303,13 +314,13 @@ function getArchivedConversationMetaBadges(conversation: ConversationSummary) {
   return [
     archivedLabel
       ? {
-        label: `Archived ${archivedLabel}`,
+        label: literal("Archived {date}", { date: archivedLabel }),
         classes: "bg-stone-200 text-stone-900",
       }
       : null,
     lastActivityLabel
       ? {
-        label: `Last active ${lastActivityLabel}`,
+        label: literal("Last active {date}", { date: lastActivityLabel }),
         classes: "bg-sky-100 text-sky-900",
       }
       : null,
@@ -319,31 +330,38 @@ function getArchivedConversationMetaBadges(conversation: ConversationSummary) {
 function getArchivedFilterSummaryLabel(
   archivedConversationFilter: ArchivedConversationFilter,
   archivedRetentionDays: number,
+  literal: (text: string, variables?: Record<string, string | number>) => string,
 ) {
   if (archivedConversationFilter === "empty") {
-    return "empty archived chats";
+    return literal("empty archived chats");
   }
 
   if (archivedConversationFilter === "old") {
-    return `archived chats at least ${archivedRetentionDays} days old`;
+    return literal("archived chats at least {days} days old", { days: archivedRetentionDays });
   }
 
-  return "all archived chats";
+  return literal("all archived chats");
 }
 
-function getArchivedSortSummaryLabel(archivedConversationSort: ArchivedConversationSort) {
+function getArchivedSortSummaryLabel(
+  archivedConversationSort: ArchivedConversationSort,
+  literal: (text: string, variables?: Record<string, string | number>) => string,
+) {
   if (archivedConversationSort === "archived-oldest") {
-    return "oldest archived first";
+    return literal("oldest archived first");
   }
 
   if (archivedConversationSort === "recent-activity") {
-    return "recent activity first";
+    return literal("recent activity first");
   }
 
-  return "newest archived first";
+  return literal("newest archived first");
 }
 
-function getConversationRecencyBadge(updatedAt: string) {
+function getConversationRecencyBadge(
+  updatedAt: string,
+  literal: (text: string, variables?: Record<string, string | number>) => string,
+) {
   const updatedAtMs = new Date(updatedAt).getTime();
 
   if (Number.isNaN(updatedAtMs)) {
@@ -354,14 +372,14 @@ function getConversationRecencyBadge(updatedAt: string) {
 
   if (elapsedMs <= 5 * 60_000) {
     return {
-      label: "Just updated",
+      label: literal("Just updated"),
       classes: "bg-emerald-100 text-emerald-900",
     };
   }
 
   if (elapsedMs <= 30 * 60_000) {
     return {
-      label: "Updated recently",
+      label: literal("Updated recently"),
       classes: "bg-blue-100 text-blue-900",
     };
   }
@@ -434,6 +452,39 @@ async function readErrorMessage(response: Response) {
   }
 }
 
+function readKnowledgeCitationsHeader(response: Response) {
+  const headerValue = response.headers.get(AI_KNOWLEDGE_SOURCES_HEADER);
+
+  if (!headerValue) {
+    return [] as AiKnowledgeCitation[];
+  }
+
+  try {
+    const parsed = JSON.parse(headerValue) as unknown;
+
+    return Array.isArray(parsed)
+      ? parsed.filter((entry): entry is AiKnowledgeCitation => {
+        if (!entry || typeof entry !== "object") {
+          return false;
+        }
+
+        const candidate = entry as Partial<AiKnowledgeCitation>;
+
+        return typeof candidate.id === "string"
+          && typeof candidate.title === "string"
+          && typeof candidate.source === "string"
+          && Array.isArray(candidate.tags)
+          && Array.isArray(candidate.providerIds)
+          && Array.isArray(candidate.modelIds)
+          && typeof candidate.excerpt === "string"
+          && typeof candidate.score === "number";
+      })
+      : [];
+  } catch {
+    return [] as AiKnowledgeCitation[];
+  }
+}
+
 function getAudioContextConstructor() {
   if (typeof window === "undefined") {
     return null;
@@ -475,6 +526,22 @@ function getVoiceCaptureErrorMessage(errorName: string) {
   }
 
   return "Push-to-talk could not start the microphone.";
+}
+
+function buildTalkToOptionKey(providerId: AiProviderId, model: string) {
+  return `${providerId}:${model}`;
+}
+
+function getTalkToFallbackOption(options: TalkToOption[], preferredModel?: string | null) {
+  if (preferredModel) {
+    const preferredLocal = options.find((option) => option.providerId === "ollama" && option.model === preferredModel);
+
+    if (preferredLocal) {
+      return preferredLocal;
+    }
+  }
+
+  return options[0] ?? null;
 }
 
 function mergeAudioChunks(chunks: Float32Array[]) {
@@ -544,14 +611,27 @@ function DisclosureChevronIcon({ open }: { open: boolean }) {
 }
 
 export function ChatWorkspace({
+  canManageModels = false,
   currentUser,
   isReachable,
   initialConversation,
   initialConversations,
   models,
   onActiveConversationChange,
+  onRequestOpenModelOperations,
+  onUiLanguagePreferenceChange,
+  runningModels = [],
+  uiLanguagePreference,
 }: ChatWorkspaceProps) {
-  const workspaceSidebarStorageKey = getWorkspaceSidebarStorageKey(currentUser?.id);
+  const t = (key: Parameters<typeof translateUi>[1], variables?: Record<string, string | number>) =>
+    translateUi(uiLanguagePreference, key, variables);
+  const literal = (text: string, variables?: Record<string, string | number>) =>
+    translateUiText(uiLanguagePreference, text, variables);
+  const localizedPromptPresets = PROMPT_PRESETS.map((preset) => ({
+    ...preset,
+    label: literal(preset.label),
+    prompt: literal(preset.prompt),
+  }));
   const promptPresetsStorageKey = getPromptPresetsStorageKey(currentUser?.id);
   const pinnedConversationsStorageKey = getPinnedConversationsStorageKey(currentUser?.id);
   const pinnedOnlyFilterStorageKey = getPinnedOnlyFilterStorageKey(currentUser?.id);
@@ -564,7 +644,7 @@ export function ChatWorkspace({
     initialConversation?.id ?? null,
   );
   const [conversationTitle, setConversationTitle] = useState(
-    initialConversation?.title ?? "New conversation",
+    initialConversation?.title ?? literal("New conversation"),
   );
   const [messages, setMessages] = useState<OllamaChatMessage[]>(
     initialConversation?.messages ?? [],
@@ -574,11 +654,11 @@ export function ChatWorkspace({
   const [isVoiceCapturing, setIsVoiceCapturing] = useState(false);
   const [isVoiceTranscribing, setIsVoiceTranscribing] = useState(false);
   const [voiceTranscriptionLanguage, setVoiceTranscriptionLanguage] = useState<VoiceTranscriptionLanguage>(
-    currentUser?.preferredVoiceTranscriptionLanguage ?? "auto",
+    currentUser?.preferredVoiceTranscriptionLanguage ?? uiLanguagePreference,
   );
   const [conversationSearch, setConversationSearch] = useState("");
   const [conversationTitleDraft, setConversationTitleDraft] = useState(
-    initialConversation?.title ?? "New conversation",
+    initialConversation?.title ?? literal("New conversation"),
   );
   const [showPinnedOnly, setShowPinnedOnly] = useState(false);
   const [showArchivedConversations, setShowArchivedConversations] = useState(false);
@@ -586,8 +666,6 @@ export function ChatWorkspace({
   const [archivedConversationFilter, setArchivedConversationFilter] = useState<ArchivedConversationFilter>("all");
   const [archivedConversationSort, setArchivedConversationSort] = useState<ArchivedConversationSort>("archived-newest");
   const [selectedArchivedConversationIds, setSelectedArchivedConversationIds] = useState<string[]>([]);
-  const [showWorkspaceSidebar, setShowWorkspaceSidebar] = useState(true);
-  const [loadedWorkspaceSidebarKey, setLoadedWorkspaceSidebarKey] = useState<string | null>(null);
   const [showSavedChatsPanel, setShowSavedChatsPanel] = useState(true);
   const [showPromptPresets, setShowPromptPresets] = useState(
     (initialConversation?.messages?.length ?? 0) === 0,
@@ -600,6 +678,17 @@ export function ChatWorkspace({
   const [loadedArchivedRetentionKey, setLoadedArchivedRetentionKey] = useState<string | null>(null);
   const [loadedArchivedFilterKey, setLoadedArchivedFilterKey] = useState<string | null>(null);
   const [loadedArchivedSortKey, setLoadedArchivedSortKey] = useState<string | null>(null);
+  const [assistantProfiles, setAssistantProfiles] = useState<AiWorkspaceProfile[]>([]);
+  const [hostedTalkToOptions, setHostedTalkToOptions] = useState<TalkToOption[]>([]);
+  const [isLoadingAssistantProfiles, setIsLoadingAssistantProfiles] = useState(false);
+  const [isLoadingTalkToOptions, setIsLoadingTalkToOptions] = useState(false);
+  const [talkToDialogMessage, setTalkToDialogMessage] = useState<string | null>(null);
+  const [selectedAssistantProfileId, setSelectedAssistantProfileId] = useState(
+    initialConversation?.settings.assistantProfileId ?? "",
+  );
+  const [providerId, setProviderId] = useState<AiWorkspaceProfile["providerId"]>(
+    initialConversation?.settings.providerId ?? "ollama",
+  );
   const [selectedModel, setSelectedModel] = useState(
     initialConversation?.settings.model || currentUser?.preferredModel || models[0]?.name || "",
   );
@@ -610,6 +699,13 @@ export function ChatWorkspace({
     initialConversation?.settings.systemPrompt ||
       currentUser?.preferredSystemPrompt ||
       DEFAULT_USER_SYSTEM_PROMPT,
+  );
+  const [useKnowledge, setUseKnowledge] = useState(
+    initialConversation?.settings.useKnowledge ?? false,
+  );
+  const [groundingMode, setGroundingMode] = useState<AiGroundingMode>(
+    initialConversation?.settings.groundingMode
+      ?? (initialConversation?.settings.useKnowledge ? "balanced" : "off"),
   );
   const [isStreaming, setIsStreaming] = useState(false);
   const [isLoadingConversation, setIsLoadingConversation] = useState(false);
@@ -638,8 +734,118 @@ export function ChatWorkspace({
   const recentlyUpdatedConversationTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
-    setVoiceTranscriptionLanguage(currentUser?.preferredVoiceTranscriptionLanguage ?? "auto");
-  }, [currentUser?.id, currentUser?.preferredVoiceTranscriptionLanguage]);
+    setVoiceTranscriptionLanguage(currentUser?.preferredVoiceTranscriptionLanguage ?? uiLanguagePreference);
+  }, [currentUser?.id, currentUser?.preferredVoiceTranscriptionLanguage, uiLanguagePreference]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAssistantProfiles() {
+      setIsLoadingAssistantProfiles(true);
+
+      try {
+        const response = await fetch("/api/ai/profiles", { cache: "no-store" });
+
+        if (!response.ok) {
+          throw new Error(await readErrorMessage(response));
+        }
+
+        const payload = (await response.json()) as AssistantProfilesResponse;
+
+        if (!cancelled) {
+          setAssistantProfiles(payload.profiles);
+        }
+      } catch {
+        if (!cancelled) {
+          setAssistantProfiles([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingAssistantProfiles(false);
+        }
+      }
+    }
+
+    void loadAssistantProfiles();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadHostedTalkToOptions() {
+      setIsLoadingTalkToOptions(true);
+
+      try {
+        const providerResponse = await fetch("/api/ai/providers", { cache: "no-store" });
+
+        if (!providerResponse.ok) {
+          throw new Error(await readErrorMessage(providerResponse));
+        }
+
+        const providerPayload = (await providerResponse.json()) as AiProvidersResponse;
+        const configuredHostedProviders = providerPayload.providers.filter(
+          (provider) => provider.kind === "hosted" && provider.configured,
+        );
+
+        const modelResponses = await Promise.all(
+          configuredHostedProviders.map(async (provider) => {
+            const response = await fetch(`/api/ai/models?providerId=${provider.id}`, { cache: "no-store" });
+
+            if (!response.ok) {
+              throw new Error(await readErrorMessage(response));
+            }
+
+            const payload = (await response.json()) as AiModelsResponse;
+            return payload.models.map((model) => ({
+              key: buildTalkToOptionKey(model.providerId, model.name),
+              providerId: model.providerId,
+              providerLabel: model.providerLabel,
+              model: model.name,
+              label: `${model.providerLabel} - ${model.displayName}`,
+              kind: "hosted-configured" as const,
+            }));
+          }),
+        );
+
+        if (!cancelled) {
+          setHostedTalkToOptions(modelResponses.flat());
+        }
+      } catch {
+        if (!cancelled) {
+          setHostedTalkToOptions([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingTalkToOptions(false);
+        }
+      }
+    }
+
+    void loadHostedTalkToOptions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const runningLocalTalkToOptions = Array.from(new Set(runningModels.filter(Boolean))).map((modelName) => ({
+    key: buildTalkToOptionKey("ollama", modelName),
+    providerId: "ollama" as const,
+    providerLabel: literal("Ollama"),
+    model: modelName,
+    label: modelName,
+    kind: "local-running" as const,
+  }));
+  const talkToOptions = [...runningLocalTalkToOptions, ...hostedTalkToOptions];
+  const talkToOptionKeys = new Set(talkToOptions.map((option) => option.key));
+  const preferredTalkToOption = getTalkToFallbackOption(talkToOptions, currentUser?.preferredModel);
+  const talkToOptionsSignature = talkToOptions.map((option) => option.key).join("|");
+  const preferredTalkToProviderId = preferredTalkToOption?.providerId ?? "ollama";
+  const preferredTalkToModel = preferredTalkToOption?.model ?? "";
 
   useEffect(() => {
     setIsVoiceCaptureAvailable(
@@ -667,33 +873,43 @@ export function ChatWorkspace({
   }, []);
 
   useEffect(() => {
-    const fallbackModel = currentUser?.preferredModel && models.some((model) => model.name === currentUser.preferredModel)
-      ? currentUser.preferredModel
-      : models[0]?.name;
+    const currentSelectionKey = selectedModel
+      ? buildTalkToOptionKey(providerId, selectedModel)
+      : null;
 
-    if (!selectedModel && fallbackModel) {
-      setSelectedModel(fallbackModel);
+    if (!selectedModel && preferredTalkToOption) {
+      setProviderId(preferredTalkToOption.providerId);
+      setSelectedModel(preferredTalkToOption.model);
       return;
     }
 
-    if (selectedModel && !models.some((model) => model.name === selectedModel)) {
-      setSelectedModel(fallbackModel ?? "");
+    if (selectedModel && currentSelectionKey && !talkToOptionKeys.has(currentSelectionKey)) {
+      setSelectedAssistantProfileId("");
+
+      if (preferredTalkToOption) {
+        setProviderId(preferredTalkToOption.providerId);
+        setSelectedModel(preferredTalkToOption.model);
+        return;
+      }
+
+      setProviderId("ollama");
+      setSelectedModel("");
     }
-  }, [currentUser?.preferredModel, models, selectedModel]);
+  }, [currentUser?.preferredModel, preferredTalkToModel, preferredTalkToProviderId, providerId, selectedModel, talkToOptionsSignature]);
 
   useEffect(() => {
     if (activeConversationId || messages.length > 0) {
       return;
     }
 
-    setSelectedModel(
-      currentUser?.preferredModel && models.some((model) => model.name === currentUser.preferredModel)
-        ? currentUser.preferredModel
-        : models[0]?.name ?? "",
-    );
+    setProviderId(preferredTalkToProviderId);
+    setSelectedModel(preferredTalkToModel);
     setTemperature(currentUser?.preferredTemperature ?? DEFAULT_USER_CHAT_TEMPERATURE);
     setSystemPrompt(currentUser?.preferredSystemPrompt || DEFAULT_USER_SYSTEM_PROMPT);
-  }, [activeConversationId, currentUser?.preferredModel, currentUser?.preferredSystemPrompt, currentUser?.preferredTemperature, messages.length, models]);
+    setUseKnowledge(false);
+    setGroundingMode("off");
+    setSelectedAssistantProfileId("");
+  }, [activeConversationId, currentUser?.preferredSystemPrompt, currentUser?.preferredTemperature, messages.length, preferredTalkToModel, preferredTalkToProviderId]);
 
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -707,29 +923,6 @@ export function ChatWorkspace({
       behavior: "smooth",
     });
   }, [messages, isStreaming]);
-
-  useEffect(() => {
-    try {
-      const storedValue = window.localStorage.getItem(workspaceSidebarStorageKey);
-      setShowWorkspaceSidebar(parseWorkspaceSidebarPreference(storedValue));
-    } catch {
-      setShowWorkspaceSidebar(true);
-    } finally {
-      setLoadedWorkspaceSidebarKey(workspaceSidebarStorageKey);
-    }
-  }, [workspaceSidebarStorageKey]);
-
-  useEffect(() => {
-    if (loadedWorkspaceSidebarKey !== workspaceSidebarStorageKey) {
-      return;
-    }
-
-    try {
-      window.localStorage.setItem(workspaceSidebarStorageKey, String(showWorkspaceSidebar));
-    } catch {
-      // Ignore storage failures and keep the in-memory rail state.
-    }
-  }, [loadedWorkspaceSidebarKey, showWorkspaceSidebar, workspaceSidebarStorageKey]);
 
   useEffect(() => {
     try {
@@ -942,6 +1135,55 @@ export function ChatWorkspace({
     }, 90_000);
   }
 
+  const selectedAssistantProfile = selectedAssistantProfileId
+    ? assistantProfiles.find((profile) => profile.id === selectedAssistantProfileId) ?? null
+    : null;
+
+  function buildConversationSettings() {
+    return {
+      model: selectedModel,
+      providerId,
+      systemPrompt,
+      temperature,
+      useKnowledge,
+      groundingMode: useKnowledge ? groundingMode : "off",
+      assistantProfileId: selectedAssistantProfileId || null,
+    };
+  }
+
+  function applyAssistantProfile(profileId: string) {
+    if (!profileId) {
+      setSelectedAssistantProfileId("");
+      setProviderId("ollama");
+      return;
+    }
+
+    const profile = assistantProfiles.find((entry) => entry.id === profileId);
+
+    if (!profile) {
+      return;
+    }
+
+    setSelectedAssistantProfileId(profile.id);
+    setProviderId(profile.providerId);
+    setSelectedModel(profile.model);
+    setSystemPrompt(profile.systemPrompt || DEFAULT_USER_SYSTEM_PROMPT);
+    setTemperature(profile.temperature);
+    setUseKnowledge(profile.useKnowledge);
+    setGroundingMode(profile.useKnowledge ? profile.groundingMode : "off");
+  }
+
+  async function handleTalkToEmptyAction() {
+    if (canManageModels && onRequestOpenModelOperations) {
+      await onRequestOpenModelOperations();
+      return;
+    }
+
+    setTalkToDialogMessage(
+      literal("No models are started right now. Contact an administrator to start one from the Models page."),
+    );
+  }
+
   async function createConversationRecord(nextMessages: OllamaChatMessage[]) {
     if (!currentUser) {
       throw new Error("Sign in to save conversations.");
@@ -953,13 +1195,9 @@ export function ChatWorkspace({
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        title: buildConversationTitle(nextMessages),
+        title: buildConversationTitle(nextMessages, literal("New conversation")),
         messages: nextMessages,
-        settings: {
-          model: selectedModel,
-          systemPrompt,
-          temperature,
-        },
+        settings: buildConversationSettings(),
       }),
     });
 
@@ -991,7 +1229,7 @@ export function ChatWorkspace({
       return;
     }
 
-    const title = buildConversationTitle(nextMessages);
+    const title = buildConversationTitle(nextMessages, literal("New conversation"));
     const conversationId =
       existingConversationId ??
       activeConversationId ??
@@ -1008,11 +1246,7 @@ export function ChatWorkspace({
         body: JSON.stringify({
           title,
           messages: nextMessages,
-          settings: {
-            model: selectedModel,
-            systemPrompt,
-            temperature,
-          },
+          settings: buildConversationSettings(),
           archived: options?.archived,
         }),
       });
@@ -1058,7 +1292,7 @@ export function ChatWorkspace({
     saveTimeoutRef.current = window.setTimeout(() => {
       queueSettingsSave();
     }, 500);
-  }, [activeConversationId, isStreaming, selectedModel, systemPrompt, temperature]);
+  }, [activeConversationId, groundingMode, isStreaming, providerId, selectedAssistantProfileId, selectedModel, systemPrompt, temperature, useKnowledge]);
 
   useEffect(() => {
     setConversationTitleDraft(conversationTitle);
@@ -1100,8 +1334,15 @@ export function ChatWorkspace({
             : models[0]?.name)
           || "",
       );
+      setProviderId(conversation.settings.providerId ?? "ollama");
       setSystemPrompt(conversation.settings.systemPrompt || currentUser?.preferredSystemPrompt || DEFAULT_USER_SYSTEM_PROMPT);
       setTemperature(conversation.settings.temperature ?? currentUser?.preferredTemperature ?? DEFAULT_USER_CHAT_TEMPERATURE);
+      setUseKnowledge(conversation.settings.useKnowledge ?? false);
+      setGroundingMode(
+        conversation.settings.groundingMode
+          ?? (conversation.settings.useKnowledge ? "balanced" : "off"),
+      );
+      setSelectedAssistantProfileId(conversation.settings.assistantProfileId ?? "");
       setDraft("");
       setLastLatency(null);
     } catch (loadError) {
@@ -1138,11 +1379,7 @@ export function ChatWorkspace({
         body: JSON.stringify({
           title: nextTitle,
           messages,
-          settings: {
-            model: selectedModel,
-            systemPrompt,
-            temperature,
-          },
+          settings: buildConversationSettings(),
           archived: conversations.find((conversation) => conversation.id === activeConversationId)?.archivedAt !== null,
         }),
       });
@@ -1174,19 +1411,20 @@ export function ChatWorkspace({
   function startNewConversation() {
     abortControllerRef.current?.abort();
     setActiveConversationId(null);
-    setConversationTitle("New conversation");
+    setConversationTitle(literal("New conversation"));
+    setConversationTitleDraft(literal("New conversation"));
     setDraft("");
     setError(null);
     setLastLatency(null);
     setIsStreaming(false);
     setMessages([]);
-    setSelectedModel(
-      (currentUser?.preferredModel && models.some((model) => model.name === currentUser.preferredModel)
-        ? currentUser.preferredModel
-        : models[0]?.name) ?? selectedModel,
-    );
+    setProviderId(preferredTalkToProviderId);
+    setSelectedModel(preferredTalkToModel);
     setSystemPrompt(currentUser?.preferredSystemPrompt || DEFAULT_USER_SYSTEM_PROMPT);
     setTemperature(currentUser?.preferredTemperature ?? DEFAULT_USER_CHAT_TEMPERATURE);
+    setUseKnowledge(false);
+    setGroundingMode("off");
+    setSelectedAssistantProfileId("");
   }
 
   async function deleteConversationRecord(id: string) {
@@ -1275,14 +1513,17 @@ export function ChatWorkspace({
       setConversationTitleDraft(payload.conversation.title);
       setMessages(payload.conversation.messages);
       setSelectedModel(
-        payload.conversation.settings.model
-          || (currentUser?.preferredModel && models.some((model) => model.name === currentUser.preferredModel)
-            ? currentUser.preferredModel
-            : models[0]?.name)
-          || "",
+        payload.conversation.settings.model || preferredTalkToModel,
       );
+      setProviderId(payload.conversation.settings.providerId ?? preferredTalkToProviderId);
       setSystemPrompt(payload.conversation.settings.systemPrompt || currentUser?.preferredSystemPrompt || DEFAULT_USER_SYSTEM_PROMPT);
       setTemperature(payload.conversation.settings.temperature ?? currentUser?.preferredTemperature ?? DEFAULT_USER_CHAT_TEMPERATURE);
+      setUseKnowledge(payload.conversation.settings.useKnowledge ?? false);
+      setGroundingMode(
+        payload.conversation.settings.groundingMode
+          ?? (payload.conversation.settings.useKnowledge ? "balanced" : "off"),
+      );
+      setSelectedAssistantProfileId(payload.conversation.settings.assistantProfileId ?? "");
     } catch (archiveError) {
       setError(
         archiveError instanceof Error
@@ -1448,6 +1689,7 @@ export function ChatWorkspace({
     const controller = new AbortController();
     let ensuredConversationId = activeConversationId ?? undefined;
     let assistantContent = "";
+    let knowledgeCitations: AiKnowledgeCitation[] = [];
 
     abortControllerRef.current = controller;
     setError(null);
@@ -1463,23 +1705,28 @@ export function ChatWorkspace({
         activeConversationId ??
         (await createConversationRecord(nextConversation));
 
-      const response = await fetch("/api/ollama/chat", {
+      const response = await fetch("/api/ai/chat", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         signal: controller.signal,
         body: JSON.stringify({
+          providerId,
           model: selectedModel,
           messages: nextConversation,
           temperature,
           systemPrompt,
+          useKnowledge,
+          groundingMode: useKnowledge ? groundingMode : "off",
         }),
       });
 
       if (!response.ok || !response.body) {
         throw new Error(await readErrorMessage(response));
       }
+
+      knowledgeCitations = readKnowledgeCitationsHeader(response);
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -1506,6 +1753,7 @@ export function ChatWorkspace({
             updated[updated.length - 1] = {
               ...lastMessage,
               content: snapshot,
+              knowledgeCitations,
             };
 
             return updated;
@@ -1519,6 +1767,7 @@ export function ChatWorkspace({
         {
           role: "assistant",
           content: assistantContent,
+          knowledgeCitations,
         },
       ], ensuredConversationId, { archived: false });
     } catch (error) {
@@ -1529,6 +1778,7 @@ export function ChatWorkspace({
             {
               role: "assistant",
               content: assistantContent,
+              knowledgeCitations,
             },
           ], ensuredConversationId, { archived: false }).catch(() => undefined);
         }
@@ -1555,6 +1805,7 @@ export function ChatWorkspace({
           updated[updated.length - 1] = {
             ...lastMessage,
             content: fallbackContent,
+            knowledgeCitations,
           };
 
           return updated;
@@ -1566,6 +1817,7 @@ export function ChatWorkspace({
         {
           role: "assistant",
           content: fallbackContent,
+          knowledgeCitations,
         },
       ], ensuredConversationId, { archived: false }).catch(() => undefined);
     } finally {
@@ -1931,8 +2183,17 @@ export function ChatWorkspace({
     return isConversationOlderThanArchivedRetention(conversation.archivedAt, archivedRetentionDays);
   }).length;
   const archivedSummaryText = selectedArchivedVisibleConversationIds.length > 0
-    ? `Showing ${archivedVisibleConversations.length} ${getArchivedFilterSummaryLabel(archivedConversationFilter, archivedRetentionDays)}, sorted ${getArchivedSortSummaryLabel(archivedConversationSort)}. ${selectedArchivedVisibleConversationIds.length} selected for bulk actions.`
-    : `Showing ${archivedVisibleConversations.length} ${getArchivedFilterSummaryLabel(archivedConversationFilter, archivedRetentionDays)}, sorted ${getArchivedSortSummaryLabel(archivedConversationSort)}.`;
+    ? literal("Showing {count} {filterSummary}, sorted {sortSummary}. {selectedCount} selected for bulk actions.", {
+        count: archivedVisibleConversations.length,
+        filterSummary: getArchivedFilterSummaryLabel(archivedConversationFilter, archivedRetentionDays, literal),
+        sortSummary: getArchivedSortSummaryLabel(archivedConversationSort, literal),
+        selectedCount: selectedArchivedVisibleConversationIds.length,
+      })
+    : literal("Showing {count} {filterSummary}, sorted {sortSummary}.", {
+        count: archivedVisibleConversations.length,
+        filterSummary: getArchivedFilterSummaryLabel(archivedConversationFilter, archivedRetentionDays, literal),
+        sortSummary: getArchivedSortSummaryLabel(archivedConversationSort, literal),
+      });
   const recentConversationGroups = ["Today", "Yesterday", "This week", "Older"]
     .map((label) => ({
       label,
@@ -1942,17 +2203,25 @@ export function ChatWorkspace({
     }))
     .filter((group) => group.conversations.length > 0);
   const savedChatsSummary = currentUser
-    ? `${visibleConversations.length} in view / ${pinnedConversationIds.length} pinned`
-    : "Sign in to save and reopen chats";
-  const hasLocalAiAvailable = isReachable && models.length > 0;
-  const localAiStatusLabel = hasLocalAiAvailable ? "Local AI ready" : "No local AI";
+    ? literal("{visibleCount} in view / {pinnedCount} pinned", {
+        visibleCount: visibleConversations.length,
+        pinnedCount: pinnedConversationIds.length,
+      })
+    : literal("Sign in to save and reopen chats");
+  const hasCallableTalkToOptions = talkToOptions.length > 0;
+  const localAiStatusLabel = hasCallableTalkToOptions ? literal("Model ready") : literal("None running");
   const accountSystemPrompt = currentUser?.preferredSystemPrompt?.trim() || DEFAULT_USER_SYSTEM_PROMPT;
   const collapsedSavedChatPreview = visibleConversations.slice(0, 3);
   const transcriptSummary = messages.length > 0
-    ? `${messages.length} message${messages.length === 1 ? "" : "s"} in this thread`
-    : "Fresh thread ready for the first prompt";
+    ? literal("{count} messages in this thread", { count: messages.length })
+    : literal("Fresh thread ready for the first prompt");
   const isUsingAccountPrompt = systemPrompt.trim() === accountSystemPrompt;
-  const assistantStyleBadgeLabel = isUsingAccountPrompt ? "Account style" : "Saved thread style";
+  const assistantStyleBadgeLabel = isUsingAccountPrompt ? literal("Account style") : literal("Saved thread style");
+  const groundingStatusLabel = !useKnowledge || groundingMode === "off"
+    ? literal("Grounding off")
+    : groundingMode === "strict"
+      ? literal("Strict grounding")
+      : literal("Balanced grounding");
   const disclosureHeaderBaseClass = "group relative flex w-full items-start justify-between gap-4 overflow-hidden rounded-[24px] border px-4 py-4 text-left shadow-[0_18px_44px_rgba(83,53,31,0.1)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_24px_56px_rgba(83,53,31,0.14)]";
   const disclosureIndicatorClass = "theme-surface-chip inline-flex h-10 w-10 items-center justify-center rounded-full text-foreground";
 
@@ -2066,7 +2335,7 @@ export function ChatWorkspace({
   }
 
   const savedChatsPanel = (
-    <div className="theme-surface-soft overflow-hidden rounded-[28px] p-3 sm:p-4">
+    <div data-tour-id="chat-saved-chats" className="theme-surface-soft overflow-hidden rounded-[28px] p-3 sm:p-4">
       <button
         aria-controls="saved-chats-panel-body"
         aria-expanded={showSavedChatsPanel}
@@ -2075,12 +2344,12 @@ export function ChatWorkspace({
         onClick={() => setShowSavedChatsPanel((current) => !current)}
       >
         <span className="min-w-0">
-          <span className="eyebrow text-muted">Saved chats</span>
+          <span className="eyebrow text-muted">{literal("Saved chats")}</span>
           <span className="mt-2 block text-base font-semibold text-foreground sm:text-lg">
-            Recent threads and archived history
+            {literal("Recent threads and archived history")}
           </span>
           <span className="mt-2 block text-[11px] font-semibold uppercase tracking-[0.2em] text-[color:color-mix(in_srgb,var(--accent-strong)_72%,white_28%)]">
-            Expand to browse and act
+            {literal("Expand to browse and act")}
           </span>
           <span className="theme-surface-chip mt-3 inline-flex max-w-full rounded-full px-3 py-1 text-xs font-medium text-muted">
             {savedChatsSummary}
@@ -2088,7 +2357,7 @@ export function ChatWorkspace({
         </span>
         <span className="mt-1 hidden flex-col items-end gap-2 sm:inline-flex">
           <span className="theme-surface-chip rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">
-            {showSavedChatsPanel ? "Collapse" : "Expand"}
+            {showSavedChatsPanel ? literal("Collapse") : literal("Expand")}
           </span>
           <span className={disclosureIndicatorClass}>
             <DisclosureChevronIcon open={showSavedChatsPanel} />
@@ -2105,8 +2374,8 @@ export function ChatWorkspace({
             <div>
               <p className="text-xs text-muted sm:text-sm">
                 {currentUser
-                  ? `Saved for ${currentUser.displayName}.`
-                  : "Sign in to enable per-user saved conversations."}
+                  ? literal("Saved for {name}.", { name: currentUser.displayName })
+                  : literal("Sign in to enable per-user saved conversations.")}
               </p>
             </div>
             <button
@@ -2114,7 +2383,7 @@ export function ChatWorkspace({
               type="button"
               onClick={startNewConversation}
             >
-              New chat
+              {literal("New chat")}
             </button>
           </div>
 
@@ -2122,12 +2391,12 @@ export function ChatWorkspace({
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
-                  <span className="font-semibold">Pins</span>
+                  <span className="font-semibold">{literal("Pins")}</span>
                   <span className="rounded-full bg-white px-3 py-1 font-semibold text-foreground">
-                    {pinnedConversationIds.length} pinned
+                    {literal("{count} pinned", { count: pinnedConversationIds.length })}
                   </span>
                   <span className="rounded-full bg-white px-3 py-1 font-semibold text-foreground">
-                    {archivedConversationCount} archived
+                    {literal("{count} archived", { count: archivedConversationCount })}
                   </span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -2141,7 +2410,7 @@ export function ChatWorkspace({
                     type="button"
                     onClick={() => setShowPinnedOnly((current) => !current)}
                   >
-                    {showPinnedOnly ? "Show all chats" : "Pinned only"}
+                    {showPinnedOnly ? literal("Show all chats") : literal("Pinned only")}
                   </button>
                   <button
                     className={`rounded-full px-3 py-1 text-xs font-semibold ${
@@ -2153,28 +2422,28 @@ export function ChatWorkspace({
                     type="button"
                     onClick={() => setShowArchivedConversations((current) => !current)}
                   >
-                    {showArchivedConversations ? "Hide archived" : "Show archived"}
+                    {showArchivedConversations ? literal("Hide archived") : literal("Show archived")}
                   </button>
                 </div>
               </div>
               <input
                 className="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
-                placeholder="Search saved chats"
+                placeholder={literal("Search saved chats")}
                 value={conversationSearch}
                 onChange={(event) => setConversationSearch(event.target.value)}
               />
               {activeConversationId ? (
                 <div className="theme-surface-strong rounded-[22px] p-3">
-                  <p className="eyebrow text-muted">Active title</p>
+                  <p className="eyebrow text-muted">{literal("Active title")}</p>
                   <div className="mt-2 flex flex-col gap-2 sm:flex-row">
                     <input
                       className="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
-                      placeholder="Conversation title"
+                      placeholder={literal("Conversation title")}
                       value={conversationTitleDraft}
                       onChange={(event) => setConversationTitleDraft(event.target.value)}
                     />
                     <button
-                      className="rounded-full border border-line bg-white px-4 py-3 text-sm font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                      className="ui-button ui-button-secondary px-4 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                       disabled={
                         isSavingConversation
                         || !conversationTitleDraft.trim()
@@ -2185,22 +2454,22 @@ export function ChatWorkspace({
                         void renameActiveConversationTitle();
                       }}
                     >
-                      {isSavingConversation ? "Saving..." : "Save title"}
+                      {isSavingConversation ? t("saving") : literal("Save title")}
                     </button>
                     <button
-                      className="rounded-full border border-line bg-white px-4 py-3 text-sm font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                      className="ui-button ui-button-secondary px-4 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                       disabled={isSavingConversation}
                       type="button"
                       onClick={() => {
                         void setConversationArchived(activeConversationId, !activeConversationIsArchived);
                       }}
                     >
-                      {activeConversationIsArchived ? "Restore chat" : "Archive chat"}
+                      {activeConversationIsArchived ? literal("Restore chat") : literal("Archive chat")}
                     </button>
                   </div>
                   {activeConversationIsArchived ? (
                     <p className="mt-2 text-xs leading-6 text-muted">
-                      This conversation is archived and stays out of the main rail until restored.
+                      {literal("This conversation is archived and stays out of the main rail until restored.")}
                     </p>
                   ) : null}
                 </div>
@@ -2216,13 +2485,13 @@ export function ChatWorkspace({
                     <div className="space-y-3">
                       {!showPinnedOnly ? (
                         <div className="flex items-center gap-2 px-1">
-                          <p className="section-label text-xs font-semibold">Pinned</p>
+                          <p className="section-label text-xs font-semibold">{literal("Pinned")}</p>
                           <span className="text-xs text-muted">{pinnedVisibleConversations.length}</span>
                         </div>
                       ) : null}
                       {pinnedVisibleConversations.map((conversation) => {
                         const isActive = conversation.id === activeConversationId;
-                        const recencyBadge = getConversationRecencyBadge(conversation.updatedAt);
+                        const recencyBadge = getConversationRecencyBadge(conversation.updatedAt, literal);
                         const activityBadge = getConversationActivityBadge({
                           conversationId: conversation.id,
                           isActive,
@@ -2247,7 +2516,7 @@ export function ChatWorkspace({
                             >
                               <div className="flex flex-wrap items-center gap-2">
                                 <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-900">
-                                  Pinned
+                                  {literal("Pinned")}
                                 </span>
                                 <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                                   isActive
@@ -2257,10 +2526,10 @@ export function ChatWorkspace({
                                       : "bg-white text-foreground"
                                 }`}>
                                   {isActive
-                                    ? "Active"
+                                    ? literal("Active")
                                     : conversation.messageCount === 0
-                                      ? "Empty"
-                                      : "Saved"}
+                                      ? literal("Empty")
+                                      : literal("Saved")}
                                 </span>
                                 {recencyBadge ? (
                                   <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${recencyBadge.classes}`}>
@@ -2277,10 +2546,10 @@ export function ChatWorkspace({
                                 {conversation.title}
                               </p>
                               <p className="mt-2 text-xs leading-6 text-muted">
-                                {conversation.lastMessagePreview || "No messages yet."}
+                                {conversation.lastMessagePreview || literal("No messages yet.")}
                               </p>
                               <p className="mt-2 text-xs text-muted">
-                                {conversation.messageCount} messages · {formatTimestamp(conversation.updatedAt)}
+                                {literal("{count} messages", { count: conversation.messageCount })} · {formatTimestamp(conversation.updatedAt)}
                               </p>
                             </button>
                             <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -2289,7 +2558,7 @@ export function ChatWorkspace({
                                 type="button"
                                 onClick={() => togglePinnedConversation(conversation.id)}
                               >
-                                Unpin
+                                {literal("Unpin")}
                               </button>
                               <button
                                 className="text-xs font-semibold text-[var(--accent-strong)]"
@@ -2298,14 +2567,14 @@ export function ChatWorkspace({
                                   void setConversationArchived(conversation.id, true);
                                 }}
                               >
-                                Archive
+                                {literal("Archive")}
                               </button>
                               <button
                                 className="text-xs font-semibold text-[var(--accent-strong)]"
                                 type="button"
                                 onClick={() => deleteConversationRecord(conversation.id)}
                               >
-                                Delete
+                                {literal("Delete")}
                               </button>
                             </div>
                           </div>
@@ -2317,7 +2586,7 @@ export function ChatWorkspace({
                     <div className="space-y-3">
                       {!showPinnedOnly ? (
                         <div className="flex items-center gap-2 px-1">
-                          <p className="section-label text-xs font-semibold">Recent</p>
+                          <p className="section-label text-xs font-semibold">{literal("Recent")}</p>
                           <span className="text-xs text-muted">{recentVisibleConversations.length}</span>
                         </div>
                       ) : null}
@@ -2331,7 +2600,7 @@ export function ChatWorkspace({
                           </div>
                           {group.conversations.map((conversation) => {
                             const isActive = conversation.id === activeConversationId;
-                            const recencyBadge = getConversationRecencyBadge(conversation.updatedAt);
+                            const recencyBadge = getConversationRecencyBadge(conversation.updatedAt, literal);
                             const activityBadge = getConversationActivityBadge({
                               conversationId: conversation.id,
                               isActive,
@@ -2363,10 +2632,10 @@ export function ChatWorkspace({
                                           : "bg-white text-foreground"
                                     }`}>
                                       {isActive
-                                        ? "Active"
+                                        ? literal("Active")
                                         : conversation.messageCount === 0
-                                          ? "Empty"
-                                          : "Saved"}
+                                          ? literal("Empty")
+                                          : literal("Saved")}
                                     </span>
                                     {recencyBadge ? (
                                       <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${recencyBadge.classes}`}>
@@ -2383,10 +2652,10 @@ export function ChatWorkspace({
                                     {conversation.title}
                                   </p>
                                   <p className="mt-2 text-xs leading-6 text-muted">
-                                    {conversation.lastMessagePreview || "No messages yet."}
+                                    {conversation.lastMessagePreview || literal("No messages yet.")}
                                   </p>
                                   <p className="mt-2 text-xs text-muted">
-                                    {conversation.messageCount} messages · {formatTimestamp(conversation.updatedAt)}
+                                    {literal("{count} messages", { count: conversation.messageCount })} · {formatTimestamp(conversation.updatedAt)}
                                   </p>
                                 </button>
                                 <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -2395,7 +2664,7 @@ export function ChatWorkspace({
                                     type="button"
                                     onClick={() => togglePinnedConversation(conversation.id)}
                                   >
-                                    Pin
+                                    {literal("Pin")}
                                   </button>
                                   <button
                                     className="text-xs font-semibold text-[var(--accent-strong)]"
@@ -2404,14 +2673,14 @@ export function ChatWorkspace({
                                       void setConversationArchived(conversation.id, true);
                                     }}
                                   >
-                                    Archive
+                                    {literal("Archive")}
                                   </button>
                                   <button
                                     className="text-xs font-semibold text-[var(--accent-strong)]"
                                     type="button"
                                     onClick={() => deleteConversationRecord(conversation.id)}
                                   >
-                                    Delete
+                                    {literal("Delete")}
                                   </button>
                                 </div>
                               </div>
@@ -2425,21 +2694,21 @@ export function ChatWorkspace({
                     <div className="space-y-3">
                       <div className="space-y-2 px-1">
                         <div className="flex items-center gap-2">
-                          <p className="section-label text-xs font-semibold">Archived</p>
+                          <p className="section-label text-xs font-semibold">{literal("Archived")}</p>
                           <span className="text-xs text-muted">{archivedConversationCount}</span>
                           <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-foreground">
-                            Empty {archivedEmptyConversationCount}
+                            {literal("Empty {count}", { count: archivedEmptyConversationCount })}
                           </span>
                           <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-foreground">
-                            {archivedRetentionDays}d+ {archivedOlderConversationCount}
+                            {literal("{days}d+ {count}", { days: archivedRetentionDays, count: archivedOlderConversationCount })}
                           </span>
                         </div>
                         <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
-                          <span className="font-semibold">Retention</span>
+                          <span className="font-semibold">{literal("Retention")}</span>
                           {ARCHIVED_RETENTION_OPTIONS.map((value) => (
                             <button
                               key={value}
-                              aria-label={`Set archived retention filter to ${value} days`}
+                              aria-label={literal("Set archived retention filter to {days} days", { days: value })}
                               aria-pressed={archivedRetentionDays === value}
                               className={`rounded-full px-3 py-1 font-semibold ${
                                 archivedRetentionDays === value
@@ -2450,20 +2719,20 @@ export function ChatWorkspace({
                               type="button"
                               onClick={() => setArchivedRetentionDays(value)}
                             >
-                              {value} days
+                              {literal("{days} days", { days: value })}
                             </button>
                           ))}
                         </div>
                         <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
-                          <span className="font-semibold">Filter</span>
+                          <span className="font-semibold">{literal("Filter")}</span>
                           {([
-                            ["all", `All ${archivedConversationCount}`],
-                            ["empty", `Empty ${archivedEmptyConversationCount}`],
-                            ["old", `${archivedRetentionDays}d+ ${archivedOlderConversationCount}`],
+                            ["all", literal("All {count}", { count: archivedConversationCount })],
+                            ["empty", literal("Empty {count}", { count: archivedEmptyConversationCount })],
+                            ["old", literal("{days}d+ {count}", { days: archivedRetentionDays, count: archivedOlderConversationCount })],
                           ] as const).map(([value, label]) => (
                             <button
                               key={value}
-                              aria-label={`Show ${label.toLowerCase()} archived chats`}
+                              aria-label={literal("Show {label} archived chats", { label: label.toLowerCase() })}
                               aria-pressed={archivedConversationFilter === value}
                               className={`rounded-full px-3 py-1 font-semibold ${
                                 archivedConversationFilter === value
@@ -2479,15 +2748,15 @@ export function ChatWorkspace({
                           ))}
                         </div>
                         <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
-                          <span className="font-semibold">Sort</span>
+                          <span className="font-semibold">{literal("Sort")}</span>
                           {([
-                            ["archived-newest", "Newest archived"],
-                            ["archived-oldest", "Oldest archived"],
-                            ["recent-activity", "Recent activity"],
+                            ["archived-newest", literal("Newest archived")],
+                            ["archived-oldest", literal("Oldest archived")],
+                            ["recent-activity", literal("Recent activity")],
                           ] as const).map(([value, label]) => (
                             <button
                               key={value}
-                              aria-label={`Sort archived chats by ${label.toLowerCase()}`}
+                              aria-label={literal("Sort archived chats by {label}", { label: label.toLowerCase() })}
                               aria-pressed={archivedConversationSort === value}
                               className={`rounded-full px-3 py-1 font-semibold ${
                                 archivedConversationSort === value
@@ -2503,54 +2772,54 @@ export function ChatWorkspace({
                           ))}
                         </div>
                         <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
-                          <span className="font-semibold">Selection</span>
+                          <span className="font-semibold">{literal("Selection")}</span>
                           <span className="rounded-full bg-white px-3 py-1 font-semibold text-foreground">
-                            {selectedArchivedVisibleConversationIds.length} selected
+                            {literal("{count} selected", { count: selectedArchivedVisibleConversationIds.length })}
                           </span>
                           <button
                             aria-label={selectedArchivedVisibleConversationIds.length === archivedVisibleConversations.length
-                              ? "Clear selection for all visible archived chats"
-                              : "Select all visible archived chats"}
+                              ? literal("Clear selection for all visible archived chats")
+                              : literal("Select all visible archived chats")}
                             aria-pressed={selectedArchivedVisibleConversationIds.length > 0 && selectedArchivedVisibleConversationIds.length === archivedVisibleConversations.length}
-                            className="rounded-full border border-line bg-white px-3 py-1 font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                            className="ui-button ui-button-secondary px-3 py-1 font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                             disabled={isRunningArchivedCleanup || archivedVisibleConversations.length === 0}
                             type="button"
                             onClick={toggleSelectAllArchivedVisible}
                           >
                             {selectedArchivedVisibleConversationIds.length === archivedVisibleConversations.length
-                              ? "Clear visible selection"
-                              : "Select visible"}
+                              ? literal("Clear visible selection")
+                              : literal("Select visible")}
                           </button>
                           {selectedArchivedVisibleConversationIds.length > 0 ? (
                             <button
-                              aria-label="Clear the current archived selection"
-                              className="rounded-full border border-line bg-white px-3 py-1 font-semibold text-foreground"
+                              aria-label={literal("Clear the current archived selection")}
+                              className="ui-button ui-button-secondary px-3 py-1 font-semibold"
                               disabled={isRunningArchivedCleanup}
                               type="button"
                               onClick={() => setSelectedArchivedConversationIds([])}
                             >
-                              Clear selection
+                              {literal("Clear selection")}
                             </button>
                           ) : null}
                           <button
-                            aria-label="Select visible archived chats with no messages"
+                            aria-label={literal("Select visible archived chats with no messages")}
                             aria-pressed={selectedArchivedVisibleConversationIds.length > 0 && selectedArchivedVisibleConversationIds.length === archivedVisibleEmptyConversationIds.length && archivedVisibleEmptyConversationIds.every((id) => selectedArchivedVisibleConversationIdSet.has(id))}
-                            className="rounded-full border border-line bg-white px-3 py-1 font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                            className="ui-button ui-button-secondary px-3 py-1 font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                             disabled={isRunningArchivedCleanup || archivedVisibleEmptyConversationIds.length === 0}
                             type="button"
                             onClick={() => replaceArchivedSelection(archivedVisibleEmptyConversationIds)}
                           >
-                            Select empty
+                            {literal("Select empty")}
                           </button>
                           <button
-                            aria-label={`Select visible archived chats at least ${archivedRetentionDays} days old`}
+                            aria-label={literal("Select visible archived chats at least {days} days old", { days: archivedRetentionDays })}
                             aria-pressed={selectedArchivedVisibleConversationIds.length > 0 && selectedArchivedVisibleConversationIds.length === archivedVisibleOlderConversationIds.length && archivedVisibleOlderConversationIds.every((id) => selectedArchivedVisibleConversationIdSet.has(id))}
-                            className="rounded-full border border-line bg-white px-3 py-1 font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                            className="ui-button ui-button-secondary px-3 py-1 font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                             disabled={isRunningArchivedCleanup || archivedVisibleOlderConversationIds.length === 0}
                             type="button"
                             onClick={() => replaceArchivedSelection(archivedVisibleOlderConversationIds)}
                           >
-                            Select {archivedRetentionDays}d+
+                            {literal("Select {days}d+", { days: archivedRetentionDays })}
                           </button>
                         </div>
                         <p aria-live="polite" className="text-xs leading-6 text-muted">{archivedSummaryText}</p>
@@ -2635,8 +2904,8 @@ export function ChatWorkspace({
                           </button>
                           {confirmArchivedCleanupAction ? (
                             <button
-                              aria-label="Clear the pending archive bulk action confirmation"
-                              className="rounded-full border border-line bg-white px-3 py-1 text-xs font-semibold text-foreground"
+                              aria-label={literal("Clear the pending archive bulk action confirmation")}
+                              className="ui-button ui-button-secondary px-3 py-1 text-xs font-semibold"
                               disabled={isRunningArchivedCleanup}
                               type="button"
                               onClick={() => setConfirmArchivedCleanupAction(null)}
@@ -2651,15 +2920,15 @@ export function ChatWorkspace({
                       </div>
                       {archivedVisibleConversations.length > 0 ? (
                         <div
-                          aria-label="Archived conversations"
+                          aria-label={literal("Archived conversations")}
                           aria-multiselectable="true"
                           role="listbox"
                           className="space-y-3"
                         >
                           {archivedVisibleConversations.map((conversation) => {
                             const isActive = conversation.id === activeConversationId;
-                            const recencyBadge = getConversationRecencyBadge(conversation.updatedAt);
-                            const archivedMetaBadges = getArchivedConversationMetaBadges(conversation);
+                            const recencyBadge = getConversationRecencyBadge(conversation.updatedAt, literal);
+                            const archivedMetaBadges = getArchivedConversationMetaBadges(conversation, literal);
                             const isSelected = selectedArchivedVisibleConversationIdSet.has(conversation.id);
 
                             return (
@@ -2668,7 +2937,10 @@ export function ChatWorkspace({
                                 ref={(node) => {
                                   archivedConversationItemRefs.current[conversation.id] = node;
                                 }}
-                                aria-label={`${conversation.title}. ${conversation.messageCount} messages.`}
+                                aria-label={literal("{title}. {count} messages.", {
+                                  title: conversation.title,
+                                  count: conversation.messageCount,
+                                })}
                                 aria-selected={isSelected}
                                 className={`rounded-[24px] border px-4 py-4 ${
                                   isSelected
@@ -2684,7 +2956,10 @@ export function ChatWorkspace({
                                 <div className="mb-3 flex items-center justify-between gap-3">
                                   <button
                                     aria-pressed={isSelected}
-                                    aria-label={`${isSelected ? "Deselect" : "Select"} archived conversation ${conversation.title}`}
+                                    aria-label={literal("{action} archived conversation {title}", {
+                                      action: isSelected ? literal("Deselect") : literal("Select"),
+                                      title: conversation.title,
+                                    })}
                                     className={`rounded-full px-3 py-1 text-[11px] font-semibold ${
                                       isSelected
                                         ? "bg-sky-600 text-white"
@@ -2694,11 +2969,11 @@ export function ChatWorkspace({
                                     type="button"
                                     onClick={() => toggleArchivedConversationSelection(conversation.id)}
                                   >
-                                    {isSelected ? "Selected" : "Select"}
+                                    {isSelected ? literal("Selected") : literal("Select")}
                                   </button>
                                   {isActive ? (
                                     <span className="rounded-full bg-[var(--accent)] px-3 py-1 text-[11px] font-semibold text-white">
-                                      Active
+                                      {literal("Active")}
                                     </span>
                                   ) : null}
                                 </div>
@@ -2710,7 +2985,7 @@ export function ChatWorkspace({
                                 >
                                   <div className="flex flex-wrap items-center gap-2">
                                     <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[10px] font-semibold text-stone-900">
-                                      Archived
+                                      {literal("Archived")}
                                     </span>
                                     {archivedMetaBadges.map((badge) => (
                                       <span
@@ -2730,10 +3005,10 @@ export function ChatWorkspace({
                                     {conversation.title}
                                   </p>
                                   <p className="mt-2 text-xs leading-6 text-muted">
-                                    {conversation.lastMessagePreview || "No messages yet."}
+                                    {conversation.lastMessagePreview || literal("No messages yet.")}
                                   </p>
                                   <p className="mt-2 text-xs text-muted">
-                                    {conversation.messageCount} messages · {formatTimestamp(conversation.updatedAt)}
+                                    {literal("{count} messages", { count: conversation.messageCount })} · {formatTimestamp(conversation.updatedAt)}
                                   </p>
                                 </button>
                                 <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -2744,14 +3019,14 @@ export function ChatWorkspace({
                                       void setConversationArchived(conversation.id, false);
                                     }}
                                   >
-                                    Restore
+                                    {literal("Restore")}
                                   </button>
                                   <button
                                     className="text-xs font-semibold text-[var(--accent-strong)]"
                                     type="button"
                                     onClick={() => deleteConversationRecord(conversation.id)}
                                   >
-                                    Delete
+                                    {literal("Delete")}
                                   </button>
                                 </div>
                               </div>
@@ -2774,12 +3049,12 @@ export function ChatWorkspace({
                       : normalizedConversationSearch && archivedVisibleConversations.length > 0 && !showArchivedConversations
                         ? "Matching conversations were found in the archive. Show archived to view them."
                         : "No saved conversations match the current search."
-                    : "No saved conversations yet."}
+                    : literal("No saved conversations yet.")}
                 </div>
               )
             ) : (
               <div className="rounded-[24px] border border-dashed border-line bg-white/45 px-4 py-4 text-sm text-muted">
-                Sign in with a local user account to load and save your own conversation history.
+                {literal("Sign in with a local user account to load and save your own conversation history.")}
               </div>
             )}
           </div>
@@ -2801,11 +3076,11 @@ export function ChatWorkspace({
                   </button>
                 ))
               ) : (
-                <p className="text-xs text-muted">No saved chats yet.</p>
+                <p className="text-xs text-muted">{literal("No saved chats yet.")}</p>
               )}
             </div>
           ) : (
-            <p className="text-xs text-muted">Sign in to scan recent saved chats here.</p>
+            <p className="text-xs text-muted">{literal("Sign in to scan recent saved chats here.")}</p>
           )}
         </div>
       )}
@@ -2817,36 +3092,55 @@ export function ChatWorkspace({
       <div className="pointer-events-none absolute inset-x-8 top-0 h-24 rounded-b-[40px] bg-[radial-gradient(circle_at_top,rgba(213,122,66,0.12),transparent_70%)]" />
       <div className="theme-surface-panel relative mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[24px] px-4 py-3">
         <div>
-          <p className="eyebrow text-muted">Transcript stage</p>
+          <p className="eyebrow text-muted">{literal("Transcript stage")}</p>
           <p className="mt-1 text-sm font-semibold text-foreground">{transcriptSummary}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {hasLocalAiAvailable ? (
+          {hasCallableTalkToOptions ? (
             <label className="theme-surface-chip flex items-center gap-2 rounded-full px-2 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground">
-              <span className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(34,197,94,0.55)]" />
-              <span className="text-muted">Talk to</span>
+              <span className={`inline-flex h-2.5 w-2.5 rounded-full ${providerId === "ollama" ? "bg-emerald-500 shadow-[0_0_10px_rgba(34,197,94,0.55)]" : "bg-sky-500 shadow-[0_0_10px_rgba(14,165,233,0.45)]"}`} />
+              <span className="text-muted">{literal("Talk to")}</span>
               <select
-                aria-label="Select the AI for this chat"
+                aria-label={literal("Select the AI for this chat")}
                 className="min-w-[10rem] bg-transparent text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground outline-none"
-                disabled={isStreaming}
-                value={selectedModel}
-                onChange={(event) => setSelectedModel(event.target.value)}
+                disabled={isStreaming || isLoadingTalkToOptions}
+                value={buildTalkToOptionKey(providerId, selectedModel)}
+                onChange={(event) => {
+                  const nextOption = talkToOptions.find((option) => option.key === event.target.value);
+
+                  if (!nextOption) {
+                    return;
+                  }
+
+                  setProviderId(nextOption.providerId);
+                  setSelectedModel(nextOption.model);
+                  setSelectedAssistantProfileId("");
+                }}
               >
-                {models.map((model) => (
-                  <option key={model.name} value={model.name}>
-                    {model.name}
+                {talkToOptions.map((option) => (
+                  <option key={option.key} value={option.key}>
+                    {option.label}
                   </option>
                 ))}
               </select>
             </label>
           ) : (
-            <span className="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-rose-800">
+            <button
+              className="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-rose-800 transition hover:border-rose-300 hover:bg-rose-100"
+              type="button"
+              onClick={() => {
+                void handleTalkToEmptyAction();
+              }}
+            >
               <span className="inline-flex h-2.5 w-2.5 rounded-full bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.55)]" />
               {localAiStatusLabel}
-            </span>
+            </button>
           )}
           <span className="theme-surface-chip rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground">
-            {lastLatency ? `${lastLatency} ms` : "Awaiting first reply"}
+            {lastLatency ? `${lastLatency} ms` : literal("Awaiting first reply")}
+          </span>
+          <span className="theme-surface-chip rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground">
+            {groundingStatusLabel}
           </span>
         </div>
       </div>
@@ -2872,11 +3166,11 @@ export function ChatWorkspace({
                     isAssistant ? "bg-stone-100 text-muted" : "bg-white/14 text-white/80"
                   }`}
                 >
-                  {isAssistant ? "Assistant" : "Operator"}
+                  {isAssistant ? t("assistant") : t("operator")}
                 </p>
                 {isStreaming && isAssistant && index === messages.length - 1 ? (
                   <span className={`text-xs font-medium ${isAssistant ? "text-muted" : "text-white/80"}`}>
-                    Streaming...
+                    {t("streaming")}
                   </span>
                 ) : null}
               </div>
@@ -2885,57 +3179,61 @@ export function ChatWorkspace({
                   ? "text-[15px] leading-8 sm:text-[16px]"
                   : "text-[14px] font-medium leading-7 sm:text-[15px]"
               }`}>
-                {message.content || "Waiting for model output..."}
+                {message.content || t("waitingForModelOutput")}
               </p>
+              {isAssistant && message.knowledgeCitations && message.knowledgeCitations.length > 0 ? (
+                <details className="mt-4 rounded-[22px] border border-line/70 bg-white/70 px-4 py-3 text-sm text-foreground">
+                  <summary className="cursor-pointer list-none font-semibold text-foreground">
+                    {literal("Sources ({count})", { count: message.knowledgeCitations.length })}
+                  </summary>
+                  <div className="mt-3 space-y-3">
+                    {message.knowledgeCitations.map((citation) => (
+                      <div key={`${citation.id}-${citation.title}`} className="rounded-[18px] border border-line bg-[var(--panel)]/70 px-3 py-3">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-semibold text-foreground">{citation.title}</p>
+                            <p className="mt-1 text-xs text-muted">
+                              {literal("{source} · relevance {score}", {
+                                source: citation.source,
+                                score: citation.score.toFixed(2),
+                              })}
+                            </p>
+                          </div>
+                          {citation.tags.length > 0 ? (
+                            <span className="ui-pill ui-pill-soft border border-line text-xs text-muted">
+                              {citation.tags[0]}
+                            </span>
+                          ) : null}
+                        </div>
+                        <p className="mt-2 text-xs leading-6 text-muted">{citation.excerpt}</p>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              ) : null}
             </article>
           );
         })}
       </div>
 
-      <form ref={composerFormRef} className="theme-surface-panel mt-4 overflow-hidden rounded-[32px] border border-line/80 px-4 py-4 shadow-[0_20px_54px_rgba(83,53,31,0.1)] sm:px-5 sm:py-5" onSubmit={handleSubmit}>
+      <form ref={composerFormRef} data-tour-id="chat-composer" className="theme-surface-panel mt-4 overflow-hidden rounded-[32px] border border-line/80 px-4 py-4 shadow-[0_20px_54px_rgba(83,53,31,0.1)] sm:px-5 sm:py-5" onSubmit={handleSubmit}>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
             <span className="theme-surface-chip rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground">
-              {selectedModel || "No model selected"}
+              {selectedModel || t("noModelSelected")}
+            </span>
+            <span className="theme-surface-chip rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground">
+              {formatProfileProviderLabel(providerId, literal)}
             </span>
             <span className="theme-surface-chip rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground">
               {assistantStyleBadgeLabel}
             </span>
           </div>
         </div>
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <button
-              className={`rounded-full px-4 py-2 text-xs font-semibold ${
-                showPromptPresets
-                  ? "bg-[var(--accent)] text-white"
-                  : "border border-line bg-white text-foreground"
-              }`}
-              type="button"
-              onClick={() => setShowPromptPresets((current) => !current)}
-            >
-              {showPromptPresets ? "Hide ideas" : "Show ideas"}
-            </button>
-          </div>
-          {showPromptPresets ? (
-            <div className="flex flex-wrap gap-2">
-              {PROMPT_PRESETS.map((preset) => (
-                <button
-                  key={preset.label}
-                  className="rounded-full border border-line bg-white px-3 py-2 text-xs font-semibold text-foreground"
-                  type="button"
-                  onClick={() => applyPromptPreset(preset.prompt)}
-                >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
         <textarea
           ref={draftInputRef}
           className="min-h-36 w-full rounded-[30px] border border-line bg-white px-4 py-4 text-sm leading-7 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.72)] outline-none sm:px-5 sm:py-5 lg:min-h-40"
-          placeholder="Type your message..."
+          placeholder={t("typeYourMessage")}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={handleDraftKeyDown}
@@ -2947,14 +3245,20 @@ export function ChatWorkspace({
         ) : null}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
-            <label className="flex items-center gap-2 rounded-full border border-line bg-white px-4 py-3 text-sm text-foreground">
-              <span className="font-medium">Voice</span>
-              <select
-                className="bg-transparent text-sm font-semibold outline-none"
+            <div className="rounded-full border border-line bg-white">
+            <label className="flex items-center gap-2 px-4 py-3 text-sm text-foreground">
+              <span className="font-medium">{t("voice")}</span>
+              <VoiceLanguageSelect
+                ariaLabel={t("voiceTranscription")}
+                buttonClassName="flex items-center gap-2 bg-transparent text-left"
+                disabled={isVoiceCapturing || isVoiceTranscribing || isStreaming}
+                flagClassName="h-4 w-6 shrink-0 rounded-[3px]"
+                listClassName="theme-surface-elevated absolute left-0 z-20 mt-3 min-w-[14rem] overflow-hidden rounded-[24px] p-2 backdrop-blur-xl"
+                optionClassName={(isSelected) => `flex w-full items-center gap-3 rounded-[18px] px-3 py-3 text-left ${isSelected ? "bg-[rgba(188,95,61,0.12)]" : "hover:bg-black/5"}`}
                 value={voiceTranscriptionLanguage}
-                onChange={(event) => {
-                  const language = event.target.value as VoiceTranscriptionLanguage;
+                onChange={(language) => {
                   setVoiceTranscriptionLanguage(language);
+                  onUiLanguagePreferenceChange?.(language);
 
                   if (!currentUser) {
                     return;
@@ -2964,25 +3268,19 @@ export function ChatWorkspace({
                     setError(
                       voicePreferenceError instanceof Error
                         ? voicePreferenceError.message
-                        : "Unable to save the voice transcription preference.",
+                        : t("unableSaveVoicePreference"),
                     );
                   });
                 }}
-                disabled={isVoiceCapturing || isVoiceTranscribing || isStreaming}
-              >
-                {VOICE_TRANSCRIPTION_LANGUAGE_OPTIONS.map((language) => (
-                  <option key={language} value={language}>
-                    {VOICE_LANGUAGE_LABELS[language]}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
+            </div>
             <button
-              aria-label={isVoiceCapturing ? "Release to send your recorded message" : "Hold to talk"}
-              className={`rounded-full px-5 py-3 text-sm font-semibold shadow-[0_16px_34px_rgba(213,122,66,0.16)] disabled:cursor-not-allowed disabled:opacity-50 ${
+              aria-label={isVoiceCapturing ? t("recordingRelease") : t("holdToTalk")}
+              className={`ui-button px-5 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
                 isVoiceCapturing
                   ? "bg-[color:color-mix(in_srgb,var(--accent)_78%,#7a1b12_22%)] text-white"
-                  : "border border-line bg-white text-foreground"
+                  : "ui-button-secondary"
               }`}
               disabled={!isVoiceCaptureAvailable || isStreaming || isVoiceTranscribing}
               type="button"
@@ -2993,54 +3291,170 @@ export function ChatWorkspace({
               onPointerUp={handleVoiceCapturePointerUp}
             >
               {isVoiceCapturing
-                ? "Recording... release to send"
+                ? t("recordingRelease")
                 : isVoiceTranscribing
-                  ? "Transcribing..."
-                  : "Hold to talk"}
+                  ? t("transcribing")
+                  : t("holdToTalk")}
             </button>
             <button
-              className="rounded-full bg-[var(--accent)] px-6 py-3 text-sm font-semibold text-white shadow-[0_16px_34px_rgba(213,122,66,0.24)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="ui-button ui-button-primary px-6 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
               disabled={!draft.trim() || !selectedModel || isStreaming}
               type="submit"
             >
-              {isStreaming ? "Sending..." : "Send"}
+              {isStreaming ? t("sending") : t("send")}
             </button>
             <button
-              className="rounded-full border border-line bg-white px-5 py-3 text-sm font-semibold text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              className="ui-button ui-button-secondary px-5 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
               disabled={!isStreaming}
               type="button"
               onClick={stopStreaming}
             >
-              Stop
+              {t("stop")}
             </button>
             <button
-              className="rounded-full border border-line bg-white px-5 py-3 text-sm font-semibold text-foreground"
+              className="ui-button ui-button-secondary px-5 py-3 text-sm font-semibold"
               type="button"
               onClick={clearConversation}
             >
-              Clear
+              {t("clear")}
             </button>
           </div>
           <p className="text-xs leading-6 text-muted">
             {isVoiceCaptureAvailable
               ? isVoiceCapturing
-                ? "Audio is only being recorded while the talk button is held down."
+                ? t("audioWhileHeld")
                 : isVoiceTranscribing
-                  ? `A local Whisper model is transcribing the recorded audio in ${VOICE_LANGUAGE_LABELS[voiceTranscriptionLanguage].toLowerCase()} mode now.`
-                  : "Hold the talk button to record. Release it to stop recording, transcribe, and send."
-              : "Push-to-talk needs microphone access and Web Audio support in the browser."}
+                  ? t("localWhisperMode", { language: VOICE_LANGUAGE_META[voiceTranscriptionLanguage].label.toLowerCase() })
+                  : t("holdToRecord")
+              : t("pushToTalkNeedsSupport")}
           </p>
+        </div>
+        <div data-tour-id="chat-controls" className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+          <div className="theme-surface-soft rounded-[24px] px-4 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="eyebrow text-muted">{literal("Assistant profile")}</p>
+                <p className="mt-1 text-sm text-muted">
+                  {selectedAssistantProfile
+                    ? literal("{name} targets {provider} using {model}.", {
+                      name: selectedAssistantProfile.name,
+                      provider: formatProfileProviderLabel(selectedAssistantProfile.providerId, literal),
+                      model: selectedAssistantProfile.model,
+                    })
+                    : literal("Choose a saved specialist behavior or keep the base workspace defaults.")}
+                </p>
+              </div>
+              <span className="theme-surface-chip rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground">
+                {selectedAssistantProfile ? literal("Profile active") : literal("Base workspace")}
+              </span>
+            </div>
+            <select
+              aria-label={literal("Select an assistant profile")}
+              className="mt-3 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
+              disabled={isStreaming || isLoadingAssistantProfiles}
+              value={selectedAssistantProfileId}
+              onChange={(event) => applyAssistantProfile(event.target.value)}
+            >
+              <option value="">{literal("Base workspace")}</option>
+              {assistantProfiles.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="theme-surface-soft rounded-[24px] px-4 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="eyebrow text-muted">{literal("Grounding")}</p>
+                <p className="mt-1 text-sm text-muted">
+                  {literal("Control whether replies pull from shared knowledge and how strongly that context should constrain the answer.")}
+                </p>
+              </div>
+              <button
+                className={`ui-button px-3 py-1 text-xs font-semibold ${
+                  useKnowledge ? "ui-button-primary" : "ui-button-secondary"
+                }`}
+                disabled={isStreaming}
+                type="button"
+                onClick={() => {
+                  setUseKnowledge((current) => {
+                    const nextValue = !current;
+                    setGroundingMode(nextValue ? (groundingMode === "off" ? "balanced" : groundingMode) : "off");
+                    setSelectedAssistantProfileId("");
+                    return nextValue;
+                  });
+                }}
+              >
+                {useKnowledge ? literal("Knowledge on") : literal("Knowledge off")}
+              </button>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {([
+                ["balanced", literal("Balanced")],
+                ["strict", literal("Strict")],
+              ] as const).map(([mode, label]) => (
+                <button
+                  key={mode}
+                  aria-pressed={useKnowledge && groundingMode === mode}
+                  className={`ui-button px-3 py-2 text-xs font-semibold ${
+                    useKnowledge && groundingMode === mode
+                      ? "ui-button-primary"
+                      : "ui-button-secondary"
+                  } disabled:cursor-not-allowed disabled:opacity-50`}
+                  disabled={!useKnowledge || isStreaming}
+                  type="button"
+                  onClick={() => {
+                    setUseKnowledge(true);
+                    setGroundingMode(mode);
+                    setSelectedAssistantProfileId("");
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="mt-4 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <button
+              className={`ui-button px-4 py-2 text-xs font-semibold ${
+                showPromptPresets
+                  ? "ui-button-primary"
+                  : "ui-button-secondary"
+              }`}
+              type="button"
+              onClick={() => setShowPromptPresets((current) => !current)}
+            >
+              {showPromptPresets ? t("hideIdeas") : t("showIdeas")}
+            </button>
+          </div>
+          {showPromptPresets ? (
+            <div className="flex flex-wrap gap-2">
+              {localizedPromptPresets.map((preset) => (
+                <button
+                  key={preset.label}
+                  className="ui-button ui-button-secondary px-3 py-2 text-xs font-semibold"
+                  type="button"
+                  onClick={() => applyPromptPreset(preset.prompt)}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
       </form>
     </div>
   );
 
   return (
-    <section className="glass-panel flex min-h-0 flex-col overflow-hidden rounded-[36px] p-3 sm:p-5 lg:h-auto lg:overflow-visible lg:p-6">
+    <section data-tour-id="chat-shell" className="glass-panel flex min-h-0 flex-col overflow-hidden rounded-[36px] p-3 sm:p-5 lg:h-auto lg:overflow-visible lg:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-            Chat
+            {t("chat")}
           </h2>
           {activeConversationIsArchived ? (
             <p className="mt-2 max-w-2xl text-xs leading-6 text-muted sm:text-sm">
@@ -3050,22 +3464,15 @@ export function ChatWorkspace({
         </div>
 
         <div className="ui-control-band -mx-1 flex items-center gap-2 overflow-x-auto px-1 py-3 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-4 sm:py-4">
-          <button
-            className="theme-surface-chip rounded-full px-4 py-2 text-sm font-medium text-foreground lg:hidden"
-            type="button"
-            onClick={() => setShowWorkspaceSidebar((current) => !current)}
-          >
-            {showWorkspaceSidebar ? "Hide controls" : "Show controls"}
-          </button>
-          <div className="theme-surface-chip rounded-full px-4 py-2 text-sm font-medium text-foreground">
+          <div className="ui-pill ui-pill-label px-4 py-2 text-sm font-medium">
             {conversationTitle}
           </div>
-          <div className="theme-surface-chip rounded-full px-4 py-2 text-sm font-medium text-foreground">
-            {selectedModel || "No model available"}
+          <div className="ui-pill ui-pill-label px-4 py-2 text-sm font-medium">
+            {selectedModel || t("noModelSelected")}
           </div>
           {activeConversationIsArchived ? (
-            <div className="rounded-full bg-stone-200 px-4 py-2 text-sm font-semibold text-stone-900">
-              Archived thread
+            <div className="ui-pill ui-pill-neutral px-4 py-2 text-sm font-semibold">
+              {t("archive")}
             </div>
           ) : null}
           <div
@@ -3075,7 +3482,7 @@ export function ChatWorkspace({
                 : "bg-amber-100 text-amber-900"
             }`}
           >
-            {isReachable ? "Gateway online" : "Gateway offline"}
+            {isReachable ? t("gatewayOnline") : t("gatewayOffline")}
           </div>
         </div>
       </div>
@@ -3085,10 +3492,47 @@ export function ChatWorkspace({
           {chatStage}
         </div>
 
-        <div className={`${showWorkspaceSidebar ? "block" : "hidden"} order-2 lg:block lg:w-full lg:max-w-[92rem] xl:max-w-[96rem] lg:flex-none`}>
+        <div className="order-2 lg:block lg:w-full lg:max-w-[92rem] xl:max-w-[96rem] lg:flex-none">
           {savedChatsPanel}
         </div>
       </div>
+      {talkToDialogMessage ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,42,0.52)] px-4 py-6 backdrop-blur-sm">
+          <div className="theme-surface-elevated w-full max-w-[30rem] rounded-[34px] border border-line/80 p-3 shadow-[0_28px_90px_rgba(15,23,42,0.22)]">
+            <div className="glass-panel rounded-[28px] p-6 sm:p-7">
+              <p className="section-label text-xs font-semibold">{literal("Model availability")}</p>
+              <h2 className="mt-3 text-2xl font-semibold tracking-[-0.05em] text-foreground">
+                {literal("No model is ready")}
+              </h2>
+              <p className="mt-4 text-sm leading-7 text-muted">{talkToDialogMessage}</p>
+              <div className="mt-6 flex justify-end">
+                <button
+                  className="ui-button ui-button-primary min-h-[3.25rem] justify-center px-5 py-3 text-sm"
+                  type="button"
+                  onClick={() => setTalkToDialogMessage(null)}
+                >
+                  {literal("Dismiss")}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
+}
+
+function formatProfileProviderLabel(
+  providerId: AiWorkspaceProfile["providerId"],
+  literal: (text: string, variables?: Record<string, string | number>) => string,
+) {
+  if (providerId === "anthropic") {
+    return literal("Anthropic");
+  }
+
+  if (providerId === "openai") {
+    return literal("OpenAI");
+  }
+
+  return literal("Ollama");
 }

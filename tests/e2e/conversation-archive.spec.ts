@@ -1,8 +1,8 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
 import { expect, test } from "@playwright/test";
-import { getCookieHeader, registerAndAuthenticateLocalUser, resetPlaywrightData } from "./helpers/local-auth";
+import { getCookieHeader, registerAndAuthenticateLocalUser, resetPlaywrightData, writeSharedJsonFixture } from "./helpers/local-auth";
 
 function getPlaywrightDataDir() {
   return path.join(process.cwd(), ".playwright-data");
@@ -22,9 +22,7 @@ async function seedConversations(ownerId: string) {
 
   await Promise.all(getPlaywrightDataDirCandidates().map(async (dataDir) => {
     await mkdir(dataDir, { recursive: true });
-    await writeFile(
-      path.join(dataDir, "conversations.json"),
-      `${JSON.stringify([
+    await writeSharedJsonFixture(dataDir, "conversations.json", [
       {
         id: "recent-seeded-conversation",
         ownerId,
@@ -81,9 +79,7 @@ async function seedConversations(ownerId: string) {
           temperature: 0.7,
         },
       },
-      ], null, 2)}\n`,
-      "utf8",
-    );
+      ]);
   }));
 }
 

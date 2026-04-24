@@ -5,16 +5,18 @@ import { useRouter } from "next/navigation";
 
 import { CommandDeckHud } from "@/components/command-deck-hud";
 import { InteractionSurface } from "@/components/interaction-surface";
+import { translateUi, translateUiText } from "@/lib/ui-language";
 import type {
   ActiveConversationSnapshot,
   ConversationSummary,
   StoredConversation,
 } from "@/lib/conversation-types";
 import type { OllamaStatus } from "@/lib/ollama";
-import type { UserSessionStatus } from "@/lib/user-types";
+import type { UserSessionStatus, VoiceTranscriptionLanguage } from "@/lib/user-types";
 import type { DesktopWorkspacePage } from "@/lib/workspace-page";
 
 type WorkspaceShellProps = {
+  defaultUiLanguage: VoiceTranscriptionLanguage;
   initialConversation: StoredConversation | null;
   initialConversations: ConversationSummary[];
   initialDesktopPage: DesktopWorkspacePage;
@@ -87,6 +89,7 @@ async function readErrorMessage(response: Response) {
 }
 
 export function WorkspaceShell({
+  defaultUiLanguage,
   initialConversation,
   initialConversations,
   initialDesktopPage,
@@ -112,6 +115,14 @@ export function WorkspaceShell({
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState<string | null>(null);
   const [rememberLogoutChoice, setRememberLogoutChoice] = useState(false);
+  const [uiLanguagePreference, setUiLanguagePreference] = useState<VoiceTranscriptionLanguage>(
+    initialUserSession.user?.preferredVoiceTranscriptionLanguage ?? defaultUiLanguage,
+  );
+
+  const t = (key: Parameters<typeof translateUi>[1], variables?: Record<string, string | number>) =>
+    translateUi(uiLanguagePreference, key, variables);
+  const literal = (text: string, variables?: Record<string, string | number>) =>
+    translateUiText(uiLanguagePreference, text, variables);
 
   useEffect(() => {
     setActiveWorkspacePage(initialDesktopPage);
@@ -145,12 +156,18 @@ export function WorkspaceShell({
     activeModelName && currentStatus.models.some((model) => model.name === activeModelName),
   );
   const conversationModelNote = !activeModelName
-    ? "No model is selected for this thread right now. If you keep it ready, the conversation will reopen, but you will need to choose a model before sending the next message."
+    ? literal("No model is selected for this thread right now. If you keep it ready, the conversation will reopen, but you will need to choose a model before sending the next message.")
     : isConversationModelRunning
-      ? `${activeModelName} is running now. Keeping this conversation ready will reopen this thread with that model still selected.`
+      ? literal("{modelName} is running now. Keeping this conversation ready will reopen this thread with that model still selected.", {
+        modelName: activeModelName,
+      })
       : isConversationModelInstalled
-        ? `${activeModelName} is installed but not running right now. Keeping this conversation ready will reopen the thread with that model selected, and it will load when you start chatting again.`
-        : `${activeModelName} is not available right now. If you keep this conversation ready, it will still reopen, but you may need to start Ollama or choose another model after you sign back in.`;
+        ? literal("{modelName} is installed but not running right now. Keeping this conversation ready will reopen the thread with that model selected, and it will load when you start chatting again.", {
+          modelName: activeModelName,
+        })
+        : literal("{modelName} is not available right now. If you keep this conversation ready, it will still reopen, but you may need to start Ollama or choose another model after you sign back in.", {
+          modelName: activeModelName,
+        });
 
   const completeLogout = async (action: LogoutConversationAction, rememberChoice = false) => {
     if (isLoggingOut) {
@@ -265,7 +282,9 @@ export function WorkspaceShell({
         modelCount={currentStatus.modelCount}
         onNavigateWorkspacePage={navigateWorkspacePage}
         onRequestLogout={requestLogout}
+        onUiLanguagePreferenceChange={setUiLanguagePreference}
         runningCount={currentStatus.runningCount}
+        uiLanguagePreference={uiLanguagePreference}
         userCount={initialUserSession.userCount}
       />
 
@@ -277,9 +296,12 @@ export function WorkspaceShell({
           initialStatus={initialStatus}
           initialUserSession={initialUserSession}
           onActiveConversationChange={setActiveConversation}
+          defaultUiLanguage={defaultUiLanguage}
           onDesktopPageChange={navigateWorkspacePage}
           onRequestLogout={requestLogout}
           onStatusChange={setCurrentStatus}
+          onUiLanguagePreferenceChange={setUiLanguagePreference}
+          uiLanguagePreference={uiLanguagePreference}
         />
       </div>
 
@@ -289,43 +311,45 @@ export function WorkspaceShell({
             <div className="glass-panel max-h-[calc(100dvh-4.5rem)] overflow-y-auto rounded-[28px] p-6 sm:p-7">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="section-label text-xs font-semibold">Before you sign out</p>
+                  <p className="section-label text-xs font-semibold">{t("beforeSignOut")}</p>
                   <h2 className="mt-3 text-2xl font-semibold tracking-[-0.05em] text-foreground">
-                    Do you want to keep this conversation ready for next time?
+                    {t("keepConversationReady")}
                   </h2>
                 </div>
-                <span className="ui-pill ui-pill-surface border border-line text-xs text-muted">
-                  Conversation safety
+                <span className="ui-pill ui-pill-meta text-xs text-muted">
+                  {t("conversationSafety")}
                 </span>
               </div>
 
               <p className="mt-4 text-sm leading-6 text-muted sm:text-[15px]">
-                Your conversations already stay stored locally, which helps protect work if a machine crashes. Choose whether this thread should stay ready to reopen where you left off, move into the archive so you can start it again later, or just sign out with no change.
+                {literal("Your conversations already stay stored locally, which helps protect work if a machine crashes. Choose whether this thread should stay ready to reopen where you left off, move into the archive so you can start it again later, or just sign out with no change.")}
               </p>
 
               <div className="theme-surface-panel mt-5 rounded-[24px] px-4 py-4">
-                <p className="eyebrow text-muted">Current conversation</p>
+                <p className="eyebrow text-muted">{t("currentConversation")}</p>
                 <p className="mt-2 text-base font-semibold text-foreground">
-                  {activeConversation?.title || "Current conversation"}
+                  {activeConversation?.title || t("currentConversation")}
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted">
-                  <span className="ui-pill ui-pill-surface border border-line">
-                    {activeConversation?.messageCount ?? 0} message{activeConversation?.messageCount === 1 ? "" : "s"}
+                  <span className="ui-pill ui-pill-label">
+                    {(activeConversation?.messageCount ?? 0) === 1
+                      ? literal("{count} message", { count: activeConversation?.messageCount ?? 0 })
+                      : literal("{count} messages", { count: activeConversation?.messageCount ?? 0 })}
                   </span>
-                  <span className="ui-pill ui-pill-surface border border-line">
-                    {activeModelName || "No model selected"}
+                  <span className="ui-pill ui-pill-label">
+                    {activeModelName || t("noModelSelected")}
                   </span>
-                  <span className="ui-pill ui-pill-soft border border-line text-xs text-muted">
-                    {activeConversation?.archivedAt ? "Currently archived" : "Currently active"}
+                  <span className="ui-pill ui-pill-meta text-xs text-muted">
+                    {activeConversation?.archivedAt ? t("currentlyArchived") : t("currentlyActive")}
                   </span>
-                  <span className="ui-pill ui-pill-soft border border-line text-xs text-muted">
+                  <span className="ui-pill ui-pill-meta text-xs text-muted">
                     {!activeModelName
-                      ? "Pick a model later"
+                      ? t("pickModelLater")
                       : isConversationModelRunning
-                        ? "Model running now"
+                        ? t("modelsReady")
                         : isConversationModelInstalled
-                          ? "Installed, not running"
-                          : "Model unavailable"}
+                          ? t("installedNotRunning")
+                          : t("modelUnavailable")}
                   </span>
                 </div>
                 <p className="mt-3 text-sm leading-6 text-muted">
@@ -341,9 +365,9 @@ export function WorkspaceShell({
                   onChange={(event) => setRememberLogoutChoice(event.target.checked)}
                 />
                 <span>
-                  <span className="block font-medium text-foreground">Do not ask again on this device</span>
+                  <span className="block font-medium text-foreground">{t("doNotAskAgain")}</span>
                   <span className="mt-1 block text-xs leading-5 text-muted">
-                    The exact choice you make below becomes the default logout behavior for this account on this machine until you clear the saved preference.
+                    {literal("The exact choice you make below becomes the default logout behavior for this account on this machine until you clear the saved preference.")}
                   </span>
                 </span>
               </label>
@@ -363,7 +387,7 @@ export function WorkspaceShell({
                     void completeLogout("continue", rememberLogoutChoice);
                   }}
                 >
-                  {isLoggingOut ? "Saving..." : "Yes"}
+                  {isLoggingOut ? t("saving") : t("yes")}
                 </button>
                 <button
                   className="ui-button ui-button-secondary min-h-[3.5rem] min-w-0 flex-1 justify-center border-[color:color-mix(in_srgb,var(--accent)_35%,transparent)] px-3 py-3 text-sm disabled:cursor-not-allowed disabled:opacity-50"
@@ -373,7 +397,7 @@ export function WorkspaceShell({
                     void completeLogout("archive", rememberLogoutChoice);
                   }}
                 >
-                  {isLoggingOut ? "Archiving..." : "Archive"}
+                  {isLoggingOut ? t("archiving") : t("archive")}
                 </button>
                 <button
                   className="ui-button ui-button-secondary min-h-[3.5rem] min-w-0 flex-1 justify-center px-3 py-3 text-sm disabled:cursor-not-allowed disabled:opacity-50"
@@ -383,7 +407,7 @@ export function WorkspaceShell({
                     void completeLogout("none", rememberLogoutChoice);
                   }}
                 >
-                  {isLoggingOut ? "Signing out..." : "No"}
+                  {isLoggingOut ? t("signingOut") : t("no")}
                 </button>
               </div>
             </div>

@@ -1,7 +1,7 @@
 import { env, pipeline, type AutomaticSpeechRecognitionPipeline } from "@huggingface/transformers";
 import { WaveFile } from "wavefile";
 
-import type { VoiceTranscriptionLanguage } from "@/lib/voice-types";
+import { resolveVoiceModelLanguage, type VoiceTranscriptionLanguage } from "@/lib/voice-types";
 
 const MULTILINGUAL_WHISPER_MODEL = "Xenova/whisper-tiny";
 const MAX_TRANSCRIPTION_BYTES = 10 * 1024 * 1024;
@@ -38,7 +38,7 @@ function decodeWavFile(buffer: Uint8Array) {
   wav.toBitDepth("32f");
   wav.toSampleRate(16_000);
 
-  const samples = wav.getSamples(false, Float32Array as unknown as Function) as
+  const samples = wav.getSamples(false, Float32Array) as
     | Float32Array
     | Float64Array
     | ArrayLike<number>[];
@@ -64,7 +64,7 @@ async function getVoiceTranscriber() {
 
 export async function transcribeAudioFile(
   file: File,
-  language: VoiceTranscriptionLanguage = "auto",
+  language: VoiceTranscriptionLanguage = "united-states",
 ) {
   if (file.size === 0) {
     throw new Error("The recorded audio was empty.");
@@ -81,8 +81,9 @@ export async function transcribeAudioFile(
   }
 
   const transcriber = await getVoiceTranscriber();
+  const modelLanguage = resolveVoiceModelLanguage(language);
   const result = await transcriber(audioInput, {
-    ...(language === "auto" ? {} : { language }),
+    ...(modelLanguage ? { language: modelLanguage } : {}),
     chunk_length_s: 15,
     stride_length_s: 3,
     task: "transcribe",

@@ -96,8 +96,12 @@ function isConversationSettings(value: unknown) {
   }
 
   return typeof value.model === "string"
+    && (value.providerId === undefined || value.providerId === "ollama" || value.providerId === "anthropic" || value.providerId === "openai")
     && typeof value.systemPrompt === "string"
-    && typeof value.temperature === "number";
+    && typeof value.temperature === "number"
+    && (value.useKnowledge === undefined || typeof value.useKnowledge === "boolean")
+    && (value.groundingMode === undefined || value.groundingMode === "off" || value.groundingMode === "balanced" || value.groundingMode === "strict")
+    && (value.assistantProfileId === undefined || value.assistantProfileId === null || typeof value.assistantProfileId === "string");
 }
 
 function isChatMessage(value: unknown) {

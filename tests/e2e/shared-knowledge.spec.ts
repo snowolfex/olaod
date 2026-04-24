@@ -1,8 +1,8 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { expect, test } from "@playwright/test";
-import { registerAndAuthenticateLocalUser, resetPlaywrightData } from "./helpers/local-auth";
+import { registerAndAuthenticateLocalUser, resetPlaywrightData, writeSharedJsonFixture } from "./helpers/local-auth";
 
 function getPlaywrightDataDir() {
   return path.join(process.cwd(), ".playwright-data");
@@ -20,9 +20,7 @@ async function seedKnowledgeEntries() {
 
   await Promise.all(getPlaywrightDataDirCandidates().map(async (dataDir) => {
     await mkdir(dataDir, { recursive: true });
-    await writeFile(
-      path.join(dataDir, "ai-knowledge.json"),
-      `${JSON.stringify([
+    await writeSharedJsonFixture(dataDir, "ai-knowledge.json", [
       {
         id: "knowledge-baseline",
         title: "Dedup retrieval baseline",
@@ -56,9 +54,7 @@ async function seedKnowledgeEntries() {
         content:
           "Retrieval validation contrast note. Use this different angle to confirm the ranked set keeps a more diverse shared knowledge result available when the top two notes overlap heavily.",
       },
-      ], null, 2)}\n`,
-      "utf8",
-    );
+      ]);
   }));
 }
 
@@ -67,9 +63,7 @@ async function seedCitationKnowledgeEntries() {
 
   await Promise.all(getPlaywrightDataDirCandidates().map(async (dataDir) => {
     await mkdir(dataDir, { recursive: true });
-    await writeFile(
-      path.join(dataDir, "ai-knowledge.json"),
-      `${JSON.stringify([
+    await writeSharedJsonFixture(dataDir, "ai-knowledge.json", [
       {
         id: "citation-baseline",
         title: "Citation dedupe baseline",
@@ -92,9 +86,7 @@ async function seedCitationKnowledgeEntries() {
         content:
           "playwright reply citation dedupe baseline. Use this note to verify that overlapping shared knowledge sources do not render repeated source cards or duplicate footer entries with slightly different wording.",
       },
-      ], null, 2)}\n`,
-      "utf8",
-    );
+      ]);
   }));
 }
 
@@ -103,9 +95,7 @@ async function seedOverlapEditKnowledgeEntry() {
 
   await Promise.all(getPlaywrightDataDirCandidates().map(async (dataDir) => {
     await mkdir(dataDir, { recursive: true });
-    await writeFile(
-      path.join(dataDir, "ai-knowledge.json"),
-      `${JSON.stringify([
+    await writeSharedJsonFixture(dataDir, "ai-knowledge.json", [
       {
         id: "overlap-edit-baseline",
         title: "Overlap edit baseline",
@@ -117,9 +107,7 @@ async function seedOverlapEditKnowledgeEntry() {
         content:
           "Use this temporary note to validate the overlap warning edit action. The existing note should open directly in the editor when selected from the warning card.",
       },
-      ], null, 2)}\n`,
-      "utf8",
-    );
+      ]);
   }));
 }
 

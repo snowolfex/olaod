@@ -35,11 +35,19 @@
 /data/conversations.json
 /data/activity-log.json
 /data/ai-provider-secrets.json
+/data/backups/
+/data/email-outbox.json
 /data/users.json
 /data/job-history.json
 /shared-knowledge-spec-report.txt
+/installer-package-report.txt
+/lint-report.txt
 /tmp-chatworkspace-layout-search.txt
+/tmp-help-manual.pdf
+/tmp-zz-jobs-report.json
 /tmp-transcript-matches.txt
+/public/tmp-help-manual-viewer.html
+/public/tmp-help-manual.pdf
 
 # debug
 npm-debug.log*

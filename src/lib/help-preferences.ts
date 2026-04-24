@@ -4,6 +4,7 @@ export const QUICK_HELP_AUTO_DISMISS_MS = 2000;
 export const QUICK_HELP_MUTED_HINT_IDS_STORAGE_KEY = "oload:quick-help:muted-hints";
 export const QUICK_HELP_SEEN_HINT_IDS_STORAGE_KEY = "oload:quick-help:seen-hints";
 export const QUICK_HELP_SESSION_DISMISSED_STORAGE_KEY = "oload:quick-help:session-dismissed";
+export const FIRST_RUN_WALKTHROUGH_SEEN_STORAGE_KEY = "oload:walkthrough:seen";
 
 export function readQuickHelpEnabled() {
   if (typeof window === "undefined") {
@@ -87,4 +88,20 @@ export function clearLegacyQuickHelpSessionState() {
   window.sessionStorage.removeItem(QUICK_HELP_SEEN_HINT_IDS_STORAGE_KEY);
   window.sessionStorage.removeItem(QUICK_HELP_SESSION_DISMISSED_STORAGE_KEY);
   window.sessionStorage.removeItem("oload:quick-help:first-popup-dismissed");
+}
+
+export function readFirstRunWalkthroughSeen() {
+  if (typeof window === "undefined") {
+    return true;
+  }
+
+  return window.localStorage.getItem(FIRST_RUN_WALKTHROUGH_SEEN_STORAGE_KEY) === "true";
+}
+
+export function writeFirstRunWalkthroughSeen(seen: boolean) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(FIRST_RUN_WALKTHROUGH_SEEN_STORAGE_KEY, String(seen));
 }

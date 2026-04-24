@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const storeLocks = new Map<string, Promise<void>>();
@@ -21,7 +21,43 @@ async function ensureJsonStore(filePath: string, fallback: unknown) {
   try {
     await readFile(filePath, "utf8");
   } catch {
-    await writeFile(filePath, `${JSON.stringify(fallback, null, 2)}\n`, "utf8");
+    await writeJsonAtomically(filePath, fallback);
+  }
+}
+
+function getTemporaryStorePath(filePath: string) {
+  return `${filePath}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+async function waitForRetry(delayMs: number) {
+  await new Promise((resolve) => {
+    setTimeout(resolve, delayMs);
+  });
+}
+
+function shouldRetryAtomicRename(error: unknown) {
+  return error instanceof Error
+    && "code" in error
+    && (error.code === "EPERM" || error.code === "EACCES");
+}
+
+async function writeJsonAtomically(filePath: string, value: unknown) {
+  const nextContent = `${JSON.stringify(value, null, 2)}\n`;
+  const temporaryPath = getTemporaryStorePath(filePath);
+
+  await writeFile(temporaryPath, nextContent, "utf8");
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      await rename(temporaryPath, filePath);
+      return;
+    } catch (error) {
+      if (!shouldRetryAtomicRename(error) || attempt === 4) {
+        throw error;
+      }
+
+      await waitForRetry(20 * (attempt + 1));
+    }
   }
 }
 
@@ -54,13 +90,23 @@ export async function readJsonStore<T>(filePath: string, fallback: T) {
   await ensureJsonStore(filePath, fallback);
   await waitForStoreIdle(filePath);
   const raw = await readFile(filePath, "utf8");
-  return JSON.parse(raw) as T;
+
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    if (!raw.trim()) {
+      await writeJsonAtomically(filePath, fallback);
+      return fallback;
+    }
+
+    throw new Error(`Unable to parse JSON store at ${filePath}.`);
+  }
 }
 
 export async function writeJsonStore(filePath: string, value: unknown, fallback: unknown = []) {
   await withStoreLock(filePath, async () => {
     await ensureJsonStore(filePath, fallback);
-    await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+    await writeJsonAtomically(filePath, value);
   });
 }
 
@@ -74,7 +120,7 @@ export async function updateJsonStore<T>(
     const raw = await readFile(filePath, "utf8");
     const current = JSON.parse(raw) as T;
     const next = await updater(current);
-    await writeFile(filePath, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+    await writeJsonAtomically(filePath, next);
     return next;
   });
 }

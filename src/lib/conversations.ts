@@ -24,6 +24,9 @@ const DEFAULT_SETTINGS: ConversationSettings = {
   providerId: "ollama",
   systemPrompt: DEFAULT_USER_SYSTEM_PROMPT,
   temperature: 0.7,
+  useKnowledge: false,
+  groundingMode: "off",
+  assistantProfileId: null,
 };
 
 function createId() {

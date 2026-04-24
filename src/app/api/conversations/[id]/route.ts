@@ -49,6 +49,9 @@ export async function PATCH(
         providerId?: "ollama" | "anthropic" | "openai";
         systemPrompt?: string;
         temperature?: number;
+        useKnowledge?: boolean;
+        groundingMode?: "off" | "balanced" | "strict";
+        assistantProfileId?: string | null;
       };
       archived?: boolean;
     };

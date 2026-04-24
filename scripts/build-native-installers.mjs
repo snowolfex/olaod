@@ -209,7 +209,12 @@ async function buildWindowsInstaller() {
 }
 
 async function main() {
-  await rm(nativeOutputDir, { recursive: true, force: true });
+  await rm(nativeOutputDir, {
+    recursive: true,
+    force: true,
+    maxRetries: 10,
+    retryDelay: 200,
+  });
   await mkdir(nativeOutputDir, { recursive: true });
 
   await buildLinuxRunInstaller();

@@ -2,6 +2,7 @@ import { AuthGate } from "@/components/auth-gate";
 import { AppUpdateMonitor } from "@/components/app-update-monitor";
 import { WorkspaceShell } from "@/components/workspace-shell";
 import { getCurrentUser, getUserSessionStatus } from "@/lib/auth";
+import { getConfiguredDefaultVoiceTranscriptionLanguage } from "@/lib/default-voice-language";
 import {
   DESKTOP_WORKSPACE_PAGE_COOKIE_NAME,
   parseDesktopWorkspacePage,
@@ -23,6 +24,7 @@ export default async function Home() {
   const currentUser = await getCurrentUser(cookieHeader);
   const sessionStatus = getUserSessionStatus(cookieHeader);
   const userCount = await countUsers();
+  const defaultUiLanguage = getConfiguredDefaultVoiceTranscriptionLanguage();
   const activeDesktopPage = parseDesktopWorkspacePage(
     cookieStore.get(DESKTOP_WORKSPACE_PAGE_COOKIE_NAME)?.value,
   );
@@ -31,9 +33,10 @@ export default async function Home() {
     return (
       <main className="relative h-[100dvh] overflow-y-auto px-3 py-3 sm:px-4 sm:py-4">
         <div className="app-page-atmosphere absolute inset-0 -z-10" />
-        <AppUpdateMonitor canManageUpdates={false} />
+        <AppUpdateMonitor canManageUpdates={false} uiLanguagePreference={defaultUiLanguage} />
 
         <AuthGate
+          defaultUiLanguage={defaultUiLanguage}
           initialSession={{
             authAvailable: sessionStatus.authAvailable,
             googleAuthEnabled: sessionStatus.googleAuthEnabled,
@@ -55,9 +58,10 @@ export default async function Home() {
   return (
     <main className="relative min-h-[100dvh] overflow-y-auto px-3 py-3 sm:px-4 sm:py-4">
       <div className="app-page-atmosphere absolute inset-0 -z-10" />
-      <AppUpdateMonitor canManageUpdates={currentUser.role === "admin"} />
+      <AppUpdateMonitor canManageUpdates={currentUser.role === "admin"} uiLanguagePreference={currentUser.preferredVoiceTranscriptionLanguage ?? defaultUiLanguage} />
 
       <WorkspaceShell
+        defaultUiLanguage={defaultUiLanguage}
         initialDesktopPage={activeDesktopPage}
         initialUserSession={{
           authAvailable: sessionStatus.authAvailable,

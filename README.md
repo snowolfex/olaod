@@ -14,6 +14,50 @@ GitHub repo description: Mobile-first Next.js control plane for Ollama with a se
 - Workspace backup export and restore flows for local users, conversations, activity, and job history
 - Deterministic Playwright coverage for auth, chat, jobs, conversation lifecycle, and backup recovery flows
 
+## Current product additions
+
+### Grounded chat and assistant profiles
+
+Technical:
+
+- The main chat surface now routes through the shared AI gateway at `/api/ai/chat` instead of only the local Ollama-only path, so responses can include shared-knowledge grounding and source citations.
+- Shared knowledge entries are managed through the admin access surface and stored for retrieval-time injection rather than model retraining.
+- Assistant behavior can now be persisted as named assistant profiles, selected per conversation, and managed through admin CRUD flows.
+
+Layman's terms:
+
+- The chat can now answer with material from the knowledge you loaded into the app instead of relying only on the base model's memory.
+- When the app uses that shared knowledge, it can show where the answer came from.
+- You can save different assistant personalities or operating styles and switch between them instead of rewriting the same instructions every time.
+
+### Voice input and multilingual UI
+
+Technical:
+
+- Push-to-talk now records audio only while the control is held, posts the clip to `/api/voice/transcribe`, and uses a local Whisper-based transcription path.
+- The UI supports live selected-language rendering through the shared translation layer in `src/lib/ui-language.ts`, with large literal translation data now stored in `src/lib/ui-language-literals.json`.
+- Supported UI and voice-language flows now include `Auto` plus Arabic, Bengali, Chinese, English, French, Hindi, Japanese, Korean, Persian, Portuguese, Russian, and Spanish.
+
+Layman's terms:
+
+- You can hold the talk button, speak, and have the app turn that speech into chat text.
+- The visible app text can now follow the language you pick instead of staying English-only.
+- The translation data was split into a separate data file so the app is easier to maintain and build cleanly.
+
+### Auth recovery, updates, and backup safety
+
+Technical:
+
+- Local accounts now support an in-app password reset request and completion flow without requiring an inbound email-link system.
+- Admin sessions can check a hosted update manifest, download a patch bundle, and apply it through the update routes without reinstalling the full app.
+- Workspace backup restore now includes clearer acknowledgement and current-session impact handling when a restore replaces or downgrades the signed-in user.
+
+Layman's terms:
+
+- If someone forgets a local password, the app can walk them through resetting it inside the product.
+- Admins can apply packaged updates from a hosted manifest instead of reinstalling everything from scratch.
+- Restoring a backup now warns more clearly when it is about to replace the current local workspace or sign the current user out.
+
 ## AI Reference
 
 The in-app Help page now includes a full AI reference section written in two layers:
@@ -52,6 +96,16 @@ Free references surfaced in Help:
 - `cmd /c npm run build`
 - `cmd /c npm run test:e2e`
 
+## Documentation style
+
+Technical:
+
+- Repository-facing docs describe feature behavior, storage, routes, and operational constraints in implementation-accurate terms first.
+
+Layman's terms:
+
+- After the exact description, the same feature is explained again in plain language so non-specialists can still understand what it does and why it matters.
+
 ## Feature inventory
 
 - Next.js 16 with App Router and TypeScript
@@ -67,9 +121,14 @@ Free references surfaced in Help:
 - Local activity log via `/api/admin/activity`
 - Local user accounts via `/api/users/session`, `/api/users/register`, `/api/users/login`, and `/api/users/logout`
 - Google sign-in via `/api/users/google/token`, with legacy redirect routes at `/api/users/google/start` and `/api/users/google/callback`
+- Local password reset routes at `/api/users/password/reset/request` and `/api/users/password/reset/complete`
 - Admin role management and guarded local account deletion with per-user conversation counts via `/api/users`, `/api/users/[id]`, and `/api/users/[id]/role`
 - Local job history via `/api/admin/jobs`
 - Admin-only workspace backup export and restore via `/api/admin/system/backup`
+- Shared AI gateway routes at `/api/ai/chat`, `/api/ai/models`, `/api/ai/providers`, `/api/ai/profiles`, and `/api/ai/context/search`
+- Admin shared-knowledge and assistant-profile management routes at `/api/admin/ai/context`, `/api/admin/ai/context/import`, `/api/admin/ai/context/debug`, `/api/admin/ai/context/overlaps`, `/api/admin/ai/providers`, and `/api/admin/ai/profiles`
+- Local voice transcription route at `/api/voice/transcribe`
+- Admin and system live-update routes at `/api/admin/system/update` and `/api/system/update`
 - Model delete operations are also recorded in local job history with duration metadata
 - The recent-jobs panel auto-refreshes while privileged operations are still running
 - The jobs API supports server-side status filtering and response limits for the admin panel
@@ -199,6 +258,46 @@ Free references surfaced in Help:
 6. Start Ollama locally or make sure the configured host is reachable.
 7. Run `npm run dev` or use the `dev server` VS Code task.
 8. Open `http://localhost:3000`.
+
+## Operator workflows
+
+### Chat, grounding, and profiles
+
+Technical:
+
+1. Admin users can load shared knowledge from files or URLs into the retrieval store.
+2. Conversations can opt into grounded answers through the shared AI gateway and can expose citation metadata in responses.
+3. Assistant profiles can be created, updated, deleted, and selected so conversation defaults do not need to be re-entered manually.
+
+Layman's terms:
+
+1. Put documents or URLs into the app if you want the assistant to answer from your own material.
+2. Turn on grounded chat when you want answers tied back to saved knowledge instead of just model guesswork.
+3. Save reusable assistant setups so teams can switch modes quickly.
+
+### Voice and language preferences
+
+Technical:
+
+1. The chat composer supports hold-to-record voice entry backed by the local transcription route.
+2. The chosen voice language and visible UI language are persisted per signed-in user.
+
+Layman's terms:
+
+1. Hold the button to speak instead of typing.
+2. Your language choices stay with your account after reloads.
+
+### Account recovery and backup restore
+
+Technical:
+
+1. Failed local sign-in flows can branch into local password reset without depending on an external email-link provider.
+2. Backup restore can replace users, conversations, activity, job history, provider secrets, and shared knowledge, so the app now surfaces stronger acknowledgement and session-impact feedback.
+
+Layman's terms:
+
+1. A locked-out local user can recover access from inside the app.
+2. Restoring a backup is powerful and can replace the current workspace, so the product now warns more clearly before doing it.
 
 ## Google sign-in setup
 

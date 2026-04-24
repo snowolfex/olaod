@@ -1,20 +1,23 @@
 "use client";
 
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
+import { VoiceLanguageSelect } from "@/components/voice-language-select";
 import { getHelpHint } from "@/lib/help-manual";
 import { readQuickHelpEnabled, writeQuickHelpEnabled } from "@/lib/help-preferences";
 import { DEFAULT_USER_CHAT_TEMPERATURE, DEFAULT_USER_SYSTEM_PROMPT } from "@/lib/system-prompt";
+import { resolveUiLanguage, translateUi, translateUiText } from "@/lib/ui-language";
 import type { OllamaModel } from "@/lib/ollama";
-import { VOICE_TRANSCRIPTION_LANGUAGE_OPTIONS } from "@/lib/voice-types";
 import type {
+  AiGroundingMode,
   AiModelSummary,
   AiKnowledgeDebugResult,
   AiKnowledgeEntry,
   AiKnowledgeOverlapResult,
   AiProviderConfigSummary,
   AiProviderId,
+  AiWorkspaceProfile,
 } from "@/lib/ai-types";
 import type { ManagedUser, PublicUser, SessionUser, UserSessionStatus, VoiceTranscriptionLanguage } from "@/lib/user-types";
 
@@ -30,6 +33,10 @@ const KNOWLEDGE_PROVIDER_OPTIONS: Array<{ id: AiProviderId; label: string }> = [
 type AiModelsResponse = {
   models: AiModelSummary[];
   providerId: AiProviderId;
+};
+
+type AiProfilesResponse = {
+  profiles: AiWorkspaceProfile[];
 };
 
 type VerificationChallenge = {
@@ -66,22 +73,50 @@ function GoogleMark() {
   );
 }
 
-function formatKnowledgeProviderScope(providerIds: AiProviderId[]) {
-  if (providerIds.length === 0) {
-    return "all providers";
+function literalForLanguage(
+  language: VoiceTranscriptionLanguage | undefined,
+  sourceText: string,
+  variables?: Record<string, string | number>,
+) {
+  return translateUiText(language ?? "united-states", sourceText, variables);
+}
+
+function formatProviderLabel(providerId: AiProviderId, language?: VoiceTranscriptionLanguage) {
+  if (providerId === "ollama") {
+    return literalForLanguage(language, "Ollama");
   }
 
-  return providerIds.map((providerId) => {
-    if (providerId === "ollama") {
-      return "Ollama";
-    }
+  if (providerId === "anthropic") {
+    return literalForLanguage(language, "Anthropic");
+  }
 
-    if (providerId === "anthropic") {
-      return "Anthropic";
-    }
+  return literalForLanguage(language, "OpenAI");
+}
 
-    return "OpenAI";
-  }).join(", ");
+function formatRoleLabel(role: "admin" | "operator" | "viewer", language?: VoiceTranscriptionLanguage) {
+  if (resolveUiLanguage(language ?? "united-states") === "english") {
+    return role;
+  }
+
+  if (role === "viewer") {
+    return literalForLanguage(language, "Viewer");
+  }
+
+  return translateUi(language ?? "united-states", role);
+}
+
+function formatSavedConversationCountLabel(count: number, language?: VoiceTranscriptionLanguage) {
+  return count === 1
+    ? literalForLanguage(language, "{count} saved conversation", { count })
+    : literalForLanguage(language, "{count} saved conversations", { count });
+}
+
+function formatKnowledgeProviderScope(providerIds: AiProviderId[], language?: VoiceTranscriptionLanguage) {
+  if (providerIds.length === 0) {
+    return literalForLanguage(language, "all providers");
+  }
+
+  return providerIds.map((providerId) => formatProviderLabel(providerId, language)).join(", ");
 }
 
 function parseScopedModelIds(value: string) {
@@ -92,16 +127,22 @@ function parseKnowledgeTags(value: string) {
   return Array.from(new Set(value.split(",").map((tag) => tag.trim()).filter(Boolean)));
 }
 
-function formatKnowledgeOverlapScope(scopeOverlap: "exact" | "partial" | "global") {
+function formatKnowledgeOverlapScope(scopeOverlap: "exact" | "partial" | "global", language?: VoiceTranscriptionLanguage) {
   if (scopeOverlap === "exact") {
-    return "Exact scope match";
+    return literalForLanguage(language, "Exact scope match");
   }
 
   if (scopeOverlap === "global") {
-    return "Global scope overlap";
+    return literalForLanguage(language, "Global scope overlap");
   }
 
-  return "Partial scope overlap";
+  return literalForLanguage(language, "Partial scope overlap");
+}
+
+function formatGroundingModeLabel(mode: Exclude<AiGroundingMode, "off">, language?: VoiceTranscriptionLanguage) {
+  return mode === "strict"
+    ? literalForLanguage(language, "Strict")
+    : literalForLanguage(language, "Balanced");
 }
 
 let googleScriptLoadPromise: Promise<void> | null = null;
@@ -123,12 +164,17 @@ type UserAccessPanelProps = {
   onSessionChange: (status: UserSessionStatus) => void;
   session: UserSessionStatus;
   surface?: "embedded" | "page";
+  uiLanguagePreference?: VoiceTranscriptionLanguage;
 };
 
-function describeRestoreOutcome(previousUser: SessionUser | null, nextSession: UserSessionStatus) {
+function describeRestoreOutcome(
+  previousUser: SessionUser | null,
+  nextSession: UserSessionStatus,
+  language?: VoiceTranscriptionLanguage,
+) {
   if (!previousUser) {
     return {
-      summary: "Workspace backup restored.",
+      summary: literalForLanguage(language, "Workspace backup restored."),
       tone: "success" as const,
     };
   }
@@ -136,28 +182,29 @@ function describeRestoreOutcome(previousUser: SessionUser | null, nextSession: U
   if (!nextSession.user) {
     if (nextSession.userCount === 0) {
       return {
-        summary:
-          "Workspace backup restored. Your previous session was cleared because the restored workspace no longer includes any local users.",
+        summary: literalForLanguage(language, "Workspace backup restored. Your previous session was cleared because the restored workspace no longer includes any local users."),
         tone: "warning" as const,
       };
     }
 
     return {
-      summary:
-        "Workspace backup restored. Your previous session was cleared because that user is no longer present in the restored workspace.",
+      summary: literalForLanguage(language, "Workspace backup restored. Your previous session was cleared because that user is no longer present in the restored workspace."),
       tone: "warning" as const,
     };
   }
 
   if (nextSession.user.id === previousUser.id && nextSession.user.role !== previousUser.role) {
     return {
-      summary: `Workspace backup restored. Your access changed from ${previousUser.role} to ${nextSession.user.role}.`,
+      summary: literalForLanguage(language, "Workspace backup restored. Your access changed from {previousRole} to {nextRole}.", {
+        previousRole: formatRoleLabel(previousUser.role, language),
+        nextRole: formatRoleLabel(nextSession.user.role, language),
+      }),
       tone: "warning" as const,
     };
   }
 
   return {
-    summary: "Workspace backup restored.",
+    summary: literalForLanguage(language, "Workspace backup restored."),
     tone: "success" as const,
   };
 }
@@ -171,16 +218,16 @@ async function readErrorMessage(response: Response) {
   }
 }
 
-function getLoginErrorMessage(code: string | null) {
+function getLoginErrorMessage(code: string | null, language?: VoiceTranscriptionLanguage) {
   switch (code) {
     case "google_not_configured":
-      return "Google sign-in is not configured on this deployment yet.";
+      return literalForLanguage(language, "Google sign-in is not configured on this deployment yet.");
     case "google_access_denied":
-      return "Google sign-in was cancelled before access was granted.";
+      return literalForLanguage(language, "Google sign-in was cancelled before access was granted.");
     case "google_state_invalid":
-      return "Google sign-in could not verify the login state. Try again.";
+      return literalForLanguage(language, "Google sign-in could not verify the login state. Try again.");
     case "google_login_failed":
-      return "Google sign-in failed. Check the Google app configuration and try again.";
+      return literalForLanguage(language, "Google sign-in failed. Check the Google app configuration and try again.");
     default:
       return null;
   }
@@ -224,7 +271,15 @@ function loadGoogleIdentityScript() {
   return googleScriptLoadPromise;
 }
 
-export function UserAccessPanel({ availableModels = [], compact = false, onRequestLogout, onSessionChange, session, surface = "embedded" }: UserAccessPanelProps) {
+export function UserAccessPanel({ availableModels = [], compact = false, onRequestLogout, onSessionChange, session, surface = "embedded", uiLanguagePreference }: UserAccessPanelProps) {
+  const activeUiLanguage = uiLanguagePreference ?? session.user?.preferredVoiceTranscriptionLanguage ?? "united-states";
+  const t = (key: Parameters<typeof translateUi>[1], variables?: Record<string, string | number>) =>
+    translateUi(activeUiLanguage, key, variables);
+  const literal = useCallback(
+    (sourceText: string, variables?: Record<string, string | number>) =>
+      translateUiText(activeUiLanguage, sourceText, variables),
+    [activeUiLanguage],
+  );
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -259,7 +314,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
   const [accountPreferredModel, setAccountPreferredModel] = useState("");
   const [accountPreferredTemperature, setAccountPreferredTemperature] = useState(DEFAULT_USER_CHAT_TEMPERATURE);
   const [accountPreferredSystemPrompt, setAccountPreferredSystemPrompt] = useState(DEFAULT_USER_SYSTEM_PROMPT);
-  const [accountPreferredVoiceLanguage, setAccountPreferredVoiceLanguage] = useState<VoiceTranscriptionLanguage>("auto");
+  const [accountPreferredVoiceLanguage, setAccountPreferredVoiceLanguage] = useState<VoiceTranscriptionLanguage>(activeUiLanguage);
   const [currentPasswordDraft, setCurrentPasswordDraft] = useState("");
   const [nextPasswordDraft, setNextPasswordDraft] = useState("");
   const [rememberSession, setRememberSession] = useState(true);
@@ -288,6 +343,21 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
   const [isLoadingProviderConfigs, setIsLoadingProviderConfigs] = useState(false);
   const [isSavingAnthropicApiKey, setIsSavingAnthropicApiKey] = useState(false);
   const [isSavingOpenAiApiKey, setIsSavingOpenAiApiKey] = useState(false);
+  const [workspaceProfiles, setWorkspaceProfiles] = useState<AiWorkspaceProfile[]>([]);
+  const [profileName, setProfileName] = useState("");
+  const [profileDescription, setProfileDescription] = useState("");
+  const [profileProviderId, setProfileProviderId] = useState<AiProviderId>("ollama");
+  const [profileModel, setProfileModel] = useState("");
+  const [profileSystemPrompt, setProfileSystemPrompt] = useState("");
+  const [profileTemperature, setProfileTemperature] = useState(0.4);
+  const [profileUseKnowledge, setProfileUseKnowledge] = useState(true);
+  const [profileGroundingMode, setProfileGroundingMode] = useState<Exclude<AiGroundingMode, "off">>("balanced");
+  const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
+  const [isLoadingProfiles, setIsLoadingProfiles] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [busyProfileId, setBusyProfileId] = useState<string | null>(null);
+  const [profileSummary, setProfileSummary] = useState<string | null>(null);
+  const [profileSummaryTone, setProfileSummaryTone] = useState<"success" | "warning">("success");
   const [knowledgeEntries, setKnowledgeEntries] = useState<AiKnowledgeEntry[]>([]);
   const [knowledgeTitle, setKnowledgeTitle] = useState("");
   const [knowledgeSource, setKnowledgeSource] = useState("manual");
@@ -376,8 +446,8 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
   const hasLegacyGoogleRedirect = session.googleAuthMode === "redirect";
   const showGoogleAuthUi = true;
   const quickHelpHint = getHelpHint("command.quick-help-toggle");
-  const quickHelpPreferenceSummary = "Show short contextual help cards on desktop hover and mobile long-press.";
-  const googleActionLabel = session.userCount === 0 ? "Continue with Google" : "Sign in with Google";
+  const quickHelpPreferenceSummary = literal("Show short contextual help cards on desktop hover and mobile long-press.");
+  const googleActionLabel = session.userCount === 0 ? literal("Continue with Google") : literal("Sign in with Google");
 
   useEffect(() => {
     setAccountDisplayName(session.user?.displayName ?? "");
@@ -385,11 +455,11 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
     setAccountPreferredModel(session.user?.preferredModel ?? "");
     setAccountPreferredTemperature(session.user?.preferredTemperature ?? DEFAULT_USER_CHAT_TEMPERATURE);
     setAccountPreferredSystemPrompt(session.user?.preferredSystemPrompt ?? DEFAULT_USER_SYSTEM_PROMPT);
-    setAccountPreferredVoiceLanguage(session.user?.preferredVoiceTranscriptionLanguage ?? "auto");
+    setAccountPreferredVoiceLanguage(session.user?.preferredVoiceTranscriptionLanguage ?? activeUiLanguage);
     setCurrentPasswordDraft("");
     setNextPasswordDraft("");
     setAccountSummary(null);
-  }, [session.user?.displayName, session.user?.email, session.user?.id, session.user?.preferredModel, session.user?.preferredSystemPrompt, session.user?.preferredTemperature, session.user?.preferredVoiceTranscriptionLanguage]);
+  }, [activeUiLanguage, session.user?.displayName, session.user?.email, session.user?.id, session.user?.preferredModel, session.user?.preferredSystemPrompt, session.user?.preferredTemperature, session.user?.preferredVoiceTranscriptionLanguage]);
 
   useEffect(() => {
     if (!session.user) {
@@ -402,7 +472,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
   }, []);
 
   useEffect(() => {
-    const message = getLoginErrorMessage(searchParams.get("loginError"));
+    const message = getLoginErrorMessage(searchParams.get("loginError"), activeUiLanguage);
 
     if (!message) {
       return;
@@ -413,7 +483,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
     params.delete("loginError");
     const nextUrl = params.size > 0 ? `${pathname}?${params.toString()}` : pathname;
     router.replace(nextUrl, { scroll: false });
-  }, [pathname, router, searchParams]);
+  }, [activeUiLanguage, pathname, router, searchParams]);
 
   useEffect(() => () => {
     if (googleBrokerPollRef.current !== null) {
@@ -439,8 +509,8 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
           setGoogleScriptReady(false);
           setError(
             loadError instanceof Error
-              ? loadError.message
-              : "Unable to load Google sign-in.",
+              ? literal(loadError.message)
+              : literal("Unable to load Google sign-in."),
           );
         }
       });
@@ -448,7 +518,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
     return () => {
       isCancelled = true;
     };
-  }, [hasDirectGoogleSignIn, showGoogleAuthUi]);
+  }, [hasDirectGoogleSignIn, literal, showGoogleAuthUi]);
 
   const completeGoogleSignIn = useEffectEvent(async (credential: string) => {
     setIsGoogleSubmitting(true);
@@ -471,7 +541,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       const nextSession = await fetchCurrentSession();
 
       if (!nextSession.user || nextSession.user.id !== payload.user.id) {
-        throw new Error("Google sign-in finished, but the session was not established. Reload and try again.");
+        throw new Error(literal("Google sign-in finished, but the session was not established. Reload and try again."));
       }
 
       onSessionChange(nextSession);
@@ -482,7 +552,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       setError(
         googleError instanceof Error
           ? googleError.message
-          : "Unable to complete Google sign-in.",
+          : literal("Unable to complete Google sign-in."),
       );
     } finally {
       setIsGoogleSubmitting(false);
@@ -514,7 +584,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       );
 
       if (!popup) {
-        throw new Error("The broker sign-in window was blocked. Allow popups and try again.");
+        throw new Error(literal("The broker sign-in window was blocked. Allow popups and try again."));
       }
 
       if (googleBrokerPollRef.current !== null) {
@@ -540,7 +610,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
               window.clearInterval(googleBrokerPollRef.current ?? 0);
               googleBrokerPollRef.current = null;
               setIsGoogleSubmitting(false);
-              setError("Google sign-in was closed before completion.");
+              setError(literal("Google sign-in was closed before completion."));
             }
 
             return;
@@ -554,8 +624,8 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
             setIsGoogleSubmitting(false);
             setError(
               statusPayload.status === "expired"
-                ? "Google sign-in expired. Try again."
-                : "Google sign-in is no longer available for this request. Try again.",
+                ? literal("Google sign-in expired. Try again.")
+                : literal("Google sign-in is no longer available for this request. Try again."),
             );
             return;
           }
@@ -576,7 +646,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
           const nextSession = await fetchCurrentSession();
 
           if (!nextSession.user || nextSession.user.id !== completePayload.user.id) {
-            throw new Error("Google sign-in finished, but the session was not established. Reload and try again.");
+            throw new Error(literal("Google sign-in finished, but the session was not established. Reload and try again."));
           }
 
           onSessionChange(nextSession);
@@ -592,7 +662,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
           setError(
             brokerError instanceof Error
               ? brokerError.message
-              : "Unable to complete broker Google sign-in.",
+              : literal("Unable to complete broker Google sign-in."),
           );
         }
       }, payload.pollIntervalMs);
@@ -601,7 +671,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       setError(
         brokerError instanceof Error
           ? brokerError.message
-          : "Unable to start broker Google sign-in.",
+          : literal("Unable to start broker Google sign-in."),
       );
     }
   }
@@ -630,7 +700,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
         client_id: GOOGLE_CLIENT_ID,
         callback: (response) => {
           if (!response.credential) {
-            setError("Google sign-in did not return a credential.");
+            setError(literal("Google sign-in did not return a credential."));
             return;
           }
 
@@ -651,7 +721,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       width: 200,
       logo_alignment: "left",
     });
-  }, [googleScriptReady, hasDirectGoogleSignIn, session.user, session.userCount, showGoogleAuthUi]);
+  }, [googleScriptReady, hasDirectGoogleSignIn, literal, session.user, session.userCount, showGoogleAuthUi]);
 
   function clearPendingBackupSelection() {
     setPendingBackupSnapshot(null);
@@ -672,22 +742,6 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
 
     return (await response.json()) as UserSessionStatus;
   }
-
-  useEffect(() => {
-    if (session.user?.role === "admin") {
-      void refreshUsers();
-      void refreshProviderConfigs();
-      void refreshKnowledgeEntries();
-      void refreshKnowledgeModelSuggestions();
-      return;
-    }
-
-    setManagedUsers([]);
-    setProviderConfigs([]);
-    setKnowledgeEntries([]);
-    setKnowledgeOverlapResults([]);
-    setKnownModelsByProvider({});
-  }, [session.user?.id, session.user?.role]);
 
   useEffect(() => {
     if (session.user?.role !== "admin") {
@@ -757,7 +811,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
     };
   }, [editingKnowledgeId, knowledgeContent, knowledgeEntries, knowledgeModelIds, knowledgeProviderIds, knowledgeTags, knowledgeTitle, session.user?.role]);
 
-  async function refreshUsers() {
+  const refreshUsers = useCallback(async () => {
     setIsLoadingUsers(true);
 
     try {
@@ -773,14 +827,14 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       setError(
         refreshError instanceof Error
           ? refreshError.message
-          : "Unable to load users.",
+          : literal("Unable to load users."),
       );
     } finally {
       setIsLoadingUsers(false);
     }
-  }
+  }, [literal]);
 
-  async function refreshProviderConfigs() {
+  const refreshProviderConfigs = useCallback(async () => {
     setIsLoadingProviderConfigs(true);
 
     try {
@@ -796,10 +850,138 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       setError(
         providerError instanceof Error
           ? providerError.message
-          : "Unable to load AI provider settings.",
+          : literal("Unable to load AI provider settings."),
       );
     } finally {
       setIsLoadingProviderConfigs(false);
+    }
+  }, [literal]);
+
+  const refreshProfiles = useCallback(async () => {
+    setIsLoadingProfiles(true);
+
+    try {
+      const response = await fetch("/api/admin/ai/profiles", { cache: "no-store" });
+
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+
+      const payload = (await response.json()) as AiProfilesResponse;
+      setWorkspaceProfiles(payload.profiles);
+    } catch (profileError) {
+      setError(
+        profileError instanceof Error
+          ? profileError.message
+          : literal("Unable to load assistant profiles."),
+      );
+    } finally {
+      setIsLoadingProfiles(false);
+    }
+  }, [literal]);
+
+  function resetProfileForm() {
+    setEditingProfileId(null);
+    setProfileName("");
+    setProfileDescription("");
+    setProfileProviderId("ollama");
+    setProfileModel("");
+    setProfileSystemPrompt("");
+    setProfileTemperature(0.4);
+    setProfileUseKnowledge(true);
+    setProfileGroundingMode("balanced");
+  }
+
+  function startEditingProfile(profile: AiWorkspaceProfile) {
+    setEditingProfileId(profile.id);
+    setProfileName(profile.name);
+    setProfileDescription(profile.description);
+    setProfileProviderId(profile.providerId);
+    setProfileModel(profile.model);
+    setProfileSystemPrompt(profile.systemPrompt);
+    setProfileTemperature(profile.temperature);
+    setProfileUseKnowledge(profile.useKnowledge);
+    setProfileGroundingMode(profile.groundingMode);
+  }
+
+  async function saveProfile() {
+    setIsSavingProfile(true);
+    setError(null);
+    setProfileSummary(null);
+
+    try {
+      const response = await fetch("/api/admin/ai/profiles", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: editingProfileId,
+          name: profileName,
+          description: profileDescription,
+          providerId: profileProviderId,
+          model: profileModel,
+          systemPrompt: profileSystemPrompt,
+          temperature: profileTemperature,
+          useKnowledge: profileUseKnowledge,
+          groundingMode: profileGroundingMode,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+
+      const payload = (await response.json()) as AiProfilesResponse;
+      setWorkspaceProfiles(payload.profiles);
+      setProfileSummary(editingProfileId
+        ? literal("Updated profile \"{name}\".", { name: profileName.trim() })
+        : literal("Saved profile \"{name}\".", { name: profileName.trim() }));
+      setProfileSummaryTone("success");
+      resetProfileForm();
+    } catch (profileError) {
+      setError(
+        profileError instanceof Error
+          ? profileError.message
+          : literal("Unable to save the assistant profile."),
+      );
+    } finally {
+      setIsSavingProfile(false);
+    }
+  }
+
+  async function deleteProfile(id: string) {
+    setBusyProfileId(id);
+    setError(null);
+    setProfileSummary(null);
+
+    try {
+      const response = await fetch("/api/admin/ai/profiles", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id }),
+      });
+
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+
+      const payload = (await response.json()) as AiProfilesResponse;
+      setWorkspaceProfiles(payload.profiles);
+
+      if (editingProfileId === id) {
+        resetProfileForm();
+      }
+    } catch (profileError) {
+      setError(
+        profileError instanceof Error
+          ? profileError.message
+          : literal("Unable to delete the assistant profile."),
+      );
+    } finally {
+      setBusyProfileId(null);
     }
   }
 
@@ -831,7 +1013,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       setError(
         providerError instanceof Error
           ? providerError.message
-          : "Unable to save the Anthropic API key.",
+          : literal("Unable to save the Anthropic API key."),
       );
     } finally {
       setIsSavingAnthropicApiKey(false);
@@ -866,14 +1048,14 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       setError(
         providerError instanceof Error
           ? providerError.message
-          : "Unable to save the OpenAI API key.",
+          : literal("Unable to save the OpenAI API key."),
       );
     } finally {
       setIsSavingOpenAiApiKey(false);
     }
   }
 
-  async function refreshKnowledgeEntries() {
+  const refreshKnowledgeEntries = useCallback(async () => {
     setIsLoadingKnowledge(true);
 
     try {
@@ -889,14 +1071,14 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       setError(
         knowledgeError instanceof Error
           ? knowledgeError.message
-          : "Unable to load shared knowledge entries.",
+          : literal("Unable to load shared knowledge entries."),
       );
     } finally {
       setIsLoadingKnowledge(false);
     }
-  }
+  }, [literal]);
 
-  async function refreshKnowledgeModelSuggestions() {
+  const refreshKnowledgeModelSuggestions = useCallback(async () => {
     setIsLoadingKnowledgeModelSuggestions(true);
 
     try {
@@ -919,7 +1101,25 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
     } finally {
       setIsLoadingKnowledgeModelSuggestions(false);
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    if (session.user?.role === "admin") {
+      void refreshUsers();
+      void refreshProviderConfigs();
+      void refreshProfiles();
+      void refreshKnowledgeEntries();
+      void refreshKnowledgeModelSuggestions();
+      return;
+    }
+
+    setManagedUsers([]);
+    setProviderConfigs([]);
+    setWorkspaceProfiles([]);
+    setKnowledgeEntries([]);
+    setKnowledgeOverlapResults([]);
+    setKnownModelsByProvider({});
+  }, [refreshKnowledgeEntries, refreshKnowledgeModelSuggestions, refreshProfiles, refreshProviderConfigs, refreshUsers, session.user?.id, session.user?.role]);
 
   function buildKnowledgeImportMetadata() {
     return {
@@ -935,7 +1135,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
     const url = knowledgeImportUrl.trim();
 
     if (!url) {
-      setError("Knowledge import URL is required.");
+      setError(literal("Knowledge import URL is required."));
       return;
     }
 
@@ -968,7 +1168,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       setError(
         knowledgeError instanceof Error
           ? knowledgeError.message
-          : "Unable to import shared knowledge from the URL.",
+          : literal("Unable to import shared knowledge from the URL."),
       );
     } finally {
       setIsImportingKnowledge(false);
@@ -1022,7 +1222,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       setError(
         knowledgeError instanceof Error
           ? knowledgeError.message
-          : "Unable to import the selected knowledge file.",
+          : literal("Unable to import the selected knowledge file."),
       );
     } finally {
       setIsImportingKnowledge(false);
@@ -1071,7 +1271,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       setError(
         knowledgeError instanceof Error
           ? knowledgeError.message
-          : "Unable to save the shared knowledge entry.",
+          : literal("Unable to save the shared knowledge entry."),
       );
     } finally {
       setIsSavingKnowledge(false);
@@ -1096,7 +1296,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       setError(
         knowledgeError instanceof Error
           ? knowledgeError.message
-          : "Unable to delete the shared knowledge entry.",
+          : literal("Unable to delete the shared knowledge entry."),
       );
     } finally {
       setBusyKnowledgeId(null);
@@ -1171,7 +1371,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       setError(
         knowledgeError instanceof Error
           ? knowledgeError.message
-          : "Unable to run the shared knowledge debug search.",
+          : literal("Unable to run the shared knowledge debug search."),
       );
     } finally {
       setIsRunningKnowledgeDebug(false);
@@ -1216,7 +1416,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
     const submittedPassword = String(formData.get("password") ?? "");
 
     if (!submittedEmail || !submittedPassword) {
-      setError("Email address and password are required.");
+      setError(literal("Email address and password are required."));
       return;
     }
 
@@ -1249,7 +1449,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
 
         if (mode === "login" && message === "Invalid email address or password.") {
           setAuthDialogMode("invalid-login");
-          setAuthDialogMessage("That sign-in attempt did not match our local credential record. If this was your account, you can start a password reset sequence.");
+          setAuthDialogMessage(literal("That sign-in attempt did not match our local credential record. If this was your account, you can start a password reset sequence."));
           return;
         }
 
@@ -1277,7 +1477,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       const nextSession = await fetchCurrentSession();
 
       if (!payload.user || !nextSession.user || nextSession.user.id !== payload.user.id) {
-        throw new Error("Sign-in finished, but the session was not established. Reload and try again.");
+        throw new Error(literal("Sign-in finished, but the session was not established. Reload and try again."));
       }
 
       onSessionChange(nextSession);
@@ -1288,7 +1488,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       setError(
         submitError instanceof Error
           ? submitError.message
-          : "Unable to complete user authentication.",
+          : literal("Unable to complete user authentication."),
       );
     } finally {
       setIsSubmitting(false);
@@ -1302,7 +1502,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
 
   async function requestPasswordReset() {
     if (!localEmail.trim()) {
-      setError("Enter your email address first so the reset code goes to the right account.");
+      setError(literal("Enter your email address first so the reset code goes to the right account."));
       dismissAuthDialog();
       return;
     }
@@ -1333,15 +1533,15 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
         if (response.status === 404) {
           setPasswordResetChallenge(null);
           setAuthDialogMode("user-missing");
-          setAuthDialogMessage(payload.error ?? "No local account matched that email address.");
+          setAuthDialogMessage(payload.error ?? literal("No local account matched that email address."));
           return;
         }
 
-        throw new Error(payload.error ?? "Unable to start password reset.");
+        throw new Error(payload.error ?? literal("Unable to start password reset."));
       }
 
       if (!payload.expiresAt || !payload.resetTarget) {
-        throw new Error("Password reset started, but no verification target was returned.");
+        throw new Error(literal("Password reset started, but no verification target was returned."));
       }
 
       setPasswordResetChallenge({
@@ -1352,12 +1552,12 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       setResetPasswordDraft("");
       setPassword("");
       setAuthDialogMode("password-reset");
-      setAuthDialogMessage("A password reset authorization code has been sent. Enter the code and your new password below.");
+      setAuthDialogMessage(literal("A password reset authorization code has been sent. Enter the code and your new password below."));
     } catch (resetError) {
       setError(
         resetError instanceof Error
           ? resetError.message
-          : "Unable to start password reset.",
+          : literal("Unable to start password reset."),
       );
     } finally {
       setIsResettingPassword(false);
@@ -1370,17 +1570,17 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
     }
 
     if (!resetCode.trim()) {
-      setError("Enter the 6-digit password reset code from your email.");
+      setError(literal("Enter the 6-digit password reset code from your email."));
       return;
     }
 
     if (passwordResetSecondsRemaining <= 0) {
-      setError("That password reset code has expired. Request another code and try again.");
+      setError(literal("That password reset code has expired. Request another code and try again."));
       return;
     }
 
     if (resetPasswordDraft.trim().length < 8) {
-      setError("New password must be at least 8 characters long.");
+      setError(literal("New password must be at least 8 characters long."));
       return;
     }
 
@@ -1413,13 +1613,13 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       setResetPasswordDraft("");
       setAuthDialogMode(null);
       setAuthDialogMessage(null);
-      setAuthSummary("Password reset complete. Sign in with your new password.");
+      setAuthSummary(literal("Password reset complete. Sign in with your new password."));
       setAuthSummaryTone("success");
     } catch (resetError) {
       setError(
         resetError instanceof Error
           ? resetError.message
-          : "Unable to reset the password.",
+          : literal("Unable to reset the password."),
       );
     } finally {
       setIsCompletingPasswordReset(false);
@@ -1432,12 +1632,12 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
     }
 
     if (!verificationCode.trim()) {
-      setError("Enter the 6-digit verification code from your email.");
+      setError(literal("Enter the 6-digit verification code from your email."));
       return;
     }
 
     if (verificationSecondsRemaining <= 0) {
-      setError("That verification code has expired. Request a new one by signing in again.");
+      setError(literal("That verification code has expired. Request a new one by signing in again."));
       return;
     }
 
@@ -1464,7 +1664,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       const nextSession = await fetchCurrentSession();
 
       if (!nextSession.user) {
-        throw new Error("Verification finished, but the session was not established. Reload and try again.");
+        throw new Error(literal("Verification finished, but the session was not established. Reload and try again."));
       }
 
       onSessionChange(nextSession);
@@ -1477,7 +1677,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       setError(
         verificationError instanceof Error
           ? verificationError.message
-          : "Unable to verify that email code.",
+          : literal("Unable to verify that email code."),
       );
     } finally {
       setIsSubmitting(false);
@@ -1505,7 +1705,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       const nextSession = await fetchCurrentSession();
 
       if (nextSession.user) {
-        throw new Error("Sign-out did not clear the active session. Reload and try again.");
+        throw new Error(literal("Sign-out did not clear the active session. Reload and try again."));
       }
 
       onSessionChange(nextSession);
@@ -1516,7 +1716,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       setError(
         logoutError instanceof Error
           ? logoutError.message
-          : "Unable to sign out.",
+          : literal("Unable to sign out."),
       );
     }
   }
@@ -1552,13 +1752,13 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
 
       const nextSession = await fetchCurrentSession();
       onSessionChange(nextSession);
-      setAccountSummary("Account details and assistant style saved.");
+      setAccountSummary(literal("Account details and assistant style saved."));
       setAccountSummaryTone("success");
     } catch (accountError) {
       setError(
         accountError instanceof Error
           ? accountError.message
-          : "Unable to save your account details.",
+          : literal("Unable to save your account details."),
       );
     } finally {
       setIsSavingAccountProfile(false);
@@ -1592,13 +1792,13 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
 
       setCurrentPasswordDraft("");
       setNextPasswordDraft("");
-      setAccountSummary("Password updated for this local account.");
+      setAccountSummary(literal("Password updated for this local account."));
       setAccountSummaryTone("success");
     } catch (passwordError) {
       setError(
         passwordError instanceof Error
           ? passwordError.message
-          : "Unable to reset your password.",
+          : literal("Unable to reset your password."),
       );
     } finally {
       setIsSavingPassword(false);
@@ -1631,7 +1831,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       setError(
         roleError instanceof Error
           ? roleError.message
-          : "Unable to update the user role.",
+          : literal("Unable to update the user role."),
       );
     } finally {
       setBusyUserId(null);
@@ -1668,7 +1868,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       setError(
         verificationPolicyError instanceof Error
           ? verificationPolicyError.message
-          : "Unable to update the login verification setting.",
+          : literal("Unable to update the login verification setting."),
       );
     } finally {
       setBusyUserId(null);
@@ -1696,14 +1896,17 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       setManagedUsers((current) => current.filter((managedUser) => managedUser.id !== user.id));
       setPendingDeleteUserId(null);
       setBackupSummary(
-        `${payload.user.displayName} was deleted. Removed ${payload.deletedConversationCount} saved conversation${payload.deletedConversationCount === 1 ? "" : "s"}.`,
+        literal("{name} was deleted. Removed {countLabel}.", {
+          name: payload.user.displayName,
+          countLabel: formatSavedConversationCountLabel(payload.deletedConversationCount, activeUiLanguage),
+        }),
       );
       setBackupSummaryTone("warning");
     } catch (deleteError) {
       setError(
         deleteError instanceof Error
           ? deleteError.message
-          : "Unable to delete the user.",
+          : literal("Unable to delete the user."),
       );
     } finally {
       setBusyUserId(null);
@@ -1736,13 +1939,13 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       anchor.click();
       document.body.removeChild(anchor);
       window.URL.revokeObjectURL(downloadUrl);
-      setBackupSummary("Workspace backup exported.");
+      setBackupSummary(literal("Workspace backup exported."));
       setBackupSummaryTone("success");
     } catch (backupError) {
       setError(
         backupError instanceof Error
           ? backupError.message
-          : "Unable to export the workspace backup.",
+          : literal("Unable to export the workspace backup."),
       );
     } finally {
       setIsExportingBackup(false);
@@ -1770,13 +1973,19 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
         || !Array.isArray(parsed.activityEvents)
         || !Array.isArray(parsed.jobHistory)
       ) {
-        throw new Error("That backup file is not in the expected workspace snapshot format.");
+        throw new Error(literal("That backup file is not in the expected workspace snapshot format."));
       }
 
       setPendingBackupSnapshot(parsed);
       setPendingBackupFileName(file.name);
       setBackupSummary(
-        `Loaded backup ${file.name} with ${parsed.users.length} users, ${parsed.conversations.length} conversations, ${parsed.activityEvents.length} activity events, and ${parsed.jobHistory.length} jobs.`,
+        literal("Loaded backup {fileName} with {userCount} users, {conversationCount} conversations, {activityCount} activity events, and {jobCount} jobs.", {
+          fileName: file.name,
+          userCount: parsed.users.length,
+          conversationCount: parsed.conversations.length,
+          activityCount: parsed.activityEvents.length,
+          jobCount: parsed.jobHistory.length,
+        }),
       );
       setBackupSummaryTone("success");
     } catch (backupError) {
@@ -1784,7 +1993,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       setError(
         backupError instanceof Error
           ? backupError.message
-          : "Unable to read the selected backup file.",
+          : literal("Unable to read the selected backup file."),
       );
     } finally {
       event.target.value = "";
@@ -1820,7 +2029,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       }
 
       const nextSession = (await sessionResponse.json()) as UserSessionStatus;
-      const restoreOutcome = describeRestoreOutcome(previousUser, nextSession);
+      const restoreOutcome = describeRestoreOutcome(previousUser, nextSession, activeUiLanguage);
       onSessionChange(nextSession);
       clearPendingBackupSelection();
       setManagedUsers([]);
@@ -1839,7 +2048,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       setError(
         backupError instanceof Error
           ? backupError.message
-          : "Unable to restore the workspace backup.",
+          : literal("Unable to restore the workspace backup."),
       );
     } finally {
       setIsImportingBackup(false);
@@ -1854,26 +2063,26 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       {!compact ? (
         <div className={`flex flex-col items-start gap-4 ${isPageSurface ? "theme-surface-elevated rounded-[28px] px-5 py-5" : "sm:flex-row sm:justify-between"}`}>
           <div>
-            <p className="section-label text-xs font-semibold">Accounts</p>
+            <p className="section-label text-xs font-semibold">{literal("Accounts")}</p>
             <h2 className="mt-3 text-2xl font-semibold tracking-tight text-foreground">
               {isPageSurface
                 ? isAdminSession
-                  ? "Identity, providers, knowledge, and backup"
-                  : "Account, preferences, and sign-in"
+                  ? literal("Identity, providers, knowledge, and backup")
+                  : literal("Account, preferences, and sign-in")
                 : isAdminSession
-                  ? "Users and backup"
-                  : "Account and sign-in"}
+                  ? literal("Users and backup")
+                  : literal("Account and sign-in")}
             </h2>
             {isPageSurface ? (
               <p className="mt-3 max-w-3xl text-sm leading-6 text-muted sm:text-base">
                 {isAdminSession
-                  ? "Access is the administrative control surface for local identity, hosted-provider credentials, shared knowledge grounding, and workspace recovery operations."
-                  : "Use this page to manage your profile details, quick-help preference, password, and current sign-in session without exposing admin-only operations."}
+                  ? literal("Access is the administrative control surface for local identity, hosted-provider credentials, shared knowledge grounding, and workspace recovery operations.")
+                  : literal("Use this page to manage your profile details, quick-help preference, password, and current sign-in session without exposing admin-only operations.")}
               </p>
             ) : null}
           </div>
           <div className="ui-pill ui-pill-surface text-sm">
-            {session.userCount} user{session.userCount === 1 ? "" : "s"}
+            {literal("{count} users", { count: session.userCount })}
           </div>
         </div>
       ) : null}
@@ -1881,19 +2090,19 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       {isPageSurface ? (
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           <div className="theme-surface-soft rounded-[24px] px-4 py-4">
-            <p className="eyebrow text-muted">Signed-in user</p>
-            <p className="mt-2 text-base font-semibold text-foreground">{session.user?.displayName ?? "No active user"}</p>
-            <p className="mt-1 text-xs leading-5 text-muted">{session.user ? `${session.user.role} via ${session.user.authProvider === "google" ? "Google" : "local"} auth.` : "Local access gate only."}</p>
+            <p className="eyebrow text-muted">{literal("Signed-in user")}</p>
+            <p className="mt-2 text-base font-semibold text-foreground">{session.user?.displayName ?? literal("No active user")}</p>
+            <p className="mt-1 text-xs leading-5 text-muted">{session.user ? literal("{role} via {provider} auth.", { role: formatRoleLabel(session.user.role, activeUiLanguage), provider: session.user.authProvider === "google" ? literal("Google") : literal("local") }) : literal("Local access gate only.")}</p>
           </div>
           <div className="theme-surface-soft rounded-[24px] px-4 py-4">
-            <p className="eyebrow text-muted">{isAdminSession ? "Providers ready" : "Quick help"}</p>
-            <p className="mt-2 text-base font-semibold text-foreground">{isAdminSession ? configuredProviderCount : isQuickHelpEnabled ? "Enabled" : "Muted"}</p>
-            <p className="mt-1 text-xs leading-5 text-muted">{isAdminSession ? "Hosted gateway providers currently configured for use." : "Contextual help cards follow this device-local preference."}</p>
+            <p className="eyebrow text-muted">{isAdminSession ? literal("Providers ready") : literal("Quick help")}</p>
+            <p className="mt-2 text-base font-semibold text-foreground">{isAdminSession ? configuredProviderCount : isQuickHelpEnabled ? literal("Enabled") : literal("Muted")}</p>
+            <p className="mt-1 text-xs leading-5 text-muted">{isAdminSession ? literal("Hosted gateway providers currently configured for use.") : literal("Contextual help cards follow this device-local preference.")}</p>
           </div>
           <div className="theme-surface-soft rounded-[24px] px-4 py-4">
-            <p className="eyebrow text-muted">Access posture</p>
-            <p className="mt-2 text-base font-semibold text-foreground">{session.user?.role === "admin" ? "Administrative" : session.user ? "Self-service" : "Entry required"}</p>
-            <p className="mt-1 text-xs leading-5 text-muted">{isAdminSession ? "Backup restore and role changes stay gated to admin sessions." : "Only your own account settings appear here outside admin sessions."}</p>
+            <p className="eyebrow text-muted">{literal("Access posture")}</p>
+            <p className="mt-2 text-base font-semibold text-foreground">{session.user?.role === "admin" ? literal("Administrative") : session.user ? literal("Self-service") : literal("Entry required")}</p>
+            <p className="mt-1 text-xs leading-5 text-muted">{isAdminSession ? literal("Backup restore and role changes stay gated to admin sessions.") : literal("Only your own account settings appear here outside admin sessions.")}</p>
           </div>
         </div>
       ) : null}
@@ -1908,16 +2117,16 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
             ) : null}
             <div className="mt-3 flex flex-wrap gap-2">
               <p className="ui-pill ui-pill-success inline-flex text-xs">
-                {session.user.role}
+                {formatRoleLabel(session.user.role, activeUiLanguage)}
               </p>
               <p className="ui-pill ui-pill-soft inline-flex border border-line text-xs text-muted">
-                {session.user.authProvider === "google" ? "Google account" : "Local account"}
+                {session.user.authProvider === "google" ? literal("Google account") : literal("Local account")}
               </p>
             </div>
             <p className="mt-4 text-sm leading-6 text-muted">
               {isAdminSession
-                ? "Conversations remain scoped to the signed-in user while this session also unlocks role management, provider configuration, workspace recovery, and model operations. Your assistant style stays personal to this account."
-                : "Conversations remain scoped to your signed-in account. This view keeps only your own profile, assistant style, preference, and password controls visible."}
+                ? literal("Conversations remain scoped to the signed-in user while this session also unlocks role management, provider configuration, workspace recovery, and model operations. Your assistant style stays personal to this account.")
+                : literal("Conversations remain scoped to your signed-in account. This view keeps only your own profile, assistant style, preference, and password controls visible.")}
             </p>
             <button
               className="ui-button ui-button-secondary mt-5 w-full px-4 py-2 text-sm sm:w-auto"
@@ -1925,29 +2134,29 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
               type="button"
               onClick={logout}
             >
-              Sign out
+              {t("signOut")}
             </button>
           </div>
 
           <div className={`rounded-[28px] border border-line/80 ${isPageSurface ? "theme-surface-panel p-6" : "theme-surface-soft p-5"}`}>
             <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <p className="eyebrow text-muted">Account settings</p>
+                <p className="eyebrow text-muted">{literal("Account settings")}</p>
                 <p className="mt-2 text-sm text-muted">
-                  Manage your profile details, assistant style, quick-help preference, and local password from one place.
+                  {literal("Manage your profile details, assistant style, quick-help preference, and local password from one place.")}
                 </p>
               </div>
               <span className="ui-pill ui-pill-surface text-xs">
-                {session.user.authProvider === "google" ? "Google sign-in" : "Local sign-in"}
+                {session.user.authProvider === "google" ? literal("Google sign-in") : literal("Local sign-in")}
               </span>
             </div>
 
             <div className="mt-4 grid gap-4 xl:grid-cols-2">
               <div className="rounded-[24px] bg-white px-4 py-4">
-                <p className="text-sm font-semibold text-foreground">Profile</p>
+                <p className="text-sm font-semibold text-foreground">{literal("Profile")}</p>
                 <div className="mt-4 space-y-3">
                   <label className="block text-xs font-semibold uppercase tracking-[0.16em] text-muted/75">
-                    Display name
+                    {literal("Display name")}
                     <input
                       className="mt-2 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm font-normal text-foreground outline-none"
                       autoComplete="name"
@@ -1956,25 +2165,25 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                     />
                   </label>
                   <label className="block text-xs font-semibold uppercase tracking-[0.16em] text-muted/75">
-                    Email
+                    {literal("Email")}
                     <input
                       className="mt-2 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm font-normal text-foreground outline-none disabled:cursor-not-allowed disabled:bg-neutral-100"
                       autoComplete="email"
                       disabled
-                      placeholder={session.user.authProvider === "google" ? "Managed by Google sign-in" : "Used for local sign-in and verification"}
+                      placeholder={session.user.authProvider === "google" ? literal("Managed by Google sign-in") : literal("Used for local sign-in and verification")}
                       type="email"
                       value={accountEmail}
                       onChange={(event) => setAccountEmail(event.target.value)}
                     />
                   </label>
                   <label className="block text-xs font-semibold uppercase tracking-[0.16em] text-muted/75">
-                    Default model
+                    {t("defaultModel")}
                     <select
                       className="mt-2 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm font-normal text-foreground outline-none"
                       value={accountPreferredModel}
                       onChange={(event) => setAccountPreferredModel(event.target.value)}
                     >
-                      <option value="">Use the first available local model</option>
+                      <option value="">{t("useFirstAvailableLocalModel")}</option>
                       {availableModels.map((model) => (
                         <option key={model.name} value={model.name}>
                           {model.name}
@@ -1983,24 +2192,23 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                     </select>
                   </label>
                   <label className="block text-xs font-semibold uppercase tracking-[0.16em] text-muted/75">
-                    Voice transcription
-                    <select
-                      className="mt-2 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm font-normal text-foreground outline-none"
-                      value={accountPreferredVoiceLanguage}
-                      onChange={(event) => setAccountPreferredVoiceLanguage(event.target.value as VoiceTranscriptionLanguage)}
-                    >
-                      {VOICE_TRANSCRIPTION_LANGUAGE_OPTIONS.map((language) => (
-                        <option key={language} value={language}>
-                          {language === "auto"
-                            ? "Auto-detect"
-                            : language.slice(0, 1).toUpperCase() + language.slice(1)}
-                        </option>
-                      ))}
-                    </select>
+                    {t("voiceTranscription")}
+                    <div className="mt-2">
+                      <VoiceLanguageSelect
+                        ariaLabel={t("voiceTranscription")}
+                        buttonClassName="flex w-full items-center gap-3 rounded-2xl border border-line bg-white px-4 py-3 text-left text-sm font-normal text-foreground"
+                        flagClassName="h-5 w-7 shrink-0 rounded-[4px]"
+                        listClassName="theme-surface-elevated absolute left-0 right-0 z-20 mt-2 overflow-hidden rounded-[24px] p-2 backdrop-blur-xl"
+                        optionClassName={(isSelected) => `flex w-full items-center gap-3 rounded-[18px] px-3 py-3 text-left ${isSelected ? "bg-[rgba(188,95,61,0.12)]" : "hover:bg-black/5"}`}
+                        textClassName="text-sm font-normal text-foreground"
+                        value={accountPreferredVoiceLanguage}
+                        onChange={setAccountPreferredVoiceLanguage}
+                      />
+                    </div>
                   </label>
                   <div>
                     <div className="flex items-center justify-between gap-4 text-xs font-semibold uppercase tracking-[0.16em] text-muted/75">
-                      <span>Reply style</span>
+                      <span>{t("replyStyle")}</span>
                       <span>{accountPreferredTemperature.toFixed(1)}</span>
                     </div>
                     <input
@@ -2013,11 +2221,11 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                       onChange={(event) => setAccountPreferredTemperature(Number(event.target.value))}
                     />
                     <p className="mt-2 text-xs leading-6 text-muted">
-                      Lower stays more focused. Higher feels more flexible and creative.
+                      {literal("Lower stays more focused. Higher feels more flexible and creative.")}
                     </p>
                   </div>
                   <label className="block text-xs font-semibold uppercase tracking-[0.16em] text-muted/75">
-                    Assistant style
+                    {literal("Assistant style")}
                     <textarea
                       className="mt-2 min-h-36 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm font-normal leading-7 text-foreground outline-none"
                       value={accountPreferredSystemPrompt}
@@ -2027,8 +2235,8 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                 </div>
                 <p className="mt-3 text-xs leading-6 text-muted">
                   {session.user.authProvider === "google"
-                    ? "Google-managed accounts keep their provider email. You can still change the display name plus the defaults used when you start a new chat."
-                    : "Local accounts now sign in with email and use 6-digit verification codes when required. The login email is shown here and model, voice mode, reply style, and assistant style stay personal to this account."}
+                    ? literal("Google-managed accounts keep their provider email. You can still change the display name plus the defaults used when you start a new chat.")
+                    : literal("Local accounts now sign in with email and use 6-digit verification codes when required. The login email is shown here and model, voice mode, reply style, and assistant style stay personal to this account.")}
                 </p>
                 <button
                   className="ui-button ui-button-primary mt-4 w-full px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
@@ -2038,7 +2246,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                     void saveAccountProfile();
                   }}
                 >
-                  {isSavingAccountProfile ? "Saving..." : "Save profile"}
+                  {isSavingAccountProfile ? t("savingProfile") : t("saveProfile")}
                 </button>
               </div>
 
@@ -2059,26 +2267,26 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                       }}
                     />
                     <span>
-                      <span className="block font-semibold text-foreground">Quick help popovers</span>
+                      <span className="block font-semibold text-foreground">{literal("Quick help popovers")}</span>
                       <span className="mt-1 block text-xs leading-6 text-muted">
                         {quickHelpPreferenceSummary}
                       </span>
                       <span className="mt-1 block text-[11px] leading-5 text-muted/85">
-                        {quickHelpHint?.summary ?? "Hover or long-press for quick help cards that auto-dismiss after a short pause."}
+                        {quickHelpHint?.summary ?? literal("Hover or long-press for quick help cards that auto-dismiss after a short pause.")}
                       </span>
                     </span>
                   </label>
                 </div>
 
                 <div className="rounded-[24px] bg-white px-4 py-4">
-                  <p className="text-sm font-semibold text-foreground">Password</p>
+                  <p className="text-sm font-semibold text-foreground">{literal("Password")}</p>
                   {session.user.authProvider === "local" ? (
                     <>
                       <div className="mt-4 space-y-3">
                         <input
                           className="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
                           autoComplete="current-password"
-                          placeholder="Current password"
+                          placeholder={literal("Current password")}
                           type="password"
                           value={currentPasswordDraft}
                           onChange={(event) => setCurrentPasswordDraft(event.target.value)}
@@ -2086,14 +2294,14 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                         <input
                           className="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
                           autoComplete="new-password"
-                          placeholder="New password"
+                          placeholder={literal("New password")}
                           type="password"
                           value={nextPasswordDraft}
                           onChange={(event) => setNextPasswordDraft(event.target.value)}
                         />
                       </div>
                       <p className="mt-3 text-xs leading-6 text-muted">
-                        Local password resets require your current password and a new password with at least 8 characters.
+                        {literal("Local password resets require your current password and a new password with at least 8 characters.")}
                       </p>
                       <button
                         className="ui-button ui-button-secondary mt-4 w-full px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
@@ -2103,12 +2311,12 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                           void resetPassword();
                         }}
                       >
-                        {isSavingPassword ? "Updating..." : "Update password"}
+                        {isSavingPassword ? literal("Updating...") : literal("Update password")}
                       </button>
                     </>
                   ) : (
                     <p className="mt-3 text-sm leading-6 text-muted">
-                      Google-managed accounts do not use a local password here. Use your Google account security settings if you need to rotate credentials.
+                      {literal("Google-managed accounts do not use a local password here. Use your Google account security settings if you need to rotate credentials.")}
                     </p>
                   )}
                 </div>
@@ -2141,7 +2349,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
               type="button"
               onClick={() => setMode("login")}
             >
-              Sign In
+              {literal("Sign In")}
             </button>
             <button
               className={`ui-button min-h-[3.5rem] justify-center px-4 py-3 text-sm ${
@@ -2153,14 +2361,14 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
               type="button"
               onClick={() => setMode("register")}
             >
-              Create account
+              {literal("Create account")}
             </button>
           </div>
           <input
             className="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
             autoComplete="email"
             name="email"
-            placeholder="Email address"
+            placeholder={literal("Email address")}
             type="email"
             value={localEmail}
             onChange={(event) => setLocalEmail(event.target.value)}
@@ -2170,7 +2378,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
               className="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
               autoComplete="name"
               name="displayName"
-              placeholder="Display name"
+              placeholder={literal("Display name")}
               value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
             />
@@ -2179,7 +2387,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
             className="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
             autoComplete={mode === "login" ? "current-password" : "new-password"}
             name="password"
-            placeholder="Password"
+            placeholder={literal("Password")}
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
@@ -2192,9 +2400,9 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
               onChange={(event) => setRememberSession(event.target.checked)}
             />
             <span>
-              <span className="block font-semibold text-foreground">Stay logged in on this device</span>
+              <span className="block font-semibold text-foreground">{literal("Stay logged in on this device")}</span>
               <span className="mt-1 block text-xs leading-6 text-muted">
-                Checked keeps this device signed in for up to 7 days. Unchecked ends the session when the browser closes.
+                {literal("Checked keeps this device signed in for up to 7 days. Unchecked ends the session when the browser closes.")}
               </span>
             </span>
           </label>
@@ -2216,18 +2424,23 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
           ) : null}
           {verificationChallenge ? (
             <div className="rounded-[24px] border border-line bg-white px-4 py-4">
-              <p className="text-sm font-semibold text-foreground">Email verification required</p>
+              <p className="text-sm font-semibold text-foreground">{literal("Email verification required")}</p>
               <p className="mt-2 text-sm leading-6 text-muted">
-                Enter the 6-digit code sent to {verificationChallenge.email}. {verificationSecondsRemaining > 0
-                  ? `This code expires in ${verificationSecondsRemaining} second${verificationSecondsRemaining === 1 ? "" : "s"}.`
-                  : "This code has expired. Submit the form again to request a new one."}
+                {verificationSecondsRemaining > 0
+                  ? literal("Enter the 6-digit code sent to {email}. This code expires in {seconds} second(s).", {
+                    email: verificationChallenge.email,
+                    seconds: verificationSecondsRemaining,
+                  })
+                  : literal("Enter the 6-digit code sent to {email}. This code has expired. Submit the form again to request a new one.", {
+                    email: verificationChallenge.email,
+                  })}
               </p>
               <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
                 <input
                   className="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
                   inputMode="numeric"
                   maxLength={6}
-                  placeholder="6-digit code"
+                  placeholder={literal("6-digit code")}
                   value={verificationCode}
                   onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
                 />
@@ -2239,15 +2452,15 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                     void submitVerificationCode();
                   }}
                 >
-                  {isSubmitting ? "Verifying..." : "Verify email"}
+                  {isSubmitting ? literal("Verifying...") : literal("Verify email")}
                 </button>
               </div>
             </div>
           ) : null}
           <p className="text-sm leading-6 text-muted">
             {session.userCount === 0
-              ? "The first account becomes admin. Later accounts start as operators. Local accounts sign in with email addresses."
-              : "Sign in with your email address to access saved conversations and role-based controls."}
+              ? literal("The first account becomes admin. Later accounts start as operators. Local accounts sign in with email addresses.")
+              : literal("Sign in with your email address to access saved conversations and role-based controls.")}
           </p>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <button
@@ -2258,11 +2471,11 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
             >
               {isSubmitting
                 ? mode === "login"
-                  ? "Signing In..."
-                  : "Creating account..."
+                  ? literal("Signing In...")
+                  : literal("Creating account...")
                 : mode === "login"
-                  ? "Sign In"
-                  : "Create account"}
+                  ? literal("Sign In")
+                  : literal("Create account")}
             </button>
             {mode === "login" && showGoogleAuthUi ? (
               isBrokerGoogleSignIn ? (
@@ -2275,7 +2488,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                   }}
                 >
                   <GoogleMark />
-                  <span>{isGoogleSubmitting ? "Waiting for Google..." : googleActionLabel}</span>
+                  <span>{isGoogleSubmitting ? literal("Waiting for Google...") : googleActionLabel}</span>
                 </button>
               ) : hasDirectGoogleSignIn ? (
                 <div className="w-full sm:w-auto">
@@ -2313,14 +2526,14 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
           <div className="theme-surface-panel w-full max-w-md rounded-[28px] border border-line/80 p-6 shadow-[0_24px_64px_rgba(15,23,42,0.18)]">
             {authDialogMode === "invalid-login" ? (
               <>
-                <p className="eyebrow text-muted">Credential check</p>
-                <h2 className="mt-2 text-xl font-semibold text-foreground">Are you sure that was the right password?</h2>
+                <p className="eyebrow text-muted">{literal("Credential check")}</p>
+                <h2 className="mt-2 text-xl font-semibold text-foreground">{literal("Are you sure that was the right password?")}</h2>
                 <p className="mt-3 text-sm leading-6 text-muted">
-                  {authDialogMessage ?? "That password did not match the local account record."}
+                  {authDialogMessage ?? literal("That password did not match the local account record.")}
                 </p>
                 <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
                   <button className="ui-button ui-button-secondary px-4 py-2 text-sm" type="button" onClick={dismissAuthDialog}>
-                    Dismiss
+                    {literal("Dismiss")}
                   </button>
                   <button
                     className="ui-button ui-button-primary px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
@@ -2330,7 +2543,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                       void requestPasswordReset();
                     }}
                   >
-                    {isResettingPassword ? "Starting reset..." : "Reset password"}
+                    {isResettingPassword ? literal("Starting reset...") : literal("Reset password")}
                   </button>
                 </div>
               </>
@@ -2338,14 +2551,14 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
 
             {authDialogMode === "user-missing" ? (
               <>
-                <p className="eyebrow text-muted">Account lookup</p>
-                <h2 className="mt-2 text-xl font-semibold text-foreground">That user does not exist</h2>
+                <p className="eyebrow text-muted">{literal("Account lookup")}</p>
+                <h2 className="mt-2 text-xl font-semibold text-foreground">{literal("That user does not exist")}</h2>
                 <p className="mt-3 text-sm leading-6 text-muted">
-                  {authDialogMessage ?? "No local account matched that email address."} Continue to account creation if this was a new user, or dismiss if it was just a typo.
+                  {authDialogMessage ?? literal("No local account matched that email address.")} {literal("Continue to account creation if this was a new user, or dismiss if it was just a typo.")}
                 </p>
                 <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
                   <button className="ui-button ui-button-secondary px-4 py-2 text-sm" type="button" onClick={dismissAuthDialog}>
-                    Dismiss
+                    {literal("Dismiss")}
                   </button>
                   <button
                     className="ui-button ui-button-primary px-4 py-2 text-sm"
@@ -2355,7 +2568,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                       dismissAuthDialog();
                     }}
                   >
-                    Continue
+                    {literal("Continue")}
                   </button>
                 </div>
               </>
@@ -2363,16 +2576,21 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
 
             {authDialogMode === "password-reset" ? (
               <>
-                <p className="eyebrow text-muted">Password reset</p>
-                <h2 className="mt-2 text-xl font-semibold text-foreground">Authorize a new password</h2>
+                <p className="eyebrow text-muted">{literal("Password reset")}</p>
+                <h2 className="mt-2 text-xl font-semibold text-foreground">{literal("Authorize a new password")}</h2>
                 <p className="mt-3 text-sm leading-6 text-muted">
-                  {authDialogMessage ?? "Enter the reset code from your email and choose a new password."}
+                  {authDialogMessage ?? literal("Enter the reset code from your email and choose a new password.")}
                 </p>
                 {passwordResetChallenge ? (
                   <p className="mt-2 text-sm leading-6 text-muted">
-                    Code target: {passwordResetChallenge.email}. {passwordResetSecondsRemaining > 0
-                      ? `This code expires in ${passwordResetSecondsRemaining} second${passwordResetSecondsRemaining === 1 ? "" : "s"}.`
-                      : "This code has expired. Send another one to continue."}
+                    {passwordResetSecondsRemaining > 0
+                      ? literal("Code target: {email}. This code expires in {seconds} second(s).", {
+                        email: passwordResetChallenge.email,
+                        seconds: passwordResetSecondsRemaining,
+                      })
+                      : literal("Code target: {email}. This code has expired. Send another one to continue.", {
+                        email: passwordResetChallenge.email,
+                      })}
                   </p>
                 ) : null}
                 <div className="mt-4 space-y-3">
@@ -2380,14 +2598,14 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                     className="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
                     inputMode="numeric"
                     maxLength={6}
-                    placeholder="6-digit reset code"
+                    placeholder={literal("6-digit reset code")}
                     value={resetCode}
                     onChange={(event) => setResetCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
                   />
                   <input
                     className="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
                     autoComplete="new-password"
-                    placeholder="New password"
+                    placeholder={literal("New password")}
                     type="password"
                     value={resetPasswordDraft}
                     onChange={(event) => setResetPasswordDraft(event.target.value)}
@@ -2395,7 +2613,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                 </div>
                 <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:justify-end">
                   <button className="ui-button ui-button-secondary px-4 py-2 text-sm" type="button" onClick={dismissAuthDialog}>
-                    Dismiss
+                    {literal("Dismiss")}
                   </button>
                   <button
                     className="ui-button ui-button-secondary px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
@@ -2405,7 +2623,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                       void requestPasswordReset();
                     }}
                   >
-                    {isResettingPassword ? "Sending..." : "Send another code"}
+                    {isResettingPassword ? literal("Sending...") : literal("Send another code")}
                   </button>
                   <button
                     className="ui-button ui-button-primary px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
@@ -2415,7 +2633,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                       void completePasswordReset();
                     }}
                   >
-                    {isCompletingPasswordReset ? "Changing password..." : "Change password"}
+                    {isCompletingPasswordReset ? literal("Changing password...") : literal("Change password")}
                   </button>
                 </div>
               </>
@@ -2441,9 +2659,9 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
           <div className={`rounded-[28px] border border-line/80 ${isPageSurface ? "theme-surface-panel p-6" : "theme-surface-soft p-5"}`}>
             <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="eyebrow text-muted">Role management</p>
+                <p className="eyebrow text-muted">{literal("Role management")}</p>
                 <p className="mt-2 text-sm text-muted">
-                  Promote or restrict other local users.
+                  {literal("Promote or restrict other local users.")}
                 </p>
               </div>
               <button
@@ -2453,7 +2671,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                 type="button"
                 onClick={refreshUsers}
               >
-                {isLoadingUsers ? "Refreshing..." : "Refresh users"}
+                {isLoadingUsers ? literal("Refreshing...") : literal("Refresh users")}
               </button>
             </div>
 
@@ -2471,22 +2689,22 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                         </p>
                         <p className="mt-1 text-xs text-muted">{user.authProvider === "local" ? user.email ?? user.username : `@${user.username}`}</p>
                       </div>
-                      <span className="ui-pill ui-pill-soft border border-line text-xs text-muted">
-                        {user.role}
+                      <span className="ui-pill ui-pill-soft border border-line text-xs text-muted capitalize">
+                        {formatRoleLabel(user.role, activeUiLanguage)}
                       </span>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2">
                       <span className="ui-pill ui-pill-soft border border-line text-xs text-muted">
-                        {user.authProvider === "google" ? "Google" : "Local"}
+                        {user.authProvider === "google" ? literal("Google") : literal("Local")}
                       </span>
                       {user.authProvider === "local" ? (
                         <span className="ui-pill ui-pill-soft border border-line text-xs text-muted">
-                          {user.emailVerifiedAt ? "Email verified" : "Verification pending"}
+                          {user.emailVerifiedAt ? literal("Email verified") : literal("Verification pending")}
                         </span>
                       ) : null}
                       {user.authProvider === "local" ? (
                         <span className="ui-pill ui-pill-soft border border-line text-xs text-muted">
-                          {user.requireEmailVerificationOnLogin ? "Verify each login" : "Password only after verified email"}
+                          {user.requireEmailVerificationOnLogin ? literal("Verify each login") : literal("Password only after verified email")}
                         </span>
                       ) : null}
                       {user.email ? (
@@ -2497,7 +2715,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                     </div>
                     {user.id === currentUserId ? (
                       <p className="mt-3 text-xs text-muted">
-                        Your own role is locked in this panel.
+                        {literal("Your own role is locked in this panel.")}
                       </p>
                     ) : (
                       <>
@@ -2509,15 +2727,15 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                                 user.role === role
                                   ? "ui-button-primary"
                                   : "ui-button-secondary"
-                              } disabled:cursor-not-allowed disabled:opacity-50`}
+                              } capitalize disabled:cursor-not-allowed disabled:opacity-50`}
                               data-help-id="access.role.change"
                               disabled={busyUserId === user.id || user.role === role}
                               type="button"
                               onClick={() => changeRole(user.id, role)}
                             >
                               {busyUserId === user.id && user.role !== role
-                                ? "Updating..."
-                                : role}
+                                ? literal("Updating...")
+                                : formatRoleLabel(role, activeUiLanguage)}
                             </button>
                           ))}
                         </div>
@@ -2536,7 +2754,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                                 void changeLoginVerificationPolicy(user.id, false);
                               }}
                             >
-                              {busyUserId === user.id && user.requireEmailVerificationOnLogin ? "Updating..." : "Password only"}
+                              {busyUserId === user.id && user.requireEmailVerificationOnLogin ? literal("Updating...") : literal("Password only")}
                             </button>
                             <button
                               className={`ui-button ui-button-chip shrink-0 px-3 py-2 text-xs ${
@@ -2550,16 +2768,18 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                                 void changeLoginVerificationPolicy(user.id, true);
                               }}
                             >
-                              {busyUserId === user.id && !user.requireEmailVerificationOnLogin ? "Updating..." : "Verify each login"}
+                              {busyUserId === user.id && !user.requireEmailVerificationOnLogin ? literal("Updating...") : literal("Verify each login")}
                             </button>
                           </div>
                         ) : null}
 
                         {pendingDeleteUserId === user.id ? (
                           <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-950">
-                            <p className="font-semibold">Delete {user.displayName}?</p>
+                            <p className="font-semibold">{literal("Delete {name}?", { name: user.displayName })}</p>
                             <p className="mt-2 leading-6">
-                              This removes the local account and permanently deletes {user.savedConversationCount} saved conversation{user.savedConversationCount === 1 ? "" : "s"} for this user on this machine.
+                              {literal("This removes the local account and permanently deletes {countLabel} for this user on this machine.", {
+                                countLabel: formatSavedConversationCountLabel(user.savedConversationCount, activeUiLanguage),
+                              })}
                             </p>
                             <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                               <button
@@ -2569,7 +2789,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                                 type="button"
                                 onClick={() => removeUser(user)}
                               >
-                                {busyUserId === user.id ? "Deleting..." : "Confirm delete"}
+                                {busyUserId === user.id ? literal("Deleting...") : literal("Confirm delete")}
                               </button>
                               <button
                                 className="ui-button ui-button-secondary w-full px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
@@ -2578,7 +2798,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                                 type="button"
                                 onClick={() => setPendingDeleteUserId(null)}
                               >
-                                Cancel
+                                {literal("Cancel")}
                               </button>
                             </div>
                           </div>
@@ -2591,7 +2811,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                               type="button"
                               onClick={() => setPendingDeleteUserId(user.id)}
                             >
-                              Delete user
+                              {literal("Delete user")}
                             </button>
                           </div>
                         )}
@@ -2601,7 +2821,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                 ))
               ) : (
                 <div className="rounded-[24px] border border-dashed border-line bg-white/45 px-4 py-4 text-sm text-muted">
-                  No users to manage yet.
+                  {literal("No users to manage yet.")}
                 </div>
               )}
             </div>
@@ -2610,9 +2830,9 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
           <div className={`rounded-[28px] border border-line/80 ${isPageSurface ? "theme-surface-panel p-6" : "theme-surface-soft p-5"}`}>
             <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="eyebrow text-muted">AI providers</p>
+                <p className="eyebrow text-muted">{literal("AI providers")}</p>
                 <p className="mt-2 text-sm text-muted">
-                  Configure hosted-provider credentials for the shared AI gateway.
+                  {literal("Configure hosted-provider credentials for the shared AI gateway.")}
                 </p>
               </div>
               <button
@@ -2622,31 +2842,31 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                 type="button"
                 onClick={refreshProviderConfigs}
               >
-                {isLoadingProviderConfigs ? "Refreshing..." : "Refresh providers"}
+                {isLoadingProviderConfigs ? literal("Refreshing...") : literal("Refresh providers")}
               </button>
             </div>
 
             <div ref={knowledgeFormRef} className="mt-4 rounded-[24px] bg-white px-4 py-4">
               <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <p className="text-sm font-semibold text-foreground">Anthropic</p>
+                  <p className="text-sm font-semibold text-foreground">{literal("Anthropic")}</p>
                   <p className="mt-1 text-xs text-muted">
-                    Enable Claude chat through the shared provider layer.
+                    {literal("Enable Claude chat through the shared provider layer.")}
                   </p>
                 </div>
                 <span className="ui-pill ui-pill-soft border border-line text-xs text-muted">
-                  {providerConfigs.find((provider) => provider.providerId === "anthropic")?.configured ? "Configured" : "Not configured"}
+                  {providerConfigs.find((provider) => provider.providerId === "anthropic")?.configured ? literal("Configured") : literal("Not configured")}
                 </span>
               </div>
               <input
                 className="mt-4 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
-                placeholder="Enter or replace the Anthropic API key"
+                placeholder={literal("Enter or replace the Anthropic API key")}
                 type="password"
                 value={anthropicApiKeyDraft}
                 onChange={(event) => setAnthropicApiKeyDraft(event.target.value)}
               />
               <p className="mt-2 text-xs leading-6 text-muted">
-                Stored keys are encrypted at rest. Environment variables still take priority when present.
+                {literal("Stored keys are encrypted at rest. Environment variables still take priority when present.")}
               </p>
               <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                 <button
@@ -2658,7 +2878,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                     void saveAnthropicApiKey();
                   }}
                 >
-                  {isSavingAnthropicApiKey ? "Saving..." : "Save Anthropic key"}
+                  {isSavingAnthropicApiKey ? literal("Saving...") : literal("Save Anthropic key")}
                 </button>
                 <button
                   className="ui-button ui-button-secondary w-full px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
@@ -2669,7 +2889,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                     void saveAnthropicApiKey(true);
                   }}
                 >
-                  Clear stored key
+                  {literal("Clear stored key")}
                 </button>
               </div>
             </div>
@@ -2677,24 +2897,24 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
             <div className="mt-4 rounded-[24px] bg-white px-4 py-4">
               <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <p className="text-sm font-semibold text-foreground">OpenAI</p>
+                  <p className="text-sm font-semibold text-foreground">{literal("OpenAI")}</p>
                   <p className="mt-1 text-xs text-muted">
-                    Enable GPT chat through the shared provider layer.
+                    {literal("Enable GPT chat through the shared provider layer.")}
                   </p>
                 </div>
                 <span className="ui-pill ui-pill-soft border border-line text-xs text-muted">
-                  {providerConfigs.find((provider) => provider.providerId === "openai")?.configured ? "Configured" : "Not configured"}
+                  {providerConfigs.find((provider) => provider.providerId === "openai")?.configured ? literal("Configured") : literal("Not configured")}
                 </span>
               </div>
               <input
                 className="mt-4 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
-                placeholder="Enter or replace the OpenAI API key"
+                placeholder={literal("Enter or replace the OpenAI API key")}
                 type="password"
                 value={openAiApiKeyDraft}
                 onChange={(event) => setOpenAiApiKeyDraft(event.target.value)}
               />
               <p className="mt-2 text-xs leading-6 text-muted">
-                Stored keys are encrypted at rest. Environment variables still take priority when present.
+                {literal("Stored keys are encrypted at rest. Environment variables still take priority when present.")}
               </p>
               <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                 <button
@@ -2706,7 +2926,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                     void saveOpenAiApiKey();
                   }}
                 >
-                  {isSavingOpenAiApiKey ? "Saving..." : "Save OpenAI key"}
+                  {isSavingOpenAiApiKey ? literal("Saving...") : literal("Save OpenAI key")}
                 </button>
                 <button
                   className="ui-button ui-button-secondary w-full px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
@@ -2717,7 +2937,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                     void saveOpenAiApiKey(true);
                   }}
                 >
-                  Clear stored key
+                  {literal("Clear stored key")}
                 </button>
               </div>
             </div>
@@ -2726,9 +2946,211 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
           <div className={`rounded-[28px] border border-line/80 ${isPageSurface ? "theme-surface-panel p-6" : "theme-surface-soft p-5"}`}>
             <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="eyebrow text-muted">Shared knowledge</p>
+                <p className="eyebrow text-muted">{literal("Assistant profiles")}</p>
                 <p className="mt-2 text-sm text-muted">
-                  Save reusable context snippets here so the AI can pull them into a reply when they match the request.
+                  {literal("Create specialist assistant presets that bundle a target model, system prompt, and grounding behavior into one reusable option.")}
+                </p>
+              </div>
+              <button
+                className="ui-button ui-button-secondary w-full px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                disabled={isLoadingProfiles}
+                type="button"
+                onClick={refreshProfiles}
+              >
+                {isLoadingProfiles ? literal("Refreshing...") : literal("Refresh profiles")}
+              </button>
+            </div>
+
+            <div className="mt-4 rounded-[24px] bg-white px-4 py-4">
+              <div className="flex flex-col items-start gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+                <p className="text-sm font-semibold text-foreground">
+                  {editingProfileId ? literal("Edit assistant profile") : literal("New assistant profile")}
+                </p>
+                {editingProfileId ? (
+                  <button
+                    className="ui-button ui-button-secondary w-full px-4 py-2 text-sm sm:w-auto"
+                    type="button"
+                    onClick={resetProfileForm}
+                  >
+                    {literal("Cancel edit")}
+                  </button>
+                ) : null}
+              </div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <input
+                  className="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
+                  placeholder={literal("Profile name")}
+                  value={profileName}
+                  onChange={(event) => setProfileName(event.target.value)}
+                />
+                <input
+                  className="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
+                  placeholder={literal("Target model")}
+                  value={profileModel}
+                  onChange={(event) => setProfileModel(event.target.value)}
+                />
+              </div>
+              <textarea
+                className="mt-3 min-h-24 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
+                placeholder={literal("Short description")}
+                value={profileDescription}
+                onChange={(event) => setProfileDescription(event.target.value)}
+              />
+              <div className="mt-3 rounded-2xl border border-line/80 bg-[var(--panel)]/60 px-4 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-foreground">{literal("Provider target")}</p>
+                  <p className="text-xs text-muted">{literal("Use this when a specialist should prefer a local or hosted provider by default.")}</p>
+                </div>
+                <div className="-mx-1 mt-3 flex gap-2 overflow-x-auto px-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
+                  {KNOWLEDGE_PROVIDER_OPTIONS.map((provider) => (
+                    <button
+                      key={`profile-${provider.id}`}
+                      className={`ui-button ui-button-chip shrink-0 px-3 py-2 text-xs ${
+                        profileProviderId === provider.id ? "ui-button-primary" : "ui-button-secondary"
+                      }`}
+                      type="button"
+                      onClick={() => setProfileProviderId(provider.id)}
+                    >
+                      {formatProviderLabel(provider.id, activeUiLanguage)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <textarea
+                className="mt-3 min-h-32 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
+                placeholder={literal("System prompt for this specialist")}
+                value={profileSystemPrompt}
+                onChange={(event) => setProfileSystemPrompt(event.target.value)}
+              />
+              <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                <label className="rounded-2xl border border-line/80 bg-[var(--panel)]/60 px-4 py-3 text-sm text-foreground">
+                  <span className="block font-semibold text-foreground">{literal("Profile temperature")}</span>
+                  <span className="mt-1 block text-xs text-muted">{literal("Lower stays steadier. Higher allows more variation.")}</span>
+                  <input
+                    className="mt-3 w-full accent-[var(--accent)]"
+                    max="1.5"
+                    min="0"
+                    step="0.1"
+                    type="range"
+                    value={profileTemperature}
+                    onChange={(event) => setProfileTemperature(Number(event.target.value))}
+                  />
+                </label>
+                <span className="ui-pill ui-pill-soft border border-line text-xs text-muted">
+                  {profileTemperature.toFixed(1)}
+                </span>
+              </div>
+              <div className="mt-3 rounded-2xl border border-line/80 bg-[var(--panel)]/60 px-4 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">{literal("Grounding preset")}</p>
+                    <p className="mt-1 text-xs text-muted">{literal("Decide whether this specialist should use shared knowledge and how strict that grounding should be.")}</p>
+                  </div>
+                  <button
+                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                      profileUseKnowledge ? "bg-[var(--accent)] text-white" : "border border-line bg-white text-foreground"
+                    }`}
+                    type="button"
+                    onClick={() => setProfileUseKnowledge((current) => !current)}
+                  >
+                    {profileUseKnowledge ? literal("Knowledge on") : literal("Knowledge off")}
+                  </button>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {(["balanced", "strict"] as const).map((mode) => (
+                    <button
+                      key={`profile-grounding-${mode}`}
+                      className={`ui-button ui-button-chip shrink-0 px-3 py-2 text-xs ${
+                        profileUseKnowledge && profileGroundingMode === mode ? "ui-button-primary" : "ui-button-secondary"
+                      } disabled:cursor-not-allowed disabled:opacity-50`}
+                      disabled={!profileUseKnowledge}
+                      type="button"
+                      onClick={() => setProfileGroundingMode(mode)}
+                    >
+                      {formatGroundingModeLabel(mode, activeUiLanguage)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {profileSummary ? (
+                <div className={`mt-3 rounded-2xl px-4 py-3 text-sm ${profileSummaryTone === "success" ? "border border-emerald-200 bg-emerald-50/90 text-emerald-950" : "border border-amber-200 bg-amber-50/90 text-amber-950"}`}>
+                  {profileSummary}
+                </div>
+              ) : null}
+              <button
+                className="ui-button ui-button-primary mt-3 w-full px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                disabled={isSavingProfile}
+                type="button"
+                onClick={() => {
+                  void saveProfile();
+                }}
+              >
+                {isSavingProfile ? literal("Saving...") : editingProfileId ? literal("Update profile") : literal("Save profile")}
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {workspaceProfiles.length > 0 ? workspaceProfiles.map((profile) => (
+                <div key={profile.id} className="rounded-[24px] bg-white px-4 py-4">
+                  <div className="flex flex-col items-start gap-3 sm:flex-row sm:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">{profile.name}</p>
+                      <p className="mt-1 text-xs text-muted">
+                        {literal("{provider} · {model} · updated {date}", {
+                          provider: formatProviderLabel(profile.providerId, activeUiLanguage),
+                          model: profile.model,
+                          date: new Date(profile.updatedAt).toLocaleString(),
+                        })}
+                      </p>
+                    </div>
+                    <div className="flex w-full gap-2 sm:w-auto sm:flex-wrap">
+                      <button
+                        className="ui-button ui-button-chip ui-button-secondary flex-1 px-3 py-2 text-xs sm:flex-none"
+                        type="button"
+                        onClick={() => startEditingProfile(profile)}
+                      >
+                        {literal("Edit")}
+                      </button>
+                      <button
+                        className="ui-button ui-button-chip ui-button-danger flex-1 px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none"
+                        disabled={busyProfileId === profile.id}
+                        type="button"
+                        onClick={() => {
+                          void deleteProfile(profile.id);
+                        }}
+                      >
+                        {busyProfileId === profile.id ? literal("Deleting...") : literal("Delete")}
+                      </button>
+                    </div>
+                  </div>
+                  {profile.description ? (
+                    <p className="mt-3 text-sm leading-6 text-muted">{profile.description}</p>
+                  ) : null}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <span className="ui-pill ui-pill-neutral border border-line text-xs text-muted">
+                      {profile.useKnowledge
+                        ? literal("Knowledge {mode}", { mode: formatGroundingModeLabel(profile.groundingMode, activeUiLanguage).toLowerCase() })
+                        : literal("Knowledge off")}
+                    </span>
+                    <span className="ui-pill ui-pill-neutral border border-line text-xs text-muted">
+                      {literal("Temp {value}", { value: profile.temperature.toFixed(1) })}
+                    </span>
+                  </div>
+                </div>
+              )) : (
+                <div className="rounded-[24px] border border-dashed border-line bg-white/45 px-4 py-4 text-sm text-muted">
+                  {literal("No assistant profiles yet.")}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className={`rounded-[28px] border border-line/80 ${isPageSurface ? "theme-surface-panel p-6" : "theme-surface-soft p-5"}`}>
+            <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="eyebrow text-muted">{literal("Shared knowledge")}</p>
+                <p className="mt-2 text-sm text-muted">
+                  {literal("Save reusable context snippets here so the AI can pull them into a reply when they match the request.")}
                 </p>
               </div>
               <button
@@ -2738,14 +3160,14 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                 type="button"
                 onClick={refreshKnowledgeEntries}
               >
-                {isLoadingKnowledge ? "Refreshing..." : "Refresh knowledge"}
+                {isLoadingKnowledge ? literal("Refreshing...") : literal("Refresh knowledge")}
               </button>
             </div>
 
             <div className="mt-4 rounded-[24px] bg-white px-4 py-4">
               <div className="flex flex-col items-start gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                 <p className="text-sm font-semibold text-foreground">
-                  {editingKnowledgeId ? "Edit knowledge entry" : "New knowledge entry"}
+                  {editingKnowledgeId ? literal("Edit knowledge entry") : literal("New knowledge entry")}
                 </p>
                 {editingKnowledgeId ? (
                   <button
@@ -2754,16 +3176,16 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                     type="button"
                     onClick={resetKnowledgeForm}
                   >
-                    Cancel edit
+                    {literal("Cancel edit")}
                   </button>
                 ) : null}
               </div>
               <div className="mt-3 rounded-2xl border border-line/80 bg-[var(--panel)]/60 px-4 py-4">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <p className="text-sm font-semibold text-foreground">Import knowledge</p>
+                    <p className="text-sm font-semibold text-foreground">{literal("Import knowledge")}</p>
                     <p className="mt-1 text-xs leading-5 text-muted">
-                      Pull content from a URL or upload a file and save it directly into shared knowledge. Supported uploads: txt, csv, xls, xlsx, doc, docx, pdf, and pptx.
+                      {literal("Pull content from a URL or upload a file and save it directly into shared knowledge. Supported uploads: txt, csv, xls, xlsx, doc, docx, pdf, and pptx.")}
                     </p>
                   </div>
                   <button
@@ -2772,14 +3194,14 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                     type="button"
                     onClick={() => knowledgeFileInputRef.current?.click()}
                   >
-                    {isImportingKnowledge ? "Importing..." : "Upload file"}
+                    {isImportingKnowledge ? literal("Importing...") : literal("Upload file")}
                   </button>
                 </div>
                 <div className="mt-3 flex flex-col gap-3 sm:flex-row">
                   <input
                     className="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
                     disabled={Boolean(editingKnowledgeId) || isImportingKnowledge || isSavingKnowledge}
-                    placeholder="Import from URL"
+                    placeholder={literal("Import from URL")}
                     value={knowledgeImportUrl}
                     onChange={(event) => setKnowledgeImportUrl(event.target.value)}
                   />
@@ -2791,7 +3213,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                       void importKnowledgeFromUrl();
                     }}
                   >
-                    {isImportingKnowledge ? "Importing..." : "Import URL"}
+                    {isImportingKnowledge ? literal("Importing...") : literal("Import URL")}
                   </button>
                 </div>
                 <input
@@ -2811,7 +3233,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                   }}
                 />
                 <p className="mt-3 text-xs leading-5 text-muted">
-                  Use the title, source, tags, provider scope, and model scope fields below if you want to override imported defaults. Legacy .ppt files should be re-saved as .pptx first.
+                  {literal("Use the title, source, tags, provider scope, and model scope fields below if you want to override imported defaults. Legacy .ppt files should be re-saved as .pptx first.")}
                 </p>
                 {knowledgeSummary ? (
                   <div className={`mt-3 rounded-2xl px-4 py-3 text-sm ${knowledgeSummaryTone === "success" ? "border border-emerald-200 bg-emerald-50/90 text-emerald-950" : "border border-amber-200 bg-amber-50/90 text-amber-950"}`}>
@@ -2822,31 +3244,31 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
               <input
                 ref={knowledgeTitleInputRef}
                 className="mt-3 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
-                placeholder="Entry title"
+                placeholder={literal("Entry title")}
                 value={knowledgeTitle}
                 onChange={(event) => setKnowledgeTitle(event.target.value)}
               />
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 <input
                   className="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
-                  placeholder="Source label"
+                  placeholder={literal("Source label")}
                   value={knowledgeSource}
                   onChange={(event) => setKnowledgeSource(event.target.value)}
                 />
                 <input
                   className="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
-                  placeholder="Tags, comma-separated"
+                  placeholder={literal("Tags, comma-separated")}
                   value={knowledgeTags}
                   onChange={(event) => setKnowledgeTags(event.target.value)}
                 />
               </div>
               <div className="mt-3 rounded-2xl border border-line/80 bg-[var(--panel)]/60 px-4 py-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-foreground">Provider scope</p>
+                  <p className="text-sm font-semibold text-foreground">{literal("Provider scope")}</p>
                   <p className="text-xs text-muted">
                     {knowledgeProviderIds.length > 0
-                      ? `${knowledgeProviderIds.length} provider${knowledgeProviderIds.length === 1 ? "" : "s"} selected`
-                      : "Empty means all providers"}
+                      ? literal("{count} provider(s) selected", { count: knowledgeProviderIds.length })
+                      : literal("Empty means all providers")}
                   </p>
                 </div>
                 <div className="-mx-1 mt-3 flex gap-2 overflow-x-auto px-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
@@ -2862,7 +3284,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                         type="button"
                         onClick={() => toggleKnowledgeProviderScope(provider.id)}
                       >
-                        {provider.label}
+                        {formatProviderLabel(provider.id, activeUiLanguage)}
                       </button>
                     );
                   })}
@@ -2870,17 +3292,17 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
               </div>
               <input
                 className="mt-3 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
-                placeholder="Model scope, comma-separated exact model names"
+                placeholder={literal("Model scope, comma-separated exact model names")}
                 value={knowledgeModelIds}
                 onChange={(event) => setKnowledgeModelIds(event.target.value)}
               />
               <div className="mt-3 rounded-2xl border border-line/80 bg-[var(--panel)]/60 px-4 py-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-foreground">Known models</p>
+                  <p className="text-sm font-semibold text-foreground">{literal("Known models")}</p>
                   <p className="text-xs text-muted">
                     {isLoadingKnowledgeModelSuggestions
-                      ? "Loading suggestions..."
-                      : "Tap to add or remove exact model names"}
+                      ? literal("Loading suggestions...")
+                      : literal("Tap to add or remove exact model names")}
                   </p>
                 </div>
                 <div className="-mx-1 mt-3 flex gap-2 overflow-x-auto px-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
@@ -2900,26 +3322,26 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                       </button>
                     );
                   }) : (
-                    <span className="text-xs text-muted">No model suggestions are available for the current provider scope yet.</span>
+                    <span className="text-xs text-muted">{literal("No model suggestions are available for the current provider scope yet.")}</span>
                   )}
                 </div>
               </div>
               <textarea
                 className="mt-3 min-h-32 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
-                placeholder="Shared context content"
+                placeholder={literal("Shared context content")}
                 value={knowledgeContent}
                 onChange={(event) => setKnowledgeContent(event.target.value)}
               />
               {isCheckingKnowledgeOverlaps || knowledgeOverlapResults.length > 0 ? (
                 <div className="mt-3 rounded-2xl border border-line/80 bg-[var(--panel)]/60 px-4 py-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-sm font-semibold text-foreground">Potential overlap</p>
+                    <p className="text-sm font-semibold text-foreground">{literal("Potential overlap")}</p>
                     <p className="text-xs text-muted">
                       {isCheckingKnowledgeOverlaps
-                        ? "Checking existing entries..."
+                        ? literal("Checking existing entries...")
                         : knowledgeOverlapResults.length > 0
-                          ? "Warnings only. Saving still works."
-                          : "No close overlap found."}
+                          ? literal("Warnings only. Saving still works.")
+                          : literal("No close overlap found.")}
                     </p>
                   </div>
                   {knowledgeOverlapResults.length > 0 ? (
@@ -2929,27 +3351,30 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                           <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
                               <p className="text-sm font-semibold text-foreground">{entry.title}</p>
-                              <p className="mt-1 text-xs text-muted">{entry.source} · overlap score {entry.overlapScore}</p>
+                              <p className="mt-1 text-xs text-muted">{literal("{source} · overlap score {score}", { source: entry.source, score: entry.overlapScore })}</p>
                             </div>
                             <span className="ui-pill ui-pill-soft border border-line text-xs text-muted">
-                              {formatKnowledgeOverlapScope(entry.breakdown.scopeOverlap)}
+                              {formatKnowledgeOverlapScope(entry.breakdown.scopeOverlap, activeUiLanguage)}
                             </span>
                           </div>
                           <div className="mt-3 flex flex-wrap gap-2">
                             {entry.breakdown.exactTitleMatch ? (
-                              <span className="ui-pill ui-pill-neutral border border-line text-xs text-muted">Exact title match</span>
+                              <span className="ui-pill ui-pill-neutral border border-line text-xs text-muted">{literal("Exact title match")}</span>
                             ) : null}
                             {entry.breakdown.exactContentMatch ? (
-                              <span className="ui-pill ui-pill-neutral border border-line text-xs text-muted">Exact content match</span>
+                              <span className="ui-pill ui-pill-neutral border border-line text-xs text-muted">{literal("Exact content match")}</span>
                             ) : null}
                             {entry.breakdown.sharedTags.map((tag) => (
                               <span key={tag} className="ui-pill ui-pill-neutral border border-line text-xs text-muted">
-                                Shared tag: {tag}
+                                {literal("Shared tag: {tag}", { tag })}
                               </span>
                             ))}
                           </div>
                           <p className="mt-3 text-xs leading-6 text-muted">
-                            Title similarity {Math.round(entry.breakdown.titleSimilarity * 100)}% · Content similarity {Math.round(entry.breakdown.contentSimilarity * 100)}%
+                            {literal("Title similarity {title}% · Content similarity {content}%", {
+                              title: Math.round(entry.breakdown.titleSimilarity * 100),
+                              content: Math.round(entry.breakdown.contentSimilarity * 100),
+                            })}
                           </p>
                           <div className="mt-3 flex flex-wrap gap-2">
                             <button
@@ -2958,7 +3383,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                               type="button"
                               onClick={() => startEditingKnowledgeEntry(entry)}
                             >
-                              {editingKnowledgeId === entry.id ? "Editing this note" : "Edit existing note"}
+                              {editingKnowledgeId === entry.id ? literal("Editing this note") : literal("Edit existing note")}
                             </button>
                           </div>
                           <p className="mt-2 text-sm leading-6 text-muted">{entry.content}</p>
@@ -2976,7 +3401,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                   void saveKnowledgeEntry();
                 }}
               >
-                {isSavingKnowledge ? "Saving..." : editingKnowledgeId ? "Update knowledge entry" : "Save knowledge entry"}
+                {isSavingKnowledge ? literal("Saving...") : editingKnowledgeId ? literal("Update knowledge entry") : literal("Save knowledge entry")}
               </button>
             </div>
 
@@ -2994,7 +3419,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                         type="button"
                         onClick={() => startEditingKnowledgeEntry(entry)}
                       >
-                        Edit
+                        {literal("Edit")}
                       </button>
                       <button
                         className="ui-button ui-button-chip ui-button-danger flex-1 px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none"
@@ -3004,7 +3429,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                           void deleteKnowledgeEntry(entry.id);
                         }}
                       >
-                        {busyKnowledgeId === entry.id ? "Deleting..." : "Delete"}
+                        {busyKnowledgeId === entry.id ? literal("Deleting...") : literal("Delete")}
                       </button>
                     </div>
                   </div>
@@ -3020,20 +3445,20 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                   <div className="mt-3 flex flex-wrap gap-2">
                     <span className="ui-pill ui-pill-neutral border border-line text-xs text-muted">
                       {entry.providerIds.length > 0
-                        ? `Providers: ${formatKnowledgeProviderScope(entry.providerIds)}`
-                        : "Providers: all"}
+                        ? literal("Providers: {scope}", { scope: formatKnowledgeProviderScope(entry.providerIds, activeUiLanguage) })
+                        : literal("Providers: all")}
                     </span>
                     <span className="ui-pill ui-pill-neutral border border-line text-xs text-muted">
                       {entry.modelIds.length > 0
-                        ? `Models: ${entry.modelIds.join(", ")}`
-                        : "Models: all"}
+                        ? literal("Models: {models}", { models: entry.modelIds.join(", ") })
+                        : literal("Models: all")}
                     </span>
                   </div>
                   <p className="mt-3 text-sm leading-6 text-muted">{entry.content}</p>
                 </div>
               )) : (
                 <div className="rounded-[24px] border border-dashed border-line bg-white/45 px-4 py-4 text-sm text-muted">
-                  No shared knowledge entries yet.
+                  {literal("No shared knowledge entries yet.")}
                 </div>
               )}
             </div>
@@ -3041,9 +3466,9 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
             <div className="mt-4 rounded-[24px] bg-white px-4 py-4">
               <div className="flex flex-col items-start gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                 <div>
-                  <p className="text-sm font-semibold text-foreground">Retrieval debugger</p>
+                  <p className="text-sm font-semibold text-foreground">{literal("Retrieval debugger")}</p>
                   <p className="mt-1 text-xs text-muted">
-                    Test a prompt against the shared knowledge index and inspect why each result ranked.
+                    {literal("Test a prompt against the shared knowledge index and inspect why each result ranked.")}
                   </p>
                 </div>
                 <button
@@ -3054,13 +3479,13 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                     void runKnowledgeDebugSearch();
                   }}
                 >
-                  {isRunningKnowledgeDebug ? "Checking..." : "Run debug search"}
+                  {isRunningKnowledgeDebug ? literal("Checking...") : literal("Run debug search")}
                 </button>
               </div>
               <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
                 <input
                   className="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
-                  placeholder="Ask what should match, for example: anthropic scope checklist"
+                  placeholder={literal("Ask what should match, for example: anthropic scope checklist")}
                   value={knowledgeDebugQuery}
                   onChange={(event) => setKnowledgeDebugQuery(event.target.value)}
                 />
@@ -3069,15 +3494,15 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                   value={knowledgeDebugProviderId}
                   onChange={(event) => setKnowledgeDebugProviderId(event.target.value as AiProviderId | "all")}
                 >
-                  <option value="all">All providers</option>
+                  <option value="all">{literal("All providers")}</option>
                   {KNOWLEDGE_PROVIDER_OPTIONS.map((provider) => (
-                    <option key={provider.id} value={provider.id}>{provider.label}</option>
+                    <option key={provider.id} value={provider.id}>{formatProviderLabel(provider.id, activeUiLanguage)}</option>
                   ))}
                 </select>
               </div>
               <input
                 className="mt-3 w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
-                placeholder="Optional exact model name, for example: claude-haiku-4-5"
+                placeholder={literal("Optional exact model name, for example: claude-haiku-4-5")}
                 value={knowledgeDebugModelId}
                 onChange={(event) => setKnowledgeDebugModelId(event.target.value)}
               />
@@ -3094,7 +3519,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                     {modelId}
                   </button>
                 )) : (
-                  <span className="text-xs text-muted">No model suggestions are available for this debug scope yet.</span>
+                  <span className="text-xs text-muted">{literal("No model suggestions are available for this debug scope yet.")}</span>
                 )}
               </div>
               <div className="mt-4 space-y-3">
@@ -3104,42 +3529,49 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                       <div>
                         <p className="text-sm font-semibold text-foreground">{entry.title}</p>
                         <p className="mt-1 text-xs text-muted">
-                          Score {entry.score} · {entry.source} · {formatKnowledgeProviderScope(entry.providerIds)}
+                          {literal("Score {score} · {source} · {scope}", {
+                            score: entry.score,
+                            source: entry.source,
+                            scope: formatKnowledgeProviderScope(entry.providerIds, activeUiLanguage),
+                          })}
                         </p>
                         <p className="mt-1 text-xs text-muted">
-                          {entry.modelIds.length > 0 ? `Model scope: ${entry.modelIds.join(", ")}` : "Model scope: all"}
+                          {entry.modelIds.length > 0 ? literal("Model scope: {models}", { models: entry.modelIds.join(", ") }) : literal("Model scope: all")}
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-2 text-xs text-muted">
-                        <span className="ui-pill ui-pill-neutral border border-line">phrase {entry.breakdown.exactPhraseBonus}</span>
-                        <span className="ui-pill ui-pill-neutral border border-line">all tokens {entry.breakdown.allTokenBonus}</span>
-                        <span className="ui-pill ui-pill-neutral border border-line">tag bonus {entry.breakdown.exactTagBonus}</span>
+                        <span className="ui-pill ui-pill-neutral border border-line">{literal("phrase {value}", { value: entry.breakdown.exactPhraseBonus })}</span>
+                        <span className="ui-pill ui-pill-neutral border border-line">{literal("all tokens {value}", { value: entry.breakdown.allTokenBonus })}</span>
+                        <span className="ui-pill ui-pill-neutral border border-line">{literal("tag bonus {value}", { value: entry.breakdown.exactTagBonus })}</span>
                       </div>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted">
-                      <span className="ui-pill ui-pill-soft border border-line">title {entry.breakdown.titleScore}</span>
-                      <span className="ui-pill ui-pill-soft border border-line">tags {entry.breakdown.tagsScore}</span>
-                      <span className="ui-pill ui-pill-soft border border-line">source {entry.breakdown.sourceScore}</span>
-                      <span className="ui-pill ui-pill-soft border border-line">chunk {entry.breakdown.chunkScore}</span>
+                      <span className="ui-pill ui-pill-soft border border-line">{literal("title {value}", { value: entry.breakdown.titleScore })}</span>
+                      <span className="ui-pill ui-pill-soft border border-line">{literal("tags {value}", { value: entry.breakdown.tagsScore })}</span>
+                      <span className="ui-pill ui-pill-soft border border-line">{literal("source {value}", { value: entry.breakdown.sourceScore })}</span>
+                      <span className="ui-pill ui-pill-soft border border-line">{literal("chunk {value}", { value: entry.breakdown.chunkScore })}</span>
                       {entry.breakdown.duplicatePenalty > 0 ? (
                         <span className="ui-pill ui-pill-soft border border-line">
-                          duplicate penalty -{entry.breakdown.duplicatePenalty}
+                          {literal("duplicate penalty -{value}", { value: entry.breakdown.duplicatePenalty })}
                         </span>
                       ) : null}
                     </div>
                     {entry.breakdown.duplicatePenalty > 0 && entry.breakdown.duplicateReferenceTitle ? (
                       <p className="mt-3 text-xs leading-6 text-muted">
-                        Suppressed against {entry.breakdown.duplicateReferenceTitle} (overlap {entry.breakdown.duplicateReferenceScore}).
+                        {literal("Suppressed against {title} (overlap {score}).", {
+                          title: entry.breakdown.duplicateReferenceTitle,
+                          score: entry.breakdown.duplicateReferenceScore,
+                        })}
                       </p>
                     ) : null}
                     {entry.breakdown.matchedTokens.length > 0 ? (
                       <p className="mt-3 text-xs leading-6 text-muted">
-                        Matched tokens: {entry.breakdown.matchedTokens.join(", ")}
+                        {literal("Matched tokens: {tokens}", { tokens: entry.breakdown.matchedTokens.join(", ") })}
                       </p>
                     ) : null}
                     {entry.breakdown.matchedTags.length > 0 ? (
                       <p className="mt-1 text-xs leading-6 text-muted">
-                        Exact tag hits: {entry.breakdown.matchedTags.join(", ")}
+                        {literal("Exact tag hits: {tags}", { tags: entry.breakdown.matchedTags.join(", ") })}
                       </p>
                     ) : null}
                     <p className="mt-3 text-sm leading-6 text-muted">{entry.content}</p>
@@ -3147,8 +3579,8 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                 )) : (
                   <div className="rounded-[22px] border border-dashed border-line bg-white/45 px-4 py-4 text-sm text-muted">
                     {knowledgeDebugQuery.trim()
-                      ? "No ranked matches yet for this debug search."
-                      : "Run a debug search to inspect how the shared knowledge index ranks entries."}
+                      ? literal("No ranked matches yet for this debug search.")
+                      : literal("Run a debug search to inspect how the shared knowledge index ranks entries.")}
                   </div>
                 )}
               </div>
@@ -3158,9 +3590,9 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
           <div className={`rounded-[28px] border border-line/80 ${isPageSurface ? "theme-surface-panel p-6" : "theme-surface-soft p-5"}`}>
             <div className="flex flex-col items-start gap-3 sm:flex-row sm:justify-between">
               <div>
-                <p className="eyebrow text-muted">Workspace backup</p>
+                <p className="eyebrow text-muted">{literal("Workspace backup")}</p>
                 <p className="mt-2 text-sm text-muted">
-                  Export or restore the local users, conversations, activity log, and job history for this machine.
+                  {literal("Export or restore the local users, conversations, activity log, and job history for this machine.")}
                 </p>
               </div>
               <button
@@ -3169,23 +3601,23 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                 type="button"
                 onClick={exportWorkspaceBackup}
               >
-                {isExportingBackup ? "Exporting..." : "Export backup"}
+                {isExportingBackup ? literal("Exporting...") : literal("Export backup")}
               </button>
             </div>
 
             <div className="mt-4 rounded-[24px] bg-amber-50 px-4 py-4 text-sm text-amber-950">
-              Backup files are sensitive. They include local account metadata and the credential hashes required to restore sign-in access on this machine.
+              {literal("Backup files are sensitive. They include local account metadata and the credential hashes required to restore sign-in access on this machine.")}
             </div>
 
             <p className="mt-3 text-sm text-muted">
-              Keep exported backups in a trusted location and only restore files from sources you control.
+              {literal("Keep exported backups in a trusted location and only restore files from sources you control.")}
             </p>
 
             {pendingBackupSnapshot ? (
               <div className="mt-4 rounded-[24px] border border-amber-200 bg-amber-50/70 px-4 py-4 text-sm text-amber-950">
-                <p className="font-semibold">Restore replaces the current local workspace state.</p>
+                <p className="font-semibold">{literal("Restore replaces the current local workspace state.")}</p>
                 <p className="mt-2 leading-6">
-                  Users, conversations, activity events, and job history on this machine will be overwritten by the selected backup.
+                  {literal("Users, conversations, activity events, and job history on this machine will be overwritten by the selected backup.")}
                 </p>
                 <label className="mt-4 flex items-start gap-3 text-sm text-foreground">
                   <input
@@ -3195,7 +3627,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                     onChange={(event) => setBackupRestoreConfirmed(event.target.checked)}
                   />
                   <span>
-                    I understand this restore overwrites the current local workspace data and may sign out or change the access level of the current user.
+                    {literal("I understand this restore overwrites the current local workspace data and may sign out or change the access level of the current user.")}
                   </span>
                 </label>
               </div>
@@ -3214,7 +3646,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                 type="button"
                 onClick={() => backupImportInputRef.current?.click()}
               >
-                Choose backup file
+                {literal("Choose backup file")}
               </button>
               {pendingBackupSnapshot ? (
                 <button
@@ -3222,27 +3654,27 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                   type="button"
                   onClick={clearPendingBackupSelection}
                 >
-                  Clear selected backup
+                  {literal("Clear selected backup")}
                 </button>
               ) : null}
               <button
-                aria-label={pendingBackupSnapshot ? "Confirm restore workspace backup" : "Restore workspace backup"}
+                aria-label={pendingBackupSnapshot ? literal("Confirm restore workspace backup") : literal("Restore workspace backup")}
                 className="ui-button ui-button-primary w-full px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                 disabled={!pendingBackupSnapshot || !backupRestoreConfirmed || isImportingBackup}
                 type="button"
                 onClick={importWorkspaceBackup}
               >
                 {isImportingBackup
-                  ? "Restoring..."
+                  ? literal("Restoring...")
                   : pendingBackupSnapshot
-                    ? "Confirm restore backup"
-                    : "Restore backup"}
+                    ? literal("Confirm restore backup")
+                    : literal("Restore backup")}
               </button>
             </div>
 
             {pendingBackupFileName ? (
               <p className="mt-3 text-xs text-muted">
-                Selected backup: {pendingBackupFileName}
+                {literal("Selected backup: {fileName}", { fileName: pendingBackupFileName })}
               </p>
             ) : null}
           </div>

@@ -24,6 +24,116 @@
 			"isBackground": true,
 			"problemMatcher": [],
 			"group": "build"
+		},
+		{
+			"label": "auth spec validation",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"set PLAYWRIGHT_TEST=1&& set OLOAD_SESSION_SECRET=playwright-session-secret&& npm run test:e2e -- tests/e2e/auth.spec.ts --reporter=line"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "auth spec validation retry",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"set PLAYWRIGHT_TEST=1&& set OLOAD_SESSION_SECRET=playwright-session-secret&& npm run test:e2e -- tests/e2e/auth.spec.ts --reporter=line"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "repo lint validation",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"npm run lint"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "repo build validation",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"npm run build"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "full e2e validation",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"set PLAYWRIGHT_TEST=1&& set OLOAD_SESSION_SECRET=playwright-session-secret&& npm run test:e2e -- --reporter=line"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "minify ui literal translations",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"node -e \"const fs=require('node:fs');const vm=require('node:vm');const path='src\\\\lib\\\\ui-language.ts';const source=fs.readFileSync(path,'utf8');const marker='const UI_LITERAL_TRANSLATIONS: Record<string, Partial<Record<ResolvedUiLanguage, string>>> = ';const start=source.indexOf(marker);const end=source.indexOf('\\n\\ntype UiTranslationKey =');if(start<0||end<0||end<=start) throw new Error('Could not locate UI literal translations block.');const objectText=source.slice(start+marker.length,end).trim().replace(/;$/,'');const parsed=vm.runInNewContext('('+objectText+')');const replacement=marker+JSON.stringify(parsed)+';\\n';fs.writeFileSync(path,source.slice(0,start)+replacement+source.slice(end),'utf8');\""
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "run ui literal minifier",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"node scripts\\tmp-minify-ui-language.mjs"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "run ui literal minifier",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"node scripts\\tmp-minify-ui-language.mjs"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "split ui literal translations",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"node scripts\\tmp-split-ui-language-literals.mjs"
+			],
+			"isBackground": false,
+			"group": "build"
+		},
+		{
+			"label": "convert ui literal translations to json",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"node scripts\\tmp-convert-ui-language-literals-to-json.mjs"
+			],
+			"isBackground": false,
+			"group": "build"
 		}
 	]
 }

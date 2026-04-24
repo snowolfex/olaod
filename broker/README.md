@@ -2,6 +2,14 @@
 
 Minimal Google auth broker for downloadable oload installs.
 
+Technical:
+
+- The broker owns Google OAuth on a stable hosted domain and exchanges approved login requests back to local Oload instances through short-lived request IDs.
+
+Layman's terms:
+
+- This service acts like a middleman for Google sign-in when the app is running on many different local or temporary addresses.
+
 ## What it does
 
 - Owns the single Google OAuth app registration
@@ -9,6 +17,14 @@ Minimal Google auth broker for downloadable oload installs.
 - Sends the user through Google sign-in on a stable broker domain
 - Stores the approved Google identity against a request ID
 - Lets the local app poll status and exchange an approved request for identity data
+
+Technical:
+
+- Use this broker only when direct popup sign-in on `http://localhost:3000` is not enough for your deployment model.
+
+Layman's terms:
+
+- If the app always lives on the normal localhost install URL, you usually do not need this extra service. Use it when sign-in has to work across changing hosts, ports, or public URLs.
 
 ## Run locally
 

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { execFile, spawn } from "node:child_process";
+import { freemem, totalmem } from "node:os";
 import { promisify } from "node:util";
 
 import {
@@ -11,6 +12,7 @@ import { getOllamaCliStatus, getOllamaProcessStatus, getOllamaStatus } from "@/l
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_OLLAMA_HOST = "127.0.0.1:11434";
+const GIB = 1024 ** 3;
 let serverStartPromise: Promise<OllamaStatus> | null = null;
 
 function getCliHost() {
@@ -19,6 +21,100 @@ function getCliHost() {
   } catch {
     return DEFAULT_OLLAMA_HOST;
   }
+}
+
+function normalizeModelName(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function formatMemory(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "0 GB";
+  }
+
+  if (bytes >= GIB) {
+    return `${(bytes / GIB).toFixed(bytes >= 10 * GIB ? 0 : 1)} GB`;
+  }
+
+  return `${Math.max(1, Math.round(bytes / (1024 ** 2)))} MB`;
+}
+
+function resolveInstalledModelEstimate(status: OllamaStatus, modelName: string) {
+  const normalizedModelName = normalizeModelName(modelName);
+  const installedMatch = status.models.find((model) => normalizeModelName(model.name) === normalizedModelName);
+
+  return installedMatch?.size ?? 0;
+}
+
+function resolveRuntimeEstimate(status: OllamaStatus, runtime: OllamaStatus["running"][number]) {
+  if (typeof runtime.size_vram === "number" && runtime.size_vram > 0) {
+    return runtime.size_vram;
+  }
+
+  return resolveInstalledModelEstimate(status, runtime.model || runtime.name);
+}
+
+async function ensureModelCanStart(name: string) {
+  const status = await getOllamaStatus();
+  const normalizedModelName = normalizeModelName(name);
+  const targetEstimate = resolveInstalledModelEstimate(status, name);
+
+  if (!status.isReachable || targetEstimate <= 0) {
+    return;
+  }
+
+  const alreadyRunning = status.running.some((runtime) => {
+    return [runtime.model, runtime.name]
+      .filter((value): value is string => Boolean(value))
+      .some((value) => normalizeModelName(value) === normalizedModelName);
+  });
+
+  if (alreadyRunning) {
+    return;
+  }
+
+  const requiredBytes = Math.ceil(targetEstimate * 1.1);
+  const freeBytes = freemem();
+
+  if (freeBytes >= requiredBytes) {
+    return;
+  }
+
+  const stoppableRuntimes = status.running
+    .map((runtime) => ({
+      name: runtime.model || runtime.name,
+      estimatedBytes: resolveRuntimeEstimate(status, runtime),
+    }))
+    .filter((runtime) => runtime.name && normalizeModelName(runtime.name) !== normalizedModelName && runtime.estimatedBytes > 0)
+    .sort((left, right) => right.estimatedBytes - left.estimatedBytes);
+  const reclaimableBytes = stoppableRuntimes.reduce((sum, runtime) => sum + runtime.estimatedBytes, 0);
+
+  if (freeBytes + reclaimableBytes < requiredBytes) {
+    const totalBytes = totalmem();
+    const baseMessage = `Can't run ${name} because about ${formatMemory(requiredBytes)} is needed and only ${formatMemory(freeBytes)} is currently free.`;
+
+    if (reclaimableBytes > 0) {
+      throw new Error(`${baseMessage} Stopping every other running model would only free about ${formatMemory(reclaimableBytes)}, which still leaves this machine short${totalBytes > 0 ? ` on a ${formatMemory(totalBytes)} system` : ""}.`);
+    }
+
+    throw new Error(`${baseMessage} This machine does not have enough available memory for that model right now.`);
+  }
+
+  let releasedBytes = 0;
+  const suggestedStops: string[] = [];
+
+  for (const runtime of stoppableRuntimes) {
+    suggestedStops.push(`${runtime.name} (${formatMemory(runtime.estimatedBytes)})`);
+    releasedBytes += runtime.estimatedBytes;
+
+    if (freeBytes + releasedBytes >= requiredBytes) {
+      break;
+    }
+  }
+
+  throw new Error(
+    `Can't run ${name} because about ${formatMemory(requiredBytes)} is needed and only ${formatMemory(freeBytes)} is currently free. Stop ${suggestedStops.join(", ")} and try again.`,
+  );
 }
 
 
@@ -185,6 +281,7 @@ export async function startOllamaModel(name: string) {
   }
 
   await ensureOllamaServerRunning();
+  await ensureModelCanStart(modelName);
 
   try {
     await requestOllamaModelLoad(modelName);

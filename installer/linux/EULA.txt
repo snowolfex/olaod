@@ -1,0 +1,81 @@
+OLOAD END USER LICENSE AGREEMENT
+Copyright (c) 2026 Wolfe Dezines. All rights reserved.
+
+IMPORTANT: READ THIS AGREEMENT CAREFULLY BEFORE INSTALLING, COPYING, ACCESSING, OR USING OLOAD.
+
+BY ACCEPTING THIS AGREEMENT, INSTALLING, COPYING, ACCESSING, OR USING OLOAD, YOU AGREE TO BE BOUND BY THIS END USER LICENSE AGREEMENT ("AGREEMENT"). IF YOU DO NOT AGREE, DO NOT INSTALL, COPY, ACCESS, OR USE OLOAD.
+
+1. PARTIES AND SOFTWARE
+
+This Agreement is between you and Wolfe Dezines (the "Licensor") and governs your use of the Oload software, installer, updates, documentation, bundled assets, and related materials (collectively, the "Software").
+
+2. LIMITED LICENSE
+
+Subject to your continued compliance with this Agreement, Licensor grants you a limited, personal, non-exclusive, non-transferable, non-sublicensable, revocable license to install and use one or more copies of the Software solely for your own internal, personal, non-commercial use.
+
+3. RESTRICTIONS
+
+You may not, and may not permit any third party to:
+
+- use the Software for any commercial purpose or revenue-generating activity without Licensor's prior written permission;
+- sell, lease, license, sublicense, rent, distribute, publish, transfer, assign, disclose, or otherwise make the Software available to any third party;
+- redistribute the Software, whether modified or unmodified, in source form, object form, installer form, image form, container form, or as part of any package, product, or service;
+- modify, adapt, translate, enhance, create derivative works from, or prepare any expanded or altered version of the Software;
+- use the Software, in whole or in part, to build, train, seed, benchmark, create, improve, or distribute any competing or derivative software product, framework, platform, hosted service, or developer tool;
+- use the Software as a component in other software, services, appliances, or managed offerings;
+- remove, obscure, or alter any copyright, trademark, proprietary notice, or attribution included in or on the Software;
+- reverse engineer, decompile, disassemble, decode, or otherwise attempt to derive source, structure, or non-public implementation details of the Software, except to the limited extent such restriction is prohibited by applicable law;
+- circumvent or disable technical limitations, security protections, authentication controls, licensing controls, or usage restrictions in the Software;
+- use the Software in violation of any law, regulation, or third-party right.
+
+4. OWNERSHIP
+
+The Software is licensed, not sold. Licensor and its licensors retain all right, title, and interest in and to the Software, including all copyrights, trade secrets, trademarks, and all other intellectual property and proprietary rights. No rights are granted except as expressly stated in this Agreement.
+
+5. FEEDBACK
+
+If you provide suggestions, ideas, feedback, or improvement proposals regarding the Software, you grant Licensor a perpetual, irrevocable, worldwide, royalty-free right to use, reproduce, modify, and incorporate that feedback without restriction or compensation.
+
+6. UPDATES AND CHANGES
+
+Licensor may provide patches, updates, upgrades, or replacements in its sole discretion. Any such update is governed by this Agreement unless accompanied by separate terms. Licensor may change, suspend, or discontinue any part of the Software at any time.
+
+7. DATA, MODELS, AND THIRD-PARTY COMPONENTS
+
+You are solely responsible for any data, prompts, models, credentials, outputs, or third-party services you connect to or use with the Software. Third-party components may be governed by separate notices or licenses. Nothing in this Agreement enlarges any rights you may or may not have under those third-party terms.
+
+8. DISCLAIMER OF WARRANTIES
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE," WITH ALL FAULTS AND WITHOUT WARRANTIES OF ANY KIND. LICENSOR DISCLAIMS ALL WARRANTIES, WHETHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE, INCLUDING ANY IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, NON-INFRINGEMENT, QUIET ENJOYMENT, ACCURACY, AVAILABILITY, SECURITY, OR THAT THE SOFTWARE WILL BE ERROR-FREE OR UNINTERRUPTED.
+
+9. LIMITATION OF LIABILITY
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT WILL LICENSOR OR ITS AFFILIATES, OWNERS, OFFICERS, EMPLOYEES, CONTRACTORS, AGENTS, OR SUPPLIERS BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, PUNITIVE, OR CONSEQUENTIAL DAMAGES, OR FOR ANY LOSS OF PROFITS, REVENUE, BUSINESS, GOODWILL, USE, DATA, MODELS, OUTPUTS, OR OTHER INTANGIBLE LOSSES, ARISING OUT OF OR RELATED TO THIS AGREEMENT OR THE SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, LICENSOR'S TOTAL AGGREGATE LIABILITY ARISING OUT OF OR RELATING TO THIS AGREEMENT OR THE SOFTWARE WILL NOT EXCEED THE GREATER OF: (A) THE AMOUNT YOU PAID LICENSOR DIRECTLY FOR THE SOFTWARE IN THE TWELVE (12) MONTHS BEFORE THE CLAIM AROSE; OR (B) TEN UNITED STATES DOLLARS (US $10.00).
+
+10. HIGH-RISK AND REGULATED USES
+
+The Software is not designed, intended, or authorized for use in life-critical, safety-critical, medical, emergency-response, hazardous-environment, or other high-risk systems where failure could lead to death, personal injury, property damage, or severe environmental harm. You assume all risk for any such use.
+
+11. INDEMNITY
+
+You agree to defend, indemnify, and hold harmless Licensor and its affiliates, owners, officers, employees, contractors, agents, and suppliers from and against any claims, liabilities, damages, judgments, awards, losses, costs, and expenses, including reasonable attorneys' fees, arising out of or related to: (a) your use of the Software; (b) your breach of this Agreement; (c) your violation of law; or (d) your data, models, outputs, or connected third-party services.
+
+12. TERM AND TERMINATION
+
+This Agreement begins when you first install, access, copy, or use the Software and continues until terminated. It terminates automatically if you fail to comply with any term of this Agreement. Licensor may terminate this Agreement at any time upon notice where permitted by applicable law. Upon termination, you must immediately stop using the Software and delete or destroy all copies in your possession or control.
+
+13. EXPORT AND COMPLIANCE
+
+You agree to comply with all applicable export-control, sanctions, privacy, cybersecurity, and other laws and regulations in connection with your use of the Software.
+
+14. GOVERNING LAW
+
+This Agreement will be governed by and construed under the laws applicable in the jurisdiction selected by Licensor, without regard to conflict-of-laws principles, except where such choice is prohibited by applicable law. You agree that any dispute arising out of or relating to this Agreement or the Software will be resolved in the courts selected by Licensor to the extent permitted by law.
+
+15. ENTIRE AGREEMENT
+
+This Agreement is the entire agreement between you and Licensor regarding the Software and supersedes prior or contemporaneous understandings regarding the Software. If any provision is found unenforceable, the remaining provisions will remain in effect to the fullest extent permitted by law. Failure to enforce any provision is not a waiver.
+
+If you need commercial rights, redistribution rights, integration rights, OEM rights, or permission to build derivative or expanded software from Oload, you must obtain prior written permission from Wolfe Dezines.

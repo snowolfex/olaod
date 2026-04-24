@@ -1,9 +1,9 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { expect, test } from "@playwright/test";
 
-import { getCookieHeader, loginAndAuthenticateLocalUser, registerAndAuthenticateLocalUser, resetPlaywrightData } from "./helpers/local-auth";
+import { getCookieHeader, loginAndAuthenticateLocalUser, registerAndAuthenticateLocalUser, resetPlaywrightData, writeSharedJsonFixture } from "./helpers/local-auth";
 
 function getPlaywrightDataDir() {
   return path.join(process.cwd(), ".playwright-data");
@@ -48,30 +48,26 @@ async function seedJobHistory(requestedBy: string) {
 
   await Promise.all(getPlaywrightDataDirCandidates().map(async (dataDir) => {
     await mkdir(dataDir, { recursive: true });
-    await writeFile(
-      path.join(dataDir, "job-history.json"),
-      `${JSON.stringify([
-        {
-          id: "seeded-job-1",
-          type: "model.pull",
-          target: "phi3:mini",
-          status: "queued",
-          queuePosition: 1,
-          createdAt: now,
-          updatedAt: now,
-          requestedBy,
-          progressMessage: "Queued. Next to run.",
-          progressEntries: [
-            {
-              createdAt: now,
-              message: "Queued. Next to run.",
-              statusLabel: "queued",
-            },
-          ],
-        },
-      ], null, 2)}\n`,
-      "utf8",
-    );
+    await writeSharedJsonFixture(dataDir, "job-history.json", [
+      {
+        id: "seeded-job-1",
+        type: "model.pull",
+        target: "phi3:mini",
+        status: "queued",
+        queuePosition: 1,
+        createdAt: now,
+        updatedAt: now,
+        requestedBy,
+        progressMessage: "Queued. Next to run.",
+        progressEntries: [
+          {
+            createdAt: now,
+            message: "Queued. Next to run.",
+            statusLabel: "queued",
+          },
+        ],
+      },
+    ]);
   }));
 }
 
@@ -83,6 +79,15 @@ async function setDesktopWorkspacePageCookie(page: Parameters<Parameters<typeof 
       url: "http://127.0.0.1:3101",
     },
   ]);
+}
+
+async function reopenHome(page: Parameters<Parameters<typeof test>[1]>[0]["page"]) {
+  if (page.url().startsWith("http://127.0.0.1:3101") || page.url().startsWith("http://localhost:3101")) {
+    await page.reload();
+    return;
+  }
+
+  await page.goto("/");
 }
 
 test("supports admin registration, auth guardrails, and seeded jobs access", async ({ page, request }) => {
@@ -121,10 +126,10 @@ test("supports admin registration, auth guardrails, and seeded jobs access", asy
   });
 
   await setDesktopWorkspacePageCookie(page, "admin");
-  await page.goto("/");
-  await expect(page.getByText("Operations and access control")).toBeVisible();
+  await reopenHome(page);
+  await expect(page.getByRole("heading", { name: "Operations and access control" })).toBeVisible();
   await page.context().clearCookies();
-  await page.goto("/");
+  await reopenHome(page);
 
   await expect(page.getByRole("button", { name: "Sign in" }).first()).toBeVisible();
   await expect(page.getByRole("heading", { name: "Sign in to enter oload" })).toBeVisible();
@@ -141,7 +146,7 @@ test("supports admin registration, auth guardrails, and seeded jobs access", asy
     request,
   });
   await setDesktopWorkspacePageCookie(page, "admin");
-  await page.goto("/");
+  await reopenHome(page);
 
   await expect(page.getByLabel("Sign out")).toBeVisible();
   await expect(page.locator('[data-help-id="admin.models"]:visible')).toBeVisible();
@@ -182,9 +187,9 @@ test("lets admins require email verification on every login for local users", as
   expect(verifyRegistrationResponse.ok()).toBeTruthy();
 
   await setDesktopWorkspacePageCookie(page, "admin");
-  await page.goto("/");
+  await reopenHome(page);
 
-  await expect(page.getByText("Operations and access control")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Operations and access control" })).toBeVisible();
   await page.getByRole("button", { name: "Hide command deck" }).click();
   const operatorCard = page.getByText(operatorEmail, { exact: true }).locator("xpath=ancestor::div[contains(@class, 'rounded-[24px]')]").first();
   await expect(operatorCard).toBeVisible();

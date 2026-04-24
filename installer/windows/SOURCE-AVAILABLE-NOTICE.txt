@@ -1,0 +1,20 @@
+OLOAD SOURCE-AVAILABLE LICENSING NOTICE
+Copyright (c) 2026 Wolfe Dezines. All rights reserved.
+
+This installer presents a proprietary End User License Agreement for Oload.
+
+Important classification note:
+
+- Oload is not being offered under an OSI-approved open-source license.
+- A license that forbids commercial use, redistribution, derivative software, expansion, or field-of-use freedom is not open source under the Open Source Definition.
+- Because your requested restrictions include non-commercial-only use, no redistribution, and no derivative or competing software use, the correct category is source-available proprietary licensing, not open-source licensing.
+
+Personal-use position intended by this installer:
+
+- individual end users may install and use Oload for their own internal, personal, non-commercial use;
+- commercial deployment, hosted use, paid service use, internal business production use, redistribution, OEM packaging, resale, sublicensing, and integration into other software or services require prior written permission from Wolfe Dezines;
+- modification, expansion, derivative works, or use in creating other software products, platforms, frameworks, or services require prior written permission from Wolfe Dezines.
+
+If you want a known public reference point for a non-commercial source-available model, the closest family is source-available licensing such as PolyForm Noncommercial, but that family still does not match all of the additional restrictions requested here. For that reason, this installer uses a custom proprietary EULA plus this explanatory notice instead of mislabeling the terms as open source.
+
+Commercial, redistribution, integration, OEM, derivative, and partner rights are available only by separate written permission from Wolfe Dezines.

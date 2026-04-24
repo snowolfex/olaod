@@ -29,6 +29,9 @@ export async function POST(request: Request) {
         providerId?: "ollama" | "anthropic" | "openai";
         systemPrompt?: string;
         temperature?: number;
+        useKnowledge?: boolean;
+        groundingMode?: "off" | "balanced" | "strict";
+        assistantProfileId?: string | null;
       };
     };
     const currentUser = await getCurrentUser(request.headers.get("cookie"));
