@@ -169,7 +169,7 @@ export function HelpPanel({
 
     try {
       const appTheme = parseAppTheme(document.documentElement.dataset.theme);
-      const { PDFArray, PDFDocument, PDFName, PDFString, StandardFonts, rgb } = await import("pdf-lib");
+      const { PDFArray, PDFDocument, PDFName, PDFString, StandardFonts, degrees, rgb } = await import("pdf-lib");
       const pdfDocument = await PDFDocument.create();
       const regularFont = await pdfDocument.embedFont(StandardFonts.Helvetica);
       const boldFont = await pdfDocument.embedFont(StandardFonts.HelveticaBold);
@@ -378,6 +378,36 @@ export function HelpPanel({
         drawLines(wrapText(text, options?.maxCharacters ?? 84), options);
       };
 
+      const estimateWrappedHeight = (
+        text: string,
+        options?: {
+          lineHeight?: number;
+          maxCharacters?: number;
+          maxLines?: number;
+        },
+      ) => {
+        const wrappedLines = wrapText(text, options?.maxCharacters ?? 84);
+        const visibleLines = options?.maxLines ? wrappedLines.slice(0, options.maxLines) : wrappedLines;
+        return visibleLines.length * (options?.lineHeight ?? baseLineHeight) + 4;
+      };
+
+      const estimateSectionHeadingHeight = (minimumFollowingHeight = 54) => 26 + 10 + minimumFollowingHeight;
+
+      const drawDivider = (
+        x: number,
+        y: number,
+        width: number,
+        dividerColor: [number, number, number],
+        thickness = 1,
+      ) => {
+        page.drawLine({
+          start: { x, y },
+          end: { x: x + width, y },
+          thickness,
+          color: color(dividerColor),
+        });
+      };
+
       const drawPill = (
         label: string,
         x: number,
@@ -452,7 +482,7 @@ export function HelpPanel({
         };
       };
 
-      const drawLlamaMascot = (
+      const drawBrandMark = (
         x: number,
         topY: number,
         palette: (typeof contextPalette)[HelpContext],
@@ -462,108 +492,96 @@ export function HelpPanel({
           visor?: boolean;
           badge?: boolean;
           glow?: boolean;
+          scaleMultiplier?: number;
         },
       ) => {
         const accent = options?.accent ?? palette.accent;
+        const scale = 0.8 * (options?.scaleMultiplier ?? 1);
+        const px = (value: number) => x + value * scale;
+        const py = (value: number) => topY - value * scale;
+        const drawCircle = (
+          cx: number,
+          cy: number,
+          radius: number,
+          fillColor: [number, number, number],
+          opacity?: number,
+        ) => {
+          page.drawCircle({
+            x: px(cx),
+            y: py(cy),
+            size: radius * scale,
+            color: color(fillColor),
+            opacity,
+          });
+        };
+        const drawRect = (
+          left: number,
+          top: number,
+          width: number,
+          height: number,
+          fillColor: [number, number, number],
+          opacity?: number,
+        ) => {
+          page.drawRectangle({
+            x: px(left),
+            y: topY - (top + height) * scale,
+            width: width * scale,
+            height: height * scale,
+            color: color(fillColor),
+            opacity,
+          });
+        };
         const themeVariant = appTheme === "dark"
           ? {
-            wool: [0.4, 0.32, 0.3] as [number, number, number],
-            woolShadow: [0.27, 0.21, 0.2] as [number, number, number],
-            face: [0.71, 0.61, 0.52] as [number, number, number],
-            nose: [0.18, 0.12, 0.11] as [number, number, number],
-            eye: [0.08, 0.06, 0.05] as [number, number, number],
-            blush: [0.77, 0.6, 0.55] as [number, number, number],
-            hoof: [0.27, 0.21, 0.2] as [number, number, number],
+            ring: [0.95, 0.78, 0.56] as [number, number, number],
+            ringEdge: [0.94, 0.89, 0.83] as [number, number, number],
+            inner: [0.18, 0.14, 0.13] as [number, number, number],
+            letter: [0.93, 0.64, 0.36] as [number, number, number],
+            gloss: [1, 0.93, 0.86] as [number, number, number],
           }
           : appTheme === "tech"
             ? {
-              wool: [0.91, 0.86, 0.79] as [number, number, number],
-              woolShadow: [0.71, 0.64, 0.55] as [number, number, number],
-              face: [0.83, 0.75, 0.64] as [number, number, number],
-              nose: [0.35, 0.25, 0.21] as [number, number, number],
-              eye: [0.08, 0.1, 0.12] as [number, number, number],
-              blush: [0.8, 0.7, 0.62] as [number, number, number],
-              hoof: [0.38, 0.3, 0.27] as [number, number, number],
+              ring: [0.97, 0.82, 0.59] as [number, number, number],
+              ringEdge: [0.52, 0.9, 0.96] as [number, number, number],
+              inner: [0.93, 0.98, 1] as [number, number, number],
+              letter: [0.74, 0.4, 0.18] as [number, number, number],
+              gloss: [0.93, 1, 1] as [number, number, number],
             }
             : {
-              wool: [0.95, 0.89, 0.81] as [number, number, number],
-              woolShadow: [0.84, 0.72, 0.6] as [number, number, number],
-              face: [0.84, 0.74, 0.6] as [number, number, number],
-              nose: [0.42, 0.29, 0.22] as [number, number, number],
-              eye: [0.14, 0.1, 0.09] as [number, number, number],
-              blush: [0.94, 0.8, 0.76] as [number, number, number],
-              hoof: [0.46, 0.35, 0.29] as [number, number, number],
+              ring: [0.98, 0.86, 0.69] as [number, number, number],
+              ringEdge: [0.69, 0.36, 0.15] as [number, number, number],
+              inner: [1, 0.98, 0.95] as [number, number, number],
+              letter: [0.56, 0.27, 0.11] as [number, number, number],
+              gloss: [1, 0.96, 0.89] as [number, number, number],
             };
-        const wool = themeVariant.wool;
-        const woolShadow = themeVariant.woolShadow;
-        const face = themeVariant.face;
-        const nose = themeVariant.nose;
-        const eye = themeVariant.eye;
-        const blush = themeVariant.blush;
-        const hoof = themeVariant.hoof;
 
         if (options?.glow) {
-          page.drawCircle({ x: x + 70, y: topY - 60, size: 40, color: color(palette.soft), opacity: 0.75 });
+          drawCircle(90, 84, 46, palette.soft, 0.78);
         }
 
-        page.drawCircle({ x: x + 56, y: topY - 64, size: 18, color: color(woolShadow) });
-        page.drawCircle({ x: x + 76, y: topY - 64, size: 25, color: color(wool) });
-        page.drawCircle({ x: x + 98, y: topY - 63, size: 21, color: color(wool) });
-        page.drawCircle({ x: x + 80, y: topY - 84, size: 18, color: color(wool) });
-        page.drawCircle({ x: x + 86, y: topY - 76, size: 9, color: color(woolShadow), opacity: 0.35 });
-        page.drawCircle({ x: x + 92, y: topY - 84, size: 9, color: color(wool) });
-        page.drawCircle({ x: x + 113, y: topY - 41, size: 17, color: color(woolShadow) });
-        page.drawCircle({ x: x + 123, y: topY - 43, size: 20, color: color(wool) });
-        page.drawCircle({ x: x + 135, y: topY - 46, size: 10, color: color(woolShadow) });
-        page.drawCircle({ x: x + 122, y: topY - 33, size: 6, color: color(wool) });
-        page.drawCircle({ x: x + 131, y: topY - 35, size: 5, color: color(wool) });
-        page.drawCircle({ x: x + 122, y: topY - 45, size: 15, color: color(face) });
-        page.drawCircle({ x: x + 106, y: topY - 25, size: 8, color: color(wool) });
-        page.drawCircle({ x: x + 114, y: topY - 20, size: 7, color: color(wool) });
-        page.drawCircle({ x: x + 121, y: topY - 18, size: 6, color: color(wool) });
-        page.drawCircle({ x: x + 60, y: topY - 83, size: 8, color: color(wool) });
-        page.drawCircle({ x: x + 49, y: topY - 86, size: 7, color: color(wool) });
-
-        page.drawRectangle({ x: x + 61, y: topY - 107, width: 9, height: 24, color: color(hoof) });
-        page.drawRectangle({ x: x + 80, y: topY - 107, width: 9, height: 24, color: color(hoof) });
-        page.drawRectangle({ x: x + 98, y: topY - 107, width: 9, height: 24, color: color(hoof) });
-        page.drawRectangle({ x: x + 116, y: topY - 107, width: 9, height: 24, color: color(hoof) });
-        page.drawCircle({ x: x + 65.5, y: topY - 108, size: 4.5, color: color(hoof) });
-        page.drawCircle({ x: x + 84.5, y: topY - 108, size: 4.5, color: color(hoof) });
-        page.drawCircle({ x: x + 102.5, y: topY - 108, size: 4.5, color: color(hoof) });
-        page.drawCircle({ x: x + 120.5, y: topY - 108, size: 4.5, color: color(hoof) });
-
-        page.drawRectangle({ x: x + 47, y: topY - 88, width: 10, height: 30, color: color(wool) });
-        page.drawCircle({ x: x + 52, y: topY - 58, size: 5.5, color: color(wool) });
-        page.drawCircle({ x: x + 52, y: topY - 88, size: 5.5, color: color(wool) });
-        page.drawRectangle({ x: x + 49, y: topY - 86, width: 3, height: 25, color: color(woolShadow), opacity: 0.4 });
-
-        page.drawCircle({ x: x + 118, y: topY - 44, size: 2.5, color: color(eye) });
-        page.drawCircle({ x: x + 128, y: topY - 44, size: 2.5, color: color(eye) });
-        page.drawCircle({ x: x + 114, y: topY - 49, size: 2.6, color: color(blush), opacity: 0.45 });
-        page.drawCircle({ x: x + 132, y: topY - 49, size: 2.6, color: color(blush), opacity: 0.45 });
-        page.drawCircle({ x: x + 122, y: topY - 51, size: 3.1, color: color(nose) });
-        page.drawLine({
-          start: { x: x + 116, y: topY - 56 },
-          end: { x: x + 124, y: topY - 56 },
-          thickness: 1.4,
-          color: color(nose),
-        });
+        drawCircle(90, 84, 42, themeVariant.ring);
+        drawCircle(90, 84, 30, themeVariant.inner);
+        drawCircle(90, 84, 42, themeVariant.ringEdge, 0.18);
+        drawRect(95, 48, 14, 46, themeVariant.letter);
+        drawRect(95, 80, 28, 14, accent);
+        drawRect(62, 46, 46, 8, themeVariant.gloss, 0.72);
+        drawCircle(76, 92, 4, themeVariant.gloss, 0.74);
+        drawCircle(104, 68, 3.6, themeVariant.gloss, 0.62);
 
         if (options?.scarf) {
-          page.drawRectangle({ x: x + 100, y: topY - 58, width: 35, height: 7, color: color(accent) });
-          page.drawRectangle({ x: x + 121, y: topY - 71, width: 7, height: 17, color: color(accent) });
+          drawRect(74, 114, 34, 8, accent);
+          drawRect(88, 120, 8, 18, accent);
         }
 
         if (options?.visor) {
-          page.drawRectangle({ x: x + 109, y: topY - 38, width: 25, height: 6, color: color(accent) });
-          page.drawRectangle({ x: x + 108, y: topY - 40, width: 3, height: 10, color: color(accent) });
-          page.drawRectangle({ x: x + 132, y: topY - 40, width: 3, height: 10, color: color(accent) });
+          drawRect(64, 74, 52, 6, accent);
+          drawRect(62, 72, 4, 12, accent);
+          drawRect(114, 72, 4, 12, accent);
         }
 
         if (options?.badge) {
-          page.drawCircle({ x: x + 90, y: topY - 61, size: 7, color: color(accent) });
-          page.drawCircle({ x: x + 90, y: topY - 61, size: 3, color: rgb(1, 1, 1) });
+          drawCircle(123, 116, 7, accent);
+          drawCircle(123, 116, 3, [1, 1, 1]);
         }
       };
 
@@ -620,11 +638,11 @@ export function HelpPanel({
         if (sectionContext === "chat") {
           drawSpeechBubble(x + 12, topY - 22, 66, 28, palette, 2);
           drawSpeechBubble(x + 98, topY - 14, 70, 34, palette, 3);
-          drawLlamaMascot(x + 28, topY - 8, palette, { scarf: true, glow: true });
+          drawBrandMark(x + 28, topY - 8, palette, { scarf: true, glow: true });
           page.drawRectangle({ x: x + 100, y: topY - 90, width: 56, height: 9, color: color(palette.accent) });
           page.drawRectangle({ x: x + 100, y: topY - 104, width: 42, height: 7, color: rgb(1, 1, 1) });
         } else if (sectionContext === "access") {
-          drawLlamaMascot(x + 18, topY - 10, palette, { badge: true, accent: [0.29, 0.46, 0.78] });
+          drawBrandMark(x + 18, topY - 10, palette, { badge: true, accent: [0.29, 0.46, 0.78] });
           drawPanel(x + 96, topY - 16, 64, 74, [1, 1, 1], palette.line);
           page.drawRectangle({ x: x + 106, y: topY - 40, width: 28, height: 22, color: color(palette.accent) });
           page.drawRectangle({ x: x + 102, y: topY - 61, width: 36, height: 10, color: rgb(1, 1, 1) });
@@ -632,14 +650,14 @@ export function HelpPanel({
           page.drawCircle({ x: x + 145, y: topY - 36, size: 8, color: color(palette.accent) });
           page.drawRectangle({ x: x + 142, y: topY - 49, width: 6, height: 10, color: color(palette.accent) });
         } else if (sectionContext === "models") {
-          drawLlamaMascot(x + 20, topY - 8, palette, { visor: true, glow: true, accent: [0.15, 0.63, 0.59] });
+          drawBrandMark(x + 20, topY - 8, palette, { visor: true, glow: true, accent: [0.15, 0.63, 0.59] });
           page.drawCircle({ x: x + 134, y: topY - 42, size: 24, color: color(palette.accent) });
           page.drawCircle({ x: x + 134, y: topY - 42, size: 13, color: rgb(1, 1, 1) });
           page.drawRectangle({ x: x + 103, y: topY - 88, width: 62, height: 10, color: rgb(1, 1, 1) });
           page.drawRectangle({ x: x + 103, y: topY - 103, width: 48, height: 8, color: color(palette.line) });
           page.drawRectangle({ x: x + 103, y: topY - 116, width: 36, height: 8, color: color(palette.accent) });
         } else if (sectionContext === "jobs") {
-          drawLlamaMascot(x + 16, topY - 8, palette, { scarf: true, accent: [0.83, 0.61, 0.23] });
+          drawBrandMark(x + 16, topY - 8, palette, { scarf: true, accent: [0.83, 0.61, 0.23] });
           for (let rowIndex = 0; rowIndex < 3; rowIndex += 1) {
             const rowTop = topY - 30 - rowIndex * 22;
             page.drawRectangle({ x: x + 92, y: rowTop - 14, width: 72, height: 14, color: rgb(1, 1, 1) });
@@ -648,7 +666,7 @@ export function HelpPanel({
           }
           page.drawLine({ start: { x: x + 92, y: topY - 98 }, end: { x: x + 164, y: topY - 98 }, thickness: 2, color: color(palette.line) });
         } else {
-          drawLlamaMascot(x + 16, topY - 8, palette, { badge: true, accent: [0.67, 0.47, 0.76], glow: true });
+          drawBrandMark(x + 16, topY - 8, palette, { badge: true, accent: [0.67, 0.47, 0.76], glow: true });
           page.drawLine({ start: { x: x + 106, y: topY - 24 }, end: { x: x + 106, y: topY - 106 }, thickness: 2, color: color(palette.line) });
           for (let nodeIndex = 0; nodeIndex < 3; nodeIndex += 1) {
             const nodeY = topY - 34 - nodeIndex * 24;
@@ -657,6 +675,38 @@ export function HelpPanel({
           }
           page.drawCircle({ x: x + 150, y: topY - 38, size: 10, color: color(palette.soft) });
         }
+      };
+
+      const drawCoverHero = (
+        x: number,
+        topY: number,
+        width: number,
+        height: number,
+        palette: (typeof contextPalette)[HelpContext],
+      ) => {
+        drawPanel(x, topY, width, height, [1, 1, 1], palette.line);
+        page.drawRectangle({
+          x: x + 12,
+          y: topY - height + 12,
+          width: width - 24,
+          height: height - 24,
+          color: color([0.985, 0.95, 0.91]),
+        });
+        page.drawCircle({ x: x + 20, y: topY - 18, size: 4, color: color(palette.accent) });
+        page.drawCircle({ x: x + 34, y: topY - 18, size: 4, color: color(palette.line) });
+        page.drawCircle({ x: x + 48, y: topY - 18, size: 4, color: rgb(1, 1, 1) });
+
+        drawPanel(x + 22, topY - 34, 66, 34, [1, 1, 1], palette.line);
+        page.drawRectangle({ x: x + 30, y: topY - 61, width: 50, height: 6, color: color(palette.accent) });
+        page.drawRectangle({ x: x + 30, y: topY - 75, width: 38, height: 4, color: color(palette.line) });
+        page.drawRectangle({ x: x + 30, y: topY - 87, width: 28, height: 4, color: color(palette.line) });
+
+        drawPanel(x + width - 84, topY - 12, 58, 30, [1, 1, 1], palette.line);
+        page.drawRectangle({ x: x + width - 74, y: topY - 36, width: 38, height: 5, color: color(palette.accent) });
+        page.drawRectangle({ x: x + width - 74, y: topY - 48, width: 28, height: 4, color: color(palette.line) });
+        page.drawRectangle({ x: x + width - 74, y: topY - 59, width: 20, height: 4, color: color(palette.line) });
+
+        drawBrandMark(x + 42, topY - 16, palette, { glow: true, scaleMultiplier: 1.08 });
       };
 
       const drawSectionOverview = (section: (typeof localizedHelpSections)[number], sectionNumber: number) => {
@@ -735,17 +785,37 @@ export function HelpPanel({
         cursorY = cardTop - cardHeight - 10;
       };
 
-      const drawSectionHeading = (label: string, palette: (typeof contextPalette)[HelpContext], minimumFollowingHeight = 54) => {
-        ensureSpace(26 + minimumFollowingHeight);
-        drawLines([label], { bold: true, fontSize: 12, color: palette.ink });
-        page.drawRectangle({
+      const drawSectionContinuationHeader = (
+        section: (typeof localizedHelpSections)[number],
+        palette: (typeof contextPalette)[HelpContext],
+      ) => {
+        const blockHeight = 44;
+        ensureSpace(blockHeight + 10);
+        drawPill(contextLabel(section.context), margin, cursorY - 2, palette.accent, [1, 1, 1]);
+        page.drawText(section.title, {
           x: margin,
-          y: cursorY + 2,
-          width: 52,
-          height: 2,
-          color: color(palette.accent),
+          y: cursorY - 30,
+          size: 17,
+          font: boldFont,
+          color: color(palette.ink),
         });
-        cursorY -= 6;
+        drawDivider(margin, cursorY - 36, contentWidth, palette.line, 1.5);
+        cursorY -= blockHeight + 10;
+      };
+
+      const drawSectionHeading = (label: string, palette: (typeof contextPalette)[HelpContext], minimumFollowingHeight = 54) => {
+        const blockHeight = 26;
+        ensureSpace(estimateSectionHeadingHeight(minimumFollowingHeight));
+        drawPanel(margin, cursorY, contentWidth, blockHeight, [1, 1, 1], palette.line);
+        page.drawText(label, {
+          x: margin + 12,
+          y: cursorY - 16,
+          size: 11,
+          font: boldFont,
+          color: color(palette.ink),
+        });
+        drawDivider(margin + 12, cursorY - 20, contentWidth - 24, palette.accent, 1.5);
+        cursorY -= blockHeight + 10;
       };
 
       const drawLinkBadge = (
@@ -946,7 +1016,7 @@ export function HelpPanel({
       drawPill(`${t("currentFocus")}: ${focusSummary.badge}`, margin + 18, cursorY - 112, [0.84, 0.73, 0.63], [0.29, 0.19, 0.13]);
       drawPill(status.isReachable ? t("gatewayOnline") : t("attentionNeeded"), margin + 134, cursorY - 112, [1, 1, 1], [0.25, 0.22, 0.18]);
       drawPill(currentUser ? currentUser.displayName : t("localAccount"), margin + 252, cursorY - 112, [1, 1, 1], [0.25, 0.22, 0.18]);
-      drawSectionScene("chat", margin + contentWidth - 210, cursorY - 22, 186, 126);
+      drawCoverHero(margin + contentWidth - 210, cursorY - 22, 186, 126, contextPalette.chat);
       cursorY -= 228;
 
       addPage();
@@ -972,24 +1042,33 @@ export function HelpPanel({
       for (const [sectionIndex, section] of localizedHelpSections.entries()) {
         const palette = contextPalette[section.context];
         drawSectionOverview(section, sectionIndex + 1);
+        const technicalDetailMinimumHeight = Math.max(
+          72,
+          estimateWrappedHeight(section.body[0] ?? "", { maxCharacters: 84 }) + 18,
+        );
 
-        addPage();
-        setAnchor(section.id, page, cursorY);
-        drawPill(contextLabel(section.context), margin, cursorY - 4, palette.accent, [1, 1, 1]);
-        cursorY -= 28;
-        drawLines([section.title], { bold: true, fontSize: 18, color: palette.ink });
-        drawParagraph(section.summary, {
-          fontSize: 10,
-          color: [0.34, 0.3, 0.25],
-          maxCharacters: 88,
-        });
+        if (cursorY - (estimateSectionHeadingHeight(technicalDetailMinimumHeight) + 12) < margin) {
+          addPage();
+          setAnchor(section.id, page, cursorY);
+          drawSectionContinuationHeader(section, palette);
+        } else {
+          setAnchor(section.id, page, cursorY);
+        }
 
-        drawSectionHeading(t("technicalDetail"), palette, 72);
+        drawSectionHeading(
+          t("technicalDetail"),
+          palette,
+          technicalDetailMinimumHeight,
+        );
         for (const paragraph of section.body) {
           drawParagraph(paragraph, { fontSize: 10, color: [0.2, 0.2, 0.2] });
         }
 
-        drawSectionHeading(literal("Operator walkthrough"), palette, 72);
+        drawSectionHeading(
+          literal("Operator walkthrough"),
+          palette,
+          Math.max(72, estimateWrappedHeight(section.plainLanguage[0] ?? "", { maxCharacters: 84 }) + 18),
+        );
         for (const paragraph of section.plainLanguage) {
           drawParagraph(paragraph, { fontSize: 10, color: [0.28, 0.28, 0.28] });
         }
@@ -1002,7 +1081,11 @@ export function HelpPanel({
           });
         }
 
-        drawSectionHeading(t("operationalSteps"), palette, 72);
+        drawSectionHeading(
+          t("operationalSteps"),
+          palette,
+          Math.max(72, estimateWrappedHeight(`- ${section.keyPoints[0] ?? ""}`, { maxCharacters: 82 }) + 18),
+        );
         for (const point of section.keyPoints) {
           drawParagraph(`- ${point}`, { fontSize: 10, color: [0.2, 0.2, 0.2], maxCharacters: 82 });
         }
@@ -1260,14 +1343,14 @@ export function HelpPanel({
 
             <div className="grid gap-3 xl:gap-4">
               <PlushLlamaHero
-                badge="Mascot direction"
-                title="Plush llama, shared family"
-                description="The Help surface now follows the shipped plush mascot lane instead of a generic llama placeholder."
-                summary="The same plush silhouette language now anchors the Help manual, PDF export illustrations, and the theme-aware mascot family."
+                badge="Brand direction"
+                title="OL icon, shared family"
+                description="The Help surface now follows the OL monogram lane instead of the older llama placeholder art."
+                summary="The same OL icon language now anchors the Help manual, PDF export illustrations, and the theme-aware brand family."
                 detailLeftTitle="Recognition cues"
-                detailLeftBody="Oversized head, forehead tuft, rounded muzzle, and short plush forelimbs."
+                detailLeftBody="A clear O ring with the inline L locked to the right side so the mark still reads at small sizes."
                 detailRightTitle="Theme variants"
-                detailRightBody="Light stays premium cream, Tech shifts cooler with cyan trim, and Dark moves into midnight plush with ember accents."
+                detailRightBody="Light stays warm and premium, Tech shifts cooler with signal highlights, and Dark moves into a deeper midnight finish."
               />
               <div className="grid gap-2 sm:grid-cols-3 xl:grid-cols-3">
                 <div className="theme-surface-soft rounded-[20px] px-3 py-3">

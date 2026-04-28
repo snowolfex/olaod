@@ -81,6 +81,7 @@ export function VoiceLanguageFlag({ language, className = "h-4 w-6 shrink-0 roun
           <polygon points="6,3.2 6.8,5.3 9.1,5.3 7.2,6.6 8,8.8 6,7.4 4,8.8 4.8,6.6 2.9,5.3 5.2,5.3" fill="#ffde00" />
         </FlagFrame>
       );
+    case "united-kingdom":
     case "english":
       return (
         <FlagFrame className={className}>

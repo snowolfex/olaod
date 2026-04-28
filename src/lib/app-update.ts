@@ -1,7 +1,8 @@
+import { spawn } from "node:child_process";
+import { createPublicKey, verify as verifySignature } from "node:crypto";
 import { chmod, mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { spawn } from "node:child_process";
 
 import packageJson from "../../package.json";
 
@@ -9,6 +10,13 @@ export type AppUpdatePackage = {
   format: "zip" | "tar.gz";
   sha256?: string;
   url: string;
+};
+
+export type AppUpdateManifestSignature = {
+  algorithm: "ed25519";
+  keyId?: string;
+  signature: string;
+  signedAt?: string;
 };
 
 export type AppUpdateManifest = {
@@ -20,27 +28,42 @@ export type AppUpdateManifest = {
   };
   product?: string;
   publishedAt?: string;
+  signature?: AppUpdateManifestSignature;
   latestVersion: string;
 };
 
 export type AppUpdateStatus = {
+  autoCheckEnabled: boolean;
   canApplyUpdate: boolean;
   channel: string | null;
+  checkedAt: string | null;
   currentVersion: string;
   installRoot: string | null;
   latestVersion: string | null;
+  manifestSignatureKeyId: string | null;
   notes: string | null;
   packageFormat: AppUpdatePackage["format"] | null;
   packageUrl: string | null;
   publishedAt: string | null;
+  signatureVerified: boolean;
   statusMessage: string | null;
   updateAvailable: boolean;
   updateConfigured: boolean;
 };
 
-const CURRENT_VERSION = packageJson.version;
-
 type RuntimePlatform = "windows" | "linux";
+
+type CachedUpdateStatus = {
+  checkedAtMs: number;
+  status: AppUpdateStatus;
+};
+
+const CURRENT_VERSION = packageJson.version;
+const UPDATE_STATUS_CACHE_TTL_MS = 5 * 60 * 1000;
+
+let cachedUpdateStatus: CachedUpdateStatus | null = null;
+let pendingStatusPromise: Promise<AppUpdateStatus> | null = null;
+let activeApplyPromise: Promise<{ targetVersion: string }> | null = null;
 
 function normalizeVersion(value: string) {
   return value.trim().replace(/^v/i, "");
@@ -108,6 +131,14 @@ function getManifestUrl() {
   return process.env.OLOAD_UPDATE_MANIFEST_URL?.trim() || null;
 }
 
+function getUpdateManifestPublicKey() {
+  return process.env.OLOAD_UPDATE_MANIFEST_PUBLIC_KEY?.trim() || null;
+}
+
+function getAutoCheckEnabled() {
+  return process.env.OLOAD_AUTO_CHECK_UPDATES_ON_LAUNCH?.trim() !== "false";
+}
+
 function getInstallRoot() {
   const configuredInstallRoot = process.env.OLOAD_INSTALL_ROOT?.trim();
 
@@ -136,6 +167,19 @@ function validatePackage(value: unknown): value is AppUpdatePackage {
     && (candidate.sha256 === undefined || typeof candidate.sha256 === "string");
 }
 
+function validateManifestSignature(value: unknown): value is AppUpdateManifestSignature {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Partial<AppUpdateManifestSignature>;
+  return candidate.algorithm === "ed25519"
+    && typeof candidate.signature === "string"
+    && candidate.signature.trim().length > 0
+    && (candidate.keyId === undefined || typeof candidate.keyId === "string")
+    && (candidate.signedAt === undefined || typeof candidate.signedAt === "string");
+}
+
 function validateManifest(value: unknown): value is AppUpdateManifest {
   if (!value || typeof value !== "object") {
     return false;
@@ -156,7 +200,54 @@ function validateManifest(value: unknown): value is AppUpdateManifest {
     && (candidate.channel === undefined || typeof candidate.channel === "string")
     && (candidate.notes === undefined || typeof candidate.notes === "string")
     && (candidate.publishedAt === undefined || typeof candidate.publishedAt === "string")
+    && (candidate.signature === undefined || validateManifestSignature(candidate.signature))
     && packagesValid;
+}
+
+function canonicalizeJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => canonicalizeJson(entry)).join(",")}]`;
+  }
+
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const entries = Object.keys(record)
+      .filter((key) => record[key] !== undefined)
+      .sort((left, right) => left.localeCompare(right))
+      .map((key) => `${JSON.stringify(key)}:${canonicalizeJson(record[key])}`);
+    return `{${entries.join(",")}}`;
+  }
+
+  return JSON.stringify(value);
+}
+
+function verifyManifestSignatureState(manifest: AppUpdateManifest) {
+  const publicKeyPem = getUpdateManifestPublicKey();
+
+  if (!publicKeyPem) {
+    throw new Error("Update manifest public key is not configured.");
+  }
+
+  if (!manifest.signature) {
+    throw new Error("Update manifest signature is missing.");
+  }
+
+  const unsignedManifest = {
+    ...manifest,
+    signature: undefined,
+  };
+  const payload = Buffer.from(canonicalizeJson(unsignedManifest), "utf8");
+  const signature = Buffer.from(manifest.signature.signature, "base64");
+  const verified = verifySignature(null, payload, createPublicKey(publicKeyPem), signature);
+
+  if (!verified) {
+    throw new Error("Update manifest signature verification failed.");
+  }
+
+  return {
+    keyId: manifest.signature.keyId?.trim() || null,
+    verified: true,
+  };
 }
 
 async function fetchManifest() {
@@ -183,17 +274,27 @@ async function fetchManifest() {
     throw new Error("Update manifest is missing required fields.");
   }
 
-  return payload;
+  const signatureState = verifyManifestSignatureState(payload);
+
+  return {
+    manifest: payload,
+    signatureState,
+  };
 }
 
 function buildStatusMessage(input: {
   installRoot: string | null;
   packageInfo: AppUpdatePackage | null;
+  signatureVerified: boolean;
   updateAvailable: boolean;
   updateConfigured: boolean;
 }) {
   if (!input.updateConfigured) {
     return "Live updates are not configured for this deployment yet.";
+  }
+
+  if (!input.signatureVerified) {
+    return "Update manifest verification failed for this deployment.";
   }
 
   if (!input.updateAvailable) {
@@ -211,25 +312,31 @@ function buildStatusMessage(input: {
   return "A live patch is available for this deployment.";
 }
 
-export async function getAppUpdateStatus(): Promise<AppUpdateStatus> {
+async function computeAppUpdateStatus(): Promise<AppUpdateStatus> {
   const platform = getRuntimePlatform();
   const manifestUrl = getManifestUrl();
   const installRoot = getInstallRoot();
+  const checkedAt = new Date().toISOString();
 
   if (!manifestUrl) {
     return {
+      autoCheckEnabled: getAutoCheckEnabled(),
       canApplyUpdate: false,
       channel: getConfiguredChannel(),
+      checkedAt,
       currentVersion: CURRENT_VERSION,
       installRoot,
       latestVersion: null,
+      manifestSignatureKeyId: null,
       notes: null,
       packageFormat: null,
       packageUrl: null,
       publishedAt: null,
+      signatureVerified: false,
       statusMessage: buildStatusMessage({
         installRoot,
         packageInfo: null,
+        signatureVerified: false,
         updateAvailable: false,
         updateConfigured: false,
       }),
@@ -239,24 +346,35 @@ export async function getAppUpdateStatus(): Promise<AppUpdateStatus> {
   }
 
   try {
-    const manifest = await fetchManifest();
-    const packageInfo = platform ? manifest?.packages?.[platform] ?? null : null;
-    const latestVersion = manifest?.latestVersion ?? null;
+    const fetchedManifest = await fetchManifest();
+
+    if (!fetchedManifest) {
+      throw new Error("Live updates are not configured for this deployment yet.");
+    }
+
+    const { manifest, signatureState } = fetchedManifest;
+    const packageInfo = platform ? manifest.packages?.[platform] ?? null : null;
+    const latestVersion = manifest.latestVersion ?? null;
     const updateAvailable = latestVersion ? compareVersions(latestVersion, CURRENT_VERSION) > 0 : false;
 
     return {
+      autoCheckEnabled: getAutoCheckEnabled(),
       canApplyUpdate: Boolean(updateAvailable && installRoot && packageInfo),
-      channel: manifest?.channel?.trim() || getConfiguredChannel(),
+      channel: manifest.channel?.trim() || getConfiguredChannel(),
+      checkedAt,
       currentVersion: CURRENT_VERSION,
       installRoot,
       latestVersion,
-      notes: manifest?.notes?.trim() || null,
+      manifestSignatureKeyId: signatureState.keyId,
+      notes: manifest.notes?.trim() || null,
       packageFormat: packageInfo?.format ?? null,
       packageUrl: packageInfo?.url ?? null,
-      publishedAt: manifest?.publishedAt ?? null,
+      publishedAt: manifest.publishedAt ?? null,
+      signatureVerified: signatureState.verified,
       statusMessage: buildStatusMessage({
         installRoot,
         packageInfo,
+        signatureVerified: signatureState.verified,
         updateAvailable,
         updateConfigured: true,
       }),
@@ -265,20 +383,54 @@ export async function getAppUpdateStatus(): Promise<AppUpdateStatus> {
     };
   } catch (error) {
     return {
+      autoCheckEnabled: getAutoCheckEnabled(),
       canApplyUpdate: false,
       channel: getConfiguredChannel(),
+      checkedAt,
       currentVersion: CURRENT_VERSION,
       installRoot,
       latestVersion: null,
+      manifestSignatureKeyId: null,
       notes: null,
       packageFormat: null,
       packageUrl: null,
       publishedAt: null,
+      signatureVerified: false,
       statusMessage: error instanceof Error ? error.message : "Unable to check for updates.",
       updateAvailable: false,
       updateConfigured: true,
     };
   }
+}
+
+export async function readAppUpdateStatus(options?: { forceRefresh?: boolean }): Promise<AppUpdateStatus> {
+  const forceRefresh = options?.forceRefresh ?? false;
+  const now = Date.now();
+
+  if (!forceRefresh && cachedUpdateStatus && (now - cachedUpdateStatus.checkedAtMs) < UPDATE_STATUS_CACHE_TTL_MS) {
+    return cachedUpdateStatus.status;
+  }
+
+  if (!forceRefresh && pendingStatusPromise) {
+    return pendingStatusPromise;
+  }
+
+  pendingStatusPromise = computeAppUpdateStatus();
+
+  try {
+    const status = await pendingStatusPromise;
+    cachedUpdateStatus = {
+      checkedAtMs: now,
+      status,
+    };
+    return status;
+  } finally {
+    pendingStatusPromise = null;
+  }
+}
+
+export async function getAppUpdateStatus(): Promise<AppUpdateStatus> {
+  return readAppUpdateStatus();
 }
 
 function buildWindowsHelperScript(input: {
@@ -384,8 +536,6 @@ rm -f "$0"
 `;
 }
 
-let activeApplyPromise: Promise<{ targetVersion: string }> | null = null;
-
 export async function applyAppUpdate() {
   if (activeApplyPromise) {
     throw new Error("A live patch is already being applied.");
@@ -394,7 +544,7 @@ export async function applyAppUpdate() {
   activeApplyPromise = (async () => {
     const platform = getRuntimePlatform();
     const installRoot = getInstallRoot();
-    const manifest = await fetchManifest();
+    const fetchedManifest = await fetchManifest();
 
     if (!platform) {
       throw new Error("Live patching is not supported on this operating system.");
@@ -404,9 +554,11 @@ export async function applyAppUpdate() {
       throw new Error("This runtime does not expose an install root for in-place patching.");
     }
 
-    if (!manifest) {
+    if (!fetchedManifest) {
       throw new Error("Live updates are not configured for this deployment yet.");
     }
+
+    const { manifest } = fetchedManifest;
 
     if (compareVersions(manifest.latestVersion, CURRENT_VERSION) <= 0) {
       throw new Error("This deployment is already on the latest configured version.");
@@ -463,4 +615,8 @@ export async function applyAppUpdate() {
   } finally {
     activeApplyPromise = null;
   }
+}
+
+if (getManifestUrl() && getAutoCheckEnabled()) {
+  void readAppUpdateStatus({ forceRefresh: true }).catch(() => undefined);
 }

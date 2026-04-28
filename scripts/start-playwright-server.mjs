@@ -8,6 +8,8 @@ const projectRoot = path.resolve(scriptDir, "..");
 process.chdir(projectRoot);
 process.env.HOSTNAME = process.env.HOSTNAME ?? "127.0.0.1";
 process.env.PORT = process.env.PORT ?? "3101";
+process.env.PLAYWRIGHT_TEST = process.env.PLAYWRIGHT_TEST ?? "1";
+process.env.OLOAD_SESSION_SECRET = process.env.OLOAD_SESSION_SECRET ?? "playwright-session-secret";
 
 async function runNextBuild() {
   const nextBin = path.join(projectRoot, "node_modules", "next", "dist", "bin", "next");

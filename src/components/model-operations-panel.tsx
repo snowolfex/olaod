@@ -392,7 +392,7 @@ function getJobStatusClasses(status: JobRecord["status"]) {
   return "bg-amber-100 text-amber-900";
 }
 
-function getJobSectionTitle(status: JobRecord["status"], language: VoiceTranscriptionLanguage = "english") {
+function getJobSectionTitle(status: JobRecord["status"], language: VoiceTranscriptionLanguage = "united-kingdom") {
   if (status === "queued") {
     return translateUiText(language, "Queued");
   }
@@ -412,7 +412,7 @@ function getJobSectionTitle(status: JobRecord["status"], language: VoiceTranscri
   return translateUiText(language, "Succeeded");
 }
 
-function getJobSectionInsight(section: JobSection, currentUser: SessionUser | null, language: VoiceTranscriptionLanguage = "english") {
+function getJobSectionInsight(section: JobSection, currentUser: SessionUser | null, language: VoiceTranscriptionLanguage = "united-kingdom") {
   if (section.key === "queued") {
     const nextJob = section.jobs.find((job) => job.queuePosition === 1) ?? section.jobs[0];
 
@@ -475,7 +475,7 @@ const EMPTY_JOB_SUMMARY: JobSummary = {
   completed: 0,
 };
 
-function formatJobType(type: JobRecord["type"], language: VoiceTranscriptionLanguage = "english") {
+function formatJobType(type: JobRecord["type"], language: VoiceTranscriptionLanguage = "united-kingdom") {
   return type === "model.pull" ? translateUiText(language, "Pull") : translateUiText(language, "Delete");
 }
 
@@ -668,7 +668,7 @@ function getScopeSummaryText(
   jobFilter: JobFilter,
   jobTypeFilter: JobTypeFilter,
   jobOwnershipFilter: JobOwnershipFilter,
-  language: VoiceTranscriptionLanguage = "english",
+  language: VoiceTranscriptionLanguage = "united-kingdom",
 ) {
   return translateUiText(language, "{filter} across {type} for {ownership}.", {
     filter: getJobFilterFamilyLabel(jobFilter, language),
@@ -684,7 +684,7 @@ function getCurrentScopeBadgeText(
   jobTypeFilter: JobTypeFilter,
   jobOwnershipFilter: JobOwnershipFilter,
   jobSnapshotLimit: JobSnapshotLimit,
-  language: VoiceTranscriptionLanguage = "english",
+  language: VoiceTranscriptionLanguage = "united-kingdom",
 ) {
   const statusScope = jobFilter === "all"
     ? translateUiText(language, "all statuses")
@@ -711,7 +711,7 @@ function getCopyScopeText(
   jobTypeFilter: JobTypeFilter,
   jobOwnershipFilter: JobOwnershipFilter,
   jobSnapshotLimit: JobSnapshotLimit,
-  language: VoiceTranscriptionLanguage = "english",
+  language: VoiceTranscriptionLanguage = "united-kingdom",
 ) {
   return translateUiText(language, "Jobs scope: {badge} ({summary})", {
     badge: getCurrentScopeBadgeText(jobFilter, jobTypeFilter, jobOwnershipFilter, jobSnapshotLimit, language),
@@ -728,7 +728,7 @@ function getScopeSignature(
   return `${jobFilter}|${jobTypeFilter}|${jobOwnershipFilter}|${jobSnapshotLimit}`;
 }
 
-function getOwnershipFilterLabel(jobOwnershipFilter: JobOwnershipFilter, language: VoiceTranscriptionLanguage = "english") {
+function getOwnershipFilterLabel(jobOwnershipFilter: JobOwnershipFilter, language: VoiceTranscriptionLanguage = "united-kingdom") {
   return jobOwnershipFilter === "mine" ? translateUiText(language, "My jobs") : translateUiText(language, "All operators");
 }
 
@@ -757,7 +757,7 @@ function getActiveJobsQuickScope(input: {
   return null;
 }
 
-function getJobsQuickScopeLabel(value: JobsQuickScope, language: VoiceTranscriptionLanguage = "english") {
+function getJobsQuickScopeLabel(value: JobsQuickScope, language: VoiceTranscriptionLanguage = "united-kingdom") {
   if (value === "my-queued") {
     return translateUiText(language, "My queued");
   }
@@ -808,7 +808,7 @@ function getSelectedJobScopeReasonLabel(input: {
   return translateUiText(input.language, "In current scope");
 }
 
-function getSelectedJobBulkActionLabel(job: JobRecord, language: VoiceTranscriptionLanguage = "english") {
+function getSelectedJobBulkActionLabel(job: JobRecord, language: VoiceTranscriptionLanguage = "united-kingdom") {
   if (job.type !== "model.pull") {
     return translateUiText(language, "Not part of pull bulk actions");
   }
@@ -824,7 +824,7 @@ function getSelectedJobBulkActionLabel(job: JobRecord, language: VoiceTranscript
   return translateUiText(language, "Outside current bulk-action states");
 }
 
-function getRetryLineageLabel(job: JobRecord | null, language: VoiceTranscriptionLanguage = "english") {
+function getRetryLineageLabel(job: JobRecord | null, language: VoiceTranscriptionLanguage = "united-kingdom") {
   if (!job || job.type !== "model.pull") {
     return null;
   }
@@ -834,7 +834,7 @@ function getRetryLineageLabel(job: JobRecord | null, language: VoiceTranscriptio
     : translateUiText(language, "Original run");
 }
 
-function getJobTypeFamilyLabel(jobTypeFilter: JobTypeFilter, language: VoiceTranscriptionLanguage = "english") {
+function getJobTypeFamilyLabel(jobTypeFilter: JobTypeFilter, language: VoiceTranscriptionLanguage = "united-kingdom") {
   if (jobTypeFilter === "model.pull") {
     return translateUiText(language, "Pull scope");
   }
@@ -846,7 +846,7 @@ function getJobTypeFamilyLabel(jobTypeFilter: JobTypeFilter, language: VoiceTran
   return translateUiText(language, "Mixed types");
 }
 
-function getJobFilterFamilyLabel(jobFilter: JobFilter, language: VoiceTranscriptionLanguage = "english") {
+function getJobFilterFamilyLabel(jobFilter: JobFilter, language: VoiceTranscriptionLanguage = "united-kingdom") {
   if (jobFilter === "queued" || jobFilter === "running") {
     return translateUiText(language, "Active view");
   }
@@ -858,7 +858,7 @@ function getJobFilterFamilyLabel(jobFilter: JobFilter, language: VoiceTranscript
   return translateUiText(language, "Mixed view");
 }
 
-function formatDuration(durationMs: number | undefined, language: VoiceTranscriptionLanguage = "english") {
+function formatDuration(durationMs: number | undefined, language: VoiceTranscriptionLanguage = "united-kingdom") {
   if (!durationMs || durationMs < 1000) {
     return durationMs === 0 ? "0s" : translateUiText(language, "In progress");
   }

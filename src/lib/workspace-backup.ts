@@ -101,7 +101,17 @@ function isConversationSettings(value: unknown) {
     && typeof value.temperature === "number"
     && (value.useKnowledge === undefined || typeof value.useKnowledge === "boolean")
     && (value.groundingMode === undefined || value.groundingMode === "off" || value.groundingMode === "balanced" || value.groundingMode === "strict")
-    && (value.assistantProfileId === undefined || value.assistantProfileId === null || typeof value.assistantProfileId === "string");
+    && (value.assistantProfileId === undefined || value.assistantProfileId === null || typeof value.assistantProfileId === "string")
+    && (value.enabledToolIds === undefined || isStringArray(value.enabledToolIds))
+    && (value.knowledgeBaseIds === undefined || isStringArray(value.knowledgeBaseIds))
+    && (value.attachmentDocuments === undefined || (Array.isArray(value.attachmentDocuments) && value.attachmentDocuments.every((entry) =>
+      isRecord(entry)
+      && typeof entry.id === "string"
+      && typeof entry.name === "string"
+      && typeof entry.contentType === "string"
+      && typeof entry.textContent === "string"
+      && typeof entry.uploadedAt === "string"
+    )));
 }
 
 function isChatMessage(value: unknown) {
@@ -110,7 +120,16 @@ function isChatMessage(value: unknown) {
   }
 
   return (value.role === "system" || value.role === "user" || value.role === "assistant")
-    && typeof value.content === "string";
+    && typeof value.content === "string"
+    && (value.toolCalls === undefined || (Array.isArray(value.toolCalls) && value.toolCalls.every((toolCall) =>
+      isRecord(toolCall)
+      && typeof toolCall.id === "string"
+      && typeof toolCall.toolId === "string"
+      && typeof toolCall.title === "string"
+      && isRecord(toolCall.arguments)
+      && (toolCall.status === "completed" || toolCall.status === "failed")
+      && typeof toolCall.output === "string"
+    )));
 }
 
 function isStoredConversation(value: unknown): value is StoredConversation {

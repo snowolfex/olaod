@@ -25,8 +25,8 @@ test.describe("oload smoke coverage", () => {
     await expect(page.getByLabel("Sign out")).toBeVisible();
 
     await expect(page.getByRole("heading", { name: "Chat" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Admin" })).toBeVisible();
-    await page.getByRole("button", { name: "Admin" }).click();
+    await expect(page.getByRole("button", { name: "Admin Ops" })).toBeVisible();
+    await page.getByRole("button", { name: "Admin Ops" }).click();
     await hideCommandDeckIfVisible(page);
 
     await expect(page.getByText("Role management", { exact: true })).toBeVisible();
@@ -48,7 +48,7 @@ test.describe("oload smoke coverage", () => {
 
     await page.goto("/");
     await expect(page.getByLabel("Sign out")).toBeVisible();
-    await page.getByRole("button", { name: "Admin" }).click();
+    await page.getByRole("button", { name: "Admin Ops" }).click();
     await hideCommandDeckIfVisible(page);
     await page.getByRole("button", { name: /Runtime Models Library and ready/i }).click();
 

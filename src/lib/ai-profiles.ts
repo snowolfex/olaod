@@ -1,5 +1,5 @@
 import { getDataStorePath, readJsonStore, updateJsonStore } from "@/lib/data-store";
-import type { AiGroundingMode, AiProviderId, AiWorkspaceProfile } from "@/lib/ai-types";
+import type { AiGroundingMode, AiProviderId, AiToolId, AiWorkspaceProfile } from "@/lib/ai-types";
 
 const STORE_PATH = getDataStorePath("ai-profiles.json");
 const DEFAULT_PROFILE_TEMPERATURE = 0.4;
@@ -14,7 +14,18 @@ type WorkspaceProfileInput = {
   temperature?: number;
   useKnowledge?: boolean;
   groundingMode?: Exclude<AiGroundingMode, "off">;
+  enabledToolIds?: AiToolId[];
+  knowledgeBaseIds?: string[];
 };
+
+function normalizeToolIds(toolIds?: AiToolId[]) {
+  const allowed = new Set<AiToolId>(["search-knowledge", "list-knowledge-bases", "workspace-snapshot"]);
+  return Array.from(new Set((toolIds ?? []).filter((toolId) => allowed.has(toolId))));
+}
+
+function normalizeKnowledgeBaseIds(knowledgeBaseIds?: string[]) {
+  return Array.from(new Set((knowledgeBaseIds ?? []).map((knowledgeBaseId) => knowledgeBaseId.trim()).filter(Boolean)));
+}
 
 function createId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -64,6 +75,8 @@ function normalizeProfile(input: WorkspaceProfileInput, previous?: AiWorkspacePr
     temperature: normalizeTemperature(input.temperature ?? previous?.temperature),
     useKnowledge: input.useKnowledge ?? previous?.useKnowledge ?? true,
     groundingMode: normalizeGroundingMode(input.groundingMode ?? previous?.groundingMode),
+    enabledToolIds: normalizeToolIds(input.enabledToolIds ?? previous?.enabledToolIds),
+    knowledgeBaseIds: normalizeKnowledgeBaseIds(input.knowledgeBaseIds ?? previous?.knowledgeBaseIds),
     updatedAt: now,
   };
 }

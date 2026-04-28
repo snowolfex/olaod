@@ -3,740 +3,161 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>oload Llama Preview</title>
+    <title>oload OL Icon Preview</title>
     <style>
       :root {
         color-scheme: light;
-        --bg: #f6efe7;
-        --surface: rgba(255, 252, 248, 0.84);
-        --line: rgba(85, 57, 38, 0.12);
+        --bg: #f7efe6;
+        --surface: rgba(255, 251, 245, 0.82);
+        --line: rgba(88, 55, 31, 0.14);
         --text: #2d2018;
-        --muted: #6f5d52;
-        --shadow: 0 20px 60px rgba(86, 56, 36, 0.12);
+        --muted: #6d5b50;
+        --shadow: 0 28px 80px rgba(84, 52, 30, 0.14);
       }
 
-      * {
-        box-sizing: border-box;
-      }
-
+      * { box-sizing: border-box; }
       body {
         margin: 0;
         min-height: 100vh;
         font-family: Georgia, "Trebuchet MS", sans-serif;
-        background:
-          radial-gradient(circle at top, rgba(242, 197, 150, 0.6), transparent 38%),
-          linear-gradient(180deg, #f8f0e8 0%, #efe3d5 100%);
+        background: radial-gradient(circle at top, rgba(241, 190, 127, 0.5), transparent 38%), linear-gradient(180deg, #fbf2e7 0%, #ecdfd0 100%);
         color: var(--text);
       }
-
-      .wrap {
-        width: min(1180px, calc(100% - 32px));
-        margin: 0 auto;
-        padding: 32px 0 48px;
-      }
-
-      .hero {
-        padding: 28px;
-        border: 1px solid var(--line);
-        border-radius: 28px;
-        background: var(--surface);
-        backdrop-filter: blur(14px);
-        box-shadow: var(--shadow);
-      }
-
-      .eyebrow {
-        margin: 0;
-        font-size: 12px;
-        letter-spacing: 0.18em;
-        text-transform: uppercase;
-        color: var(--muted);
-      }
-
-      h1 {
-        margin: 10px 0 0;
-        font-size: clamp(2rem, 4vw, 3.5rem);
-        line-height: 1.02;
-      }
-
-      .hero p:last-child {
-        margin: 12px 0 0;
-        max-width: 720px;
-        color: var(--muted);
-        font-size: 16px;
-        line-height: 1.7;
-      }
-
-      .hero-links {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 12px;
-        margin-top: 18px;
-      }
-
-      .hero-link {
+      .wrap { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0 48px; }
+      .hero, .panel { border: 1px solid var(--line); border-radius: 28px; background: var(--surface); backdrop-filter: blur(14px); box-shadow: var(--shadow); }
+      .hero { padding: 28px; }
+      .eyebrow { margin: 0; font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); }
+      h1 { margin: 10px 0 0; font-size: clamp(2rem, 4vw, 3.6rem); line-height: 1.02; }
+      .hero p:last-child { margin: 12px 0 0; max-width: 720px; color: var(--muted); font-size: 16px; line-height: 1.7; }
+      .links { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 18px; }
+      a { color: inherit; text-decoration: none; }
+      .pill {
         display: inline-flex;
         align-items: center;
         padding: 10px 14px;
         border-radius: 999px;
-        border: 1px solid rgba(85, 57, 38, 0.12);
-        background: rgba(255, 255, 255, 0.48);
-        color: var(--text);
-        text-decoration: none;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.54);
         font-size: 13px;
       }
-
-      .theme-section {
-        margin-top: 26px;
-        padding: 22px;
-        border: 1px solid var(--line);
-        border-radius: 28px;
-        background: rgba(255, 252, 248, 0.72);
-        box-shadow: var(--shadow);
-      }
-
-      .theme-head {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: end;
-        justify-content: space-between;
-        gap: 12px;
-      }
-
-      .theme-head h2 {
-        margin: 6px 0 0;
-        font-size: 1.65rem;
-      }
-
-      .theme-note {
-        margin: 8px 0 0;
-        color: var(--muted);
-        font-size: 14px;
-      }
-
-      .cards {
-        display: grid;
-        gap: 18px;
-        margin-top: 20px;
-        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      }
-
-      .card {
-        position: relative;
-        overflow: hidden;
-        border-radius: 24px;
-        padding: 18px;
-        min-height: 365px;
-        border: 1px solid rgba(60, 30, 12, 0.12);
-        box-shadow: 0 18px 45px rgba(65, 38, 20, 0.12);
-      }
-
-      .card.plain {
-        background: linear-gradient(180deg, #fff9f3 0%, #f8ebdd 100%);
-      }
-
-      .card.tech {
-        background: linear-gradient(180deg, #eef8ff 0%, #dff1ff 100%);
-      }
-
-      .card.dark {
-        color: #f4e9ea;
-        background: linear-gradient(180deg, #24161d 0%, #120b10 100%);
-        border-color: rgba(255, 160, 160, 0.16);
-      }
-
-      .badge {
-        display: inline-flex;
-        padding: 7px 11px;
-        border-radius: 999px;
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 0.16em;
-        text-transform: uppercase;
-      }
-
-      .plain .badge {
-        background: rgba(204, 127, 74, 0.12);
-        color: #995527;
-      }
-
-      .tech .badge {
-        background: rgba(35, 149, 255, 0.12);
-        color: #1667af;
-      }
-
-      .dark .badge {
-        background: rgba(255, 110, 110, 0.14);
-        color: #ffb0b0;
-      }
-
-      .card h3 {
-        margin: 12px 0 0;
-        font-size: 1.25rem;
-      }
-
-      .card p {
-        margin: 8px 0 0;
-        font-size: 14px;
-        line-height: 1.6;
-        color: inherit;
-      }
-
-      .muted {
-        color: var(--muted);
-      }
-
-      .dark .muted {
-        color: rgba(241, 226, 230, 0.74);
-      }
-
+      .grid { display: grid; gap: 18px; margin-top: 24px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+      .panel { padding: 18px; }
       .stage {
-        position: relative;
         display: grid;
         place-items: center;
-        height: 190px;
-        margin: 16px 0 12px;
+        min-height: 240px;
         border-radius: 22px;
-        overflow: hidden;
+        background: linear-gradient(180deg, rgba(255,255,255,0.6), rgba(255,255,255,0.16));
       }
-
-      .plain .stage {
-        background:
-          radial-gradient(circle at top, rgba(255, 255, 255, 0.9), transparent 44%),
-          linear-gradient(180deg, rgba(247, 229, 210, 0.9) 0%, rgba(238, 214, 190, 0.95) 100%);
-      }
-
-      .tech .stage {
-        background:
-          radial-gradient(circle at top, rgba(255, 255, 255, 0.8), transparent 42%),
-          linear-gradient(180deg, rgba(208, 241, 255, 0.96) 0%, rgba(181, 223, 255, 0.98) 100%);
-      }
-
-      .dark .stage {
-        background:
-          radial-gradient(circle at top, rgba(201, 74, 74, 0.26), transparent 36%),
-          linear-gradient(180deg, rgba(45, 24, 33, 0.96) 0%, rgba(19, 10, 15, 0.98) 100%);
-      }
-
-      .stage::after {
-        content: "";
-        position: absolute;
-        left: 12%;
-        right: 12%;
-        bottom: 18px;
-        height: 18px;
-        border-radius: 999px;
-        background: rgba(46, 25, 13, 0.08);
-        filter: blur(7px);
-      }
-
-      .llama {
-        width: 132px;
-        height: 132px;
-        animation: dance 3s ease-in-out infinite;
-        transform-origin: center bottom;
-      }
-
-      .llama svg {
-        width: 100%;
-        height: 100%;
-        overflow: visible;
-      }
-
-      .llama .ear,
-      .llama .tail,
-      .llama .scarf,
-      .llama .fringe,
-      .llama .visor,
-      .llama .ribbon,
-      .llama .cape,
-      .llama .glyph,
-      .llama .glow,
-      .llama .chain,
-      .llama .collar,
-      .llama .pixel {
-        transform-box: fill-box;
-        transform-origin: center;
-      }
-
-      .llama .ear.right { animation: earFlick 3.1s ease-in-out infinite; }
-      .llama .tail { animation: tailFlick 2.4s ease-in-out infinite; }
-      .llama .blink { animation: blink 4.1s step-end infinite; }
-      .llama .glyph { animation: floatGlyph 2.3s ease-in-out infinite; }
-      .llama .glow { animation: pulseGlow 2.2s ease-in-out infinite; }
-      .llama .fringe { animation: fringeBob 2.8s ease-in-out infinite; }
-      .llama .cape { animation: capeWave 2.5s ease-in-out infinite; }
-      .llama .chain { animation: swayChain 2.1s ease-in-out infinite; }
-      .llama .ribbon { animation: ribbonBounce 2.7s ease-in-out infinite; }
-
-      .tech .llama { animation-name: techDance; }
-      .dark .llama { animation-name: metalDance; }
-
-      .status {
-        display: inline-flex;
-        margin-top: 14px;
-        padding: 6px 10px;
-        border-radius: 999px;
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
-      }
-
-      .plain .status,
-      .tech .status,
-      .dark .status {
-        background: rgba(255, 255, 255, 0.34);
-        border: 1px solid rgba(79, 50, 29, 0.1);
-      }
-
-      @keyframes dance {
-        0%, 100% { transform: translateY(0) rotate(0deg); }
-        20% { transform: translateY(-4px) rotate(-2.5deg); }
-        40% { transform: translateY(0) rotate(1.5deg); }
-        60% { transform: translateY(-7px) rotate(3deg); }
-        80% { transform: translateY(-1px) rotate(-1deg); }
-      }
-
-      @keyframes techDance {
-        0%, 100% { transform: translateY(0) rotate(0deg); }
-        25% { transform: translateY(-5px) rotate(-1.2deg) scale(1.01); }
-        50% { transform: translateY(-1px) rotate(1deg); }
-        75% { transform: translateY(-7px) rotate(2.2deg) scale(1.02); }
-      }
-
-      @keyframes metalDance {
-        0%, 100% { transform: translateY(0) rotate(0deg); }
-        15% { transform: translateY(-3px) rotate(-6deg); }
-        30% { transform: translateY(0) rotate(5deg); }
-        45% { transform: translateY(-6px) rotate(-7deg); }
-        60% { transform: translateY(-1px) rotate(6deg); }
-        75% { transform: translateY(-7px) rotate(-5deg); }
-      }
-
-      @keyframes blink {
-        0%, 46%, 52%, 100% { opacity: 1; }
-        48%, 50% { opacity: 0; }
-      }
-
-      @keyframes earFlick {
-        0%, 70%, 100% { transform: rotate(0deg); }
-        74% { transform: rotate(12deg); }
-        78% { transform: rotate(-8deg); }
-        82% { transform: rotate(0deg); }
-      }
-
-      @keyframes tailFlick {
-        0%, 100% { transform: rotate(0deg); }
-        50% { transform: rotate(10deg); }
-      }
-
-      @keyframes floatGlyph {
-        0%, 100% { transform: translateY(0); opacity: 0.8; }
-        50% { transform: translateY(-6px); opacity: 1; }
-      }
-
-      @keyframes pulseGlow {
-        0%, 100% { opacity: 0.42; }
-        50% { opacity: 0.9; }
-      }
-
-      @keyframes fringeBob {
-        0%, 100% { transform: rotate(0deg) translateY(0); }
-        50% { transform: rotate(-4deg) translateY(1px); }
-      }
-
-      @keyframes capeWave {
-        0%, 100% { transform: rotate(0deg); }
-        50% { transform: rotate(5deg); }
-      }
-
-      @keyframes swayChain {
-        0%, 100% { transform: rotate(0deg); }
-        50% { transform: rotate(4deg); }
-      }
-
-      @keyframes ribbonBounce {
-        0%, 100% { transform: translateY(0); }
-        50% { transform: translateY(2px); }
-      }
-
-      @media (prefers-reduced-motion: reduce) {
-        .llama,
-        .llama .ear,
-        .llama .tail,
-        .llama .blink,
-        .llama .glyph,
-        .llama .glow,
-        .llama .fringe,
-        .llama .cape,
-        .llama .chain,
-        .llama .ribbon {
-          animation-duration: 0.01ms !important;
-          animation-iteration-count: 1 !important;
-        }
-      }
+      .tech .stage { background: linear-gradient(180deg, rgba(16,33,51,0.95), rgba(8,22,35,0.96)); }
+      .dark .stage { background: linear-gradient(180deg, rgba(43,34,39,0.96), rgba(20,15,19,0.98)); }
+      h2, h3 { margin: 0; }
+      h3 { margin-top: 16px; font-size: 1.2rem; }
+      p { color: var(--muted); line-height: 1.65; }
+      ul { margin: 14px 0 0; padding-left: 18px; color: var(--muted); line-height: 1.65; }
+      .icon { width: min(180px, 68%); height: auto; filter: drop-shadow(0 20px 26px rgba(40, 22, 10, 0.22)); }
+      .dark .icon { filter: drop-shadow(0 24px 34px rgba(0, 0, 0, 0.34)); }
+      @media (max-width: 720px) { .wrap { width: min(100% - 20px, 1180px); } .hero, .panel { border-radius: 22px; } }
     </style>
   </head>
   <body>
-    <main class="wrap">
+    <div class="wrap">
       <section class="hero">
-        <p class="eyebrow">Visual Approval Board</p>
-        <h1>Concept Llamas You Can Actually Look At</h1>
+        <p class="eyebrow">Brand preview</p>
+        <h1>OL icon studies replace the old mascot pass.</h1>
         <p>
-          These are lightweight animated mockups, not final illustration assets. The goal is to let you react to silhouette, attitude,
-          theme fit, and motion flavor before any proper art pass.
+          This preview keeps the earlier URL alive, but the content is now the shipped OL monogram direction: a warm ringed O with the L integrated
+          into the right side so it stays recognizable in the app, installer, docs, and exported guides.
         </p>
-        <div class="hero-links">
-          <a class="hero-link" href="/llama-reference-board.html">Open curated reference board</a>
-          <a class="hero-link" href="/llama-refined-concepts.html">Open refined second pass</a>
+        <div class="links">
+          <a class="pill" href="/llama-reference-board.html">Open brand reference board</a>
+          <a class="pill" href="/llama-refined-concepts.html">Open refined OL variants</a>
+          <a class="pill" href="/plush-llama-presentation.html">Open OL presentation board</a>
         </div>
       </section>
 
-      <section class="theme-section">
-        <div class="theme-head">
-          <div>
-            <p class="eyebrow">Plain Theme</p>
-            <h2>Warm, bright, premium, and safe</h2>
-            <p class="theme-note">Three variants that stay soft and welcoming without falling into sticker-pack territory.</p>
+      <section class="grid">
+        <article class="panel">
+          <div class="stage">
+            <svg class="icon" viewBox="0 0 180 180" aria-label="OL icon light preview" role="img">
+              <defs>
+                <linearGradient id="ring-light" x1="36" y1="26" x2="132" y2="136" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stop-color="#ffe1b6" />
+                  <stop offset="100%" stop-color="#b05d25" />
+                </linearGradient>
+                <linearGradient id="letter-light" x1="110" y1="42" x2="110" y2="120" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stop-color="#f6bc76" />
+                  <stop offset="100%" stop-color="#7f3f1b" />
+                </linearGradient>
+              </defs>
+              <circle cx="90" cy="90" r="58" fill="url(#ring-light)" />
+              <circle cx="90" cy="90" r="30" fill="#fff8ee" />
+              <path d="M88 34a58 58 0 0 1 46 26" fill="none" stroke="#fff7e7" stroke-width="10" stroke-linecap="round" opacity="0.72" />
+              <path d="M102 46h18v48h30v18h-48z" fill="url(#letter-light)" />
+              <circle cx="90" cy="90" r="58" fill="none" stroke="#6f3714" stroke-width="4" opacity="0.45" />
+            </svg>
           </div>
-        </div>
-        <div class="cards">
-          <article class="card plain">
-            <span class="badge">plain-soft-bounce</span>
-            <h3>Soft Bounce</h3>
-            <div class="stage">
-              <div class="llama">
-                <svg viewBox="0 0 160 160" aria-hidden="true">
-                  <ellipse cx="86" cy="102" rx="36" ry="28" fill="#f8efe5" />
-                  <ellipse cx="110" cy="72" rx="23" ry="21" fill="#f8efe5" />
-                  <ellipse cx="118" cy="75" rx="13" ry="11" fill="#ebd3bb" />
-                  <ellipse cx="92" cy="103" rx="24" ry="19" fill="#fff7ef" />
-                  <polygon class="ear" points="101,53 108,35 117,54" fill="#f8efe5" />
-                  <polygon class="ear right" points="118,51 131,37 132,57" fill="#f8efe5" />
-                  <polygon points="105,52 108,43 113,53" fill="#e7cdb6" />
-                  <polygon points="120,52 127,45 128,55" fill="#e7cdb6" />
-                  <rect x="63" y="121" width="8" height="24" rx="4" fill="#b99172" />
-                  <rect x="82" y="123" width="8" height="22" rx="4" fill="#b99172" />
-                  <rect x="101" y="122" width="8" height="23" rx="4" fill="#b99172" />
-                  <rect x="119" y="121" width="8" height="24" rx="4" fill="#b99172" />
-                  <circle cx="106" cy="71" r="2.4" fill="#2d2018" />
-                  <circle cx="117" cy="71" r="2.4" fill="#2d2018" />
-                  <g class="blink">
-                    <rect x="103" y="69.5" width="6" height="1.2" rx="0.6" fill="#2d2018" />
-                    <rect x="114" y="69.5" width="6" height="1.2" rx="0.6" fill="#2d2018" />
-                  </g>
-                  <path d="M110 80 q4 4 8 0" stroke="#7f5a45" stroke-width="1.8" fill="none" stroke-linecap="round" />
-                  <circle cx="101" cy="77" r="2.6" fill="#f4c1b2" />
-                  <circle cx="123" cy="77" r="2.6" fill="#f4c1b2" />
-                  <path class="tail" d="M52 93 q-10 3 -6 12" stroke="#f8efe5" stroke-width="8" fill="none" stroke-linecap="round" />
-                  <path class="scarf" d="M98 87 q15 9 30 0" stroke="#d48b55" stroke-width="7" fill="none" stroke-linecap="round" />
-                </svg>
-              </div>
-            </div>
-            <p class="muted">Cream wool, peach cheeks, tiny scarf, soft bounce loop. Safest default lead.</p>
-            <span class="status">warm / polished</span>
-          </article>
+          <h3>Light finish</h3>
+          <p>The current generated icon set now uses the blue tech panel treatment with a raised OL letter for browser, mobile, Windows, and Linux surfaces.</p>
+        </article>
 
-          <article class="card plain">
-            <span class="badge">plain-ribbon-pop</span>
-            <h3>Ribbon Pop</h3>
-            <div class="stage">
-              <div class="llama">
-                <svg viewBox="0 0 160 160" aria-hidden="true">
-                  <ellipse cx="86" cy="102" rx="35" ry="28" fill="#fff6ee" />
-                  <ellipse cx="111" cy="71" rx="23" ry="21" fill="#fff6ee" />
-                  <ellipse cx="119" cy="75" rx="13" ry="11" fill="#efd9c8" />
-                  <ellipse cx="91" cy="101" rx="24" ry="18" fill="#fffdf9" />
-                  <polygon class="ear" points="102,54 108,35 118,54" fill="#fff6ee" />
-                  <polygon class="ear right" points="118,52 132,39 132,59" fill="#fff6ee" />
-                  <rect x="63" y="121" width="8" height="24" rx="4" fill="#b98b63" />
-                  <rect x="82" y="123" width="8" height="22" rx="4" fill="#b98b63" />
-                  <rect x="101" y="122" width="8" height="23" rx="4" fill="#b98b63" />
-                  <rect x="119" y="121" width="8" height="24" rx="4" fill="#b98b63" />
-                  <circle cx="106" cy="71" r="2.5" fill="#2d2018" />
-                  <circle cx="118" cy="71" r="2.5" fill="#2d2018" />
-                  <g class="blink">
-                    <rect x="103" y="69.5" width="6.4" height="1.2" rx="0.6" fill="#2d2018" />
-                    <rect x="115" y="69.5" width="6.4" height="1.2" rx="0.6" fill="#2d2018" />
-                  </g>
-                  <path d="M111 80 q5 4 9 0" stroke="#7f5a45" stroke-width="1.8" fill="none" stroke-linecap="round" />
-                  <path class="tail" d="M52 95 q-10 4 -6 11" stroke="#fff6ee" stroke-width="8" fill="none" stroke-linecap="round" />
-                  <path d="M100 87 q13 8 28 0" stroke="#de7d87" stroke-width="7" fill="none" stroke-linecap="round" />
-                  <g class="ribbon">
-                    <polygon points="118,91 126,98 118,103" fill="#de7d87" />
-                    <polygon points="108,91 100,98 108,103" fill="#de7d87" />
-                    <circle cx="113" cy="97" r="4.5" fill="#f2a0a9" />
-                  </g>
-                </svg>
-              </div>
-            </div>
-            <p class="muted">Brighter collar detail and a cheerier sway. More playful, still premium.</p>
-            <span class="status">cheerful / bright</span>
-          </article>
-
-          <article class="card plain">
-            <span class="badge">plain-marshmallow-strut</span>
-            <h3>Marshmallow Strut</h3>
-            <div class="stage">
-              <div class="llama">
-                <svg viewBox="0 0 160 160" aria-hidden="true">
-                  <ellipse cx="84" cy="104" rx="40" ry="31" fill="#fff5eb" />
-                  <ellipse cx="110" cy="74" rx="23" ry="22" fill="#fff5eb" />
-                  <ellipse cx="117" cy="77" rx="13" ry="11" fill="#ebd2be" />
-                  <ellipse cx="90" cy="103" rx="27" ry="22" fill="#fffdf7" />
-                  <circle cx="64" cy="92" r="8" fill="#fffaf2" />
-                  <circle cx="55" cy="101" r="9" fill="#fffaf2" />
-                  <circle cx="67" cy="110" r="9" fill="#fffaf2" />
-                  <polygon class="ear" points="101,55 108,34 118,55" fill="#fff5eb" />
-                  <polygon class="ear right" points="118,53 132,39 132,59" fill="#fff5eb" />
-                  <rect x="61" y="123" width="9" height="22" rx="4.5" fill="#b48a68" />
-                  <rect x="81" y="124" width="9" height="21" rx="4.5" fill="#b48a68" />
-                  <rect x="101" y="124" width="9" height="21" rx="4.5" fill="#b48a68" />
-                  <rect x="121" y="123" width="9" height="22" rx="4.5" fill="#b48a68" />
-                  <path d="M103 70 q3 -2 6 0" stroke="#2d2018" stroke-width="1.8" fill="none" stroke-linecap="round" />
-                  <path d="M115 70 q3 -2 6 0" stroke="#2d2018" stroke-width="1.8" fill="none" stroke-linecap="round" />
-                  <g class="blink">
-                    <rect x="102" y="69.5" width="7" height="1.1" rx="0.55" fill="#2d2018" />
-                    <rect x="114" y="69.5" width="7" height="1.1" rx="0.55" fill="#2d2018" />
-                  </g>
-                  <path d="M110 81 q4 3 8 0" stroke="#7f5a45" stroke-width="1.7" fill="none" stroke-linecap="round" />
-                  <path class="tail" d="M46 100 q-10 3 -4 10" stroke="#fff5eb" stroke-width="8" fill="none" stroke-linecap="round" />
-                </svg>
-              </div>
-            </div>
-            <p class="muted">Chunkier wool mass and the most mascot energy in the plain group.</p>
-            <span class="status">soft / memorable</span>
-          </article>
-        </div>
-      </section>
-
-      <section class="theme-section">
-        <div class="theme-head">
-          <div>
-            <p class="eyebrow">Tech Theme</p>
-            <h2>Sharper, brighter, and lightly futuristic</h2>
-            <p class="theme-note">Three variants that keep one llama family while pushing different tech attitudes.</p>
+        <article class="panel tech">
+          <div class="stage">
+            <svg class="icon" viewBox="0 0 180 180" aria-label="OL icon tech preview" role="img">
+              <defs>
+                <linearGradient id="ring-tech" x1="36" y1="26" x2="132" y2="136" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stop-color="#ffd49c" />
+                  <stop offset="100%" stop-color="#bd672c" />
+                </linearGradient>
+                <linearGradient id="letter-tech" x1="110" y1="42" x2="110" y2="120" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stop-color="#ffe1a7" />
+                  <stop offset="100%" stop-color="#87411a" />
+                </linearGradient>
+              </defs>
+              <circle cx="90" cy="90" r="58" fill="url(#ring-tech)" />
+              <circle cx="90" cy="90" r="30" fill="#effcff" />
+              <path d="M88 34a58 58 0 0 1 46 26" fill="none" stroke="#dbfbff" stroke-width="10" stroke-linecap="round" opacity="0.78" />
+              <path d="M102 46h18v48h30v18h-48z" fill="url(#letter-tech)" />
+              <circle cx="90" cy="90" r="58" fill="none" stroke="#8ee8f4" stroke-width="4" opacity="0.7" />
+            </svg>
           </div>
-        </div>
-        <div class="cards">
-          <article class="card tech">
-            <span class="badge">tech-neon-circuit</span>
-            <h3>Neon Circuit</h3>
-            <div class="stage">
-              <div class="llama">
-                <svg viewBox="0 0 160 160" aria-hidden="true">
-                  <ellipse cx="86" cy="102" rx="36" ry="28" fill="#eef8ff" />
-                  <ellipse cx="110" cy="72" rx="23" ry="21" fill="#eef8ff" />
-                  <ellipse cx="118" cy="75" rx="13" ry="11" fill="#d5ebf8" />
-                  <polygon class="ear" points="101,53 108,35 117,54" fill="#eef8ff" />
-                  <polygon class="ear right" points="118,51 131,37 132,57" fill="#eef8ff" />
-                  <rect x="63" y="121" width="8" height="24" rx="4" fill="#7cb6d8" />
-                  <rect x="82" y="123" width="8" height="22" rx="4" fill="#7cb6d8" />
-                  <rect x="101" y="122" width="8" height="23" rx="4" fill="#7cb6d8" />
-                  <rect x="119" y="121" width="8" height="24" rx="4" fill="#7cb6d8" />
-                  <path d="M102 68 h21" stroke="#00a7d6" stroke-width="2.5" stroke-linecap="round" class="visor" />
-                  <circle cx="106" cy="72" r="2.2" fill="#18374c" />
-                  <circle cx="118" cy="72" r="2.2" fill="#18374c" />
-                  <g class="blink">
-                    <rect x="103" y="70.2" width="6" height="1.1" rx="0.55" fill="#18374c" />
-                    <rect x="115" y="70.2" width="6" height="1.1" rx="0.55" fill="#18374c" />
-                  </g>
-                  <path d="M108 80 q4 3 8 0" stroke="#4a7188" stroke-width="1.8" fill="none" stroke-linecap="round" />
-                  <path d="M69 90 h18 M65 102 h26 M78 115 h18" stroke="#4fd2f6" stroke-width="2" stroke-linecap="round" opacity="0.75" />
-                  <circle class="glow" cx="128" cy="57" r="6" fill="#73ebff" opacity="0.55" />
-                  <path class="tail" d="M52 93 q-10 3 -6 12" stroke="#eef8ff" stroke-width="8" fill="none" stroke-linecap="round" />
-                </svg>
-              </div>
-            </div>
-            <p class="muted">The cleanest tech lead: subtle circuits, visor line, compact smart bounce.</p>
-            <span class="status">sharp / futuristic</span>
-          </article>
+          <h3>Tech finish</h3>
+          <p>The geometry stays fixed while the rim picks up a cooler signal edge for the tech theme.</p>
+        </article>
 
-          <article class="card tech">
-            <span class="badge">tech-terminal-runner</span>
-            <h3>Terminal Runner</h3>
-            <div class="stage">
-              <div class="llama">
-                <svg viewBox="0 0 160 160" aria-hidden="true">
-                  <ellipse cx="86" cy="102" rx="36" ry="28" fill="#eef9ff" />
-                  <ellipse cx="111" cy="72" rx="23" ry="21" fill="#eef9ff" />
-                  <ellipse cx="119" cy="75" rx="13" ry="11" fill="#d1e9f4" />
-                  <polygon class="ear" points="101,53 108,35 117,54" fill="#eef9ff" />
-                  <polygon class="ear right" points="118,51 131,37 132,57" fill="#eef9ff" />
-                  <path d="M96 58 q11 -10 24 -4" stroke="#59c5ff" stroke-width="4" fill="none" stroke-linecap="round" />
-                  <rect x="63" y="121" width="8" height="24" rx="4" fill="#7cb6d8" />
-                  <rect x="82" y="123" width="8" height="22" rx="4" fill="#7cb6d8" />
-                  <rect x="101" y="122" width="8" height="23" rx="4" fill="#7cb6d8" />
-                  <rect x="119" y="121" width="8" height="24" rx="4" fill="#7cb6d8" />
-                  <circle cx="106" cy="71" r="2.4" fill="#173547" />
-                  <circle cx="118" cy="70" r="2.4" fill="#173547" />
-                  <g class="blink">
-                    <rect x="103" y="69.6" width="6" height="1.1" rx="0.55" fill="#173547" />
-                    <rect x="115" y="68.7" width="6" height="1.1" rx="0.55" fill="#173547" />
-                  </g>
-                  <path d="M109 80 q5 3 9 -1" stroke="#4a7188" stroke-width="1.8" fill="none" stroke-linecap="round" />
-                  <path class="tail" d="M52 93 q-10 3 -6 12" stroke="#eef9ff" stroke-width="8" fill="none" stroke-linecap="round" />
-                  <g class="glyph">
-                    <path d="M133 52 l-5 4 5 4" stroke="#1db8ff" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" />
-                    <path d="M138 61 h8" stroke="#1db8ff" stroke-width="2.2" stroke-linecap="round" />
-                  </g>
-                </svg>
-              </div>
-            </div>
-            <p class="muted">More builder-tool energy, with a tiny terminal glyph and slightly more alert face.</p>
-            <span class="status">restless / capable</span>
-          </article>
-
-          <article class="card tech">
-            <span class="badge">tech-pixel-pulse</span>
-            <h3>Pixel Pulse</h3>
-            <div class="stage">
-              <div class="llama">
-                <svg viewBox="0 0 160 160" aria-hidden="true">
-                  <ellipse cx="86" cy="102" rx="36" ry="28" fill="#eef9ff" />
-                  <ellipse cx="110" cy="72" rx="23" ry="21" fill="#eef9ff" />
-                  <ellipse cx="118" cy="75" rx="13" ry="11" fill="#d1e9f4" />
-                  <polygon class="ear" points="101,53 108,35 117,54" fill="#eef9ff" />
-                  <polygon class="ear right" points="118,51 131,37 132,57" fill="#eef9ff" />
-                  <rect x="63" y="121" width="8" height="24" rx="4" fill="#7cb6d8" />
-                  <rect x="82" y="123" width="8" height="22" rx="4" fill="#7cb6d8" />
-                  <rect x="101" y="122" width="8" height="23" rx="4" fill="#7cb6d8" />
-                  <rect x="119" y="121" width="8" height="24" rx="4" fill="#7cb6d8" />
-                  <circle cx="106" cy="71" r="2.4" fill="#173547" />
-                  <circle cx="117" cy="71" r="2.4" fill="#173547" />
-                  <g class="blink">
-                    <rect x="103" y="69.5" width="6" height="1.1" rx="0.55" fill="#173547" />
-                    <rect x="114" y="69.5" width="6" height="1.1" rx="0.55" fill="#173547" />
-                  </g>
-                  <path d="M109 80 q4 4 8 0" stroke="#4a7188" stroke-width="1.8" fill="none" stroke-linecap="round" />
-                  <g class="pixel">
-                    <rect x="69" y="87" width="5" height="5" fill="#25d2ff" />
-                    <rect x="75" y="93" width="5" height="5" fill="#70f03e" />
-                    <rect x="82" y="87" width="5" height="5" fill="#25d2ff" />
-                    <rect x="88" y="93" width="5" height="5" fill="#70f03e" />
-                  </g>
-                  <circle class="glow" cx="131" cy="60" r="5" fill="#77ff9b" opacity="0.6" />
-                  <path class="tail" d="M52 93 q-10 3 -6 12" stroke="#eef9ff" stroke-width="8" fill="none" stroke-linecap="round" />
-                </svg>
-              </div>
-            </div>
-            <p class="muted">The friendlier retro-tech option, with pixel trim and a playful glow accent.</p>
-            <span class="status">playful / retro-tech</span>
-          </article>
-        </div>
-      </section>
-
-      <section class="theme-section">
-        <div class="theme-head">
-          <div>
-            <p class="eyebrow">Dark Theme</p>
-            <h2>Heavier, louder, and more theatrical</h2>
-            <p class="theme-note">Three dark-mode candidates that lean metal without becoming ugly or hostile.</p>
+        <article class="panel dark">
+          <div class="stage">
+            <svg class="icon" viewBox="0 0 180 180" aria-label="OL icon dark preview" role="img">
+              <defs>
+                <linearGradient id="ring-dark" x1="36" y1="26" x2="132" y2="136" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stop-color="#f6ca92" />
+                  <stop offset="100%" stop-color="#b35b28" />
+                </linearGradient>
+                <linearGradient id="letter-dark" x1="110" y1="42" x2="110" y2="120" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stop-color="#efaa61" />
+                  <stop offset="100%" stop-color="#7a3418" />
+                </linearGradient>
+              </defs>
+              <circle cx="90" cy="90" r="58" fill="url(#ring-dark)" />
+              <circle cx="90" cy="90" r="30" fill="#241d1b" />
+              <path d="M88 34a58 58 0 0 1 46 26" fill="none" stroke="#ffead2" stroke-width="10" stroke-linecap="round" opacity="0.72" />
+              <path d="M102 46h18v48h30v18h-48z" fill="url(#letter-dark)" />
+              <circle cx="90" cy="90" r="58" fill="none" stroke="#f2dfcb" stroke-width="4" opacity="0.5" />
+            </svg>
           </div>
-        </div>
-        <div class="cards">
-          <article class="card dark">
-            <span class="badge">dark-metal-wool</span>
-            <h3>Metal Wool</h3>
-            <div class="stage">
-              <div class="llama">
-                <svg viewBox="0 0 160 160" aria-hidden="true">
-                  <ellipse cx="86" cy="102" rx="36" ry="28" fill="#34252b" />
-                  <ellipse cx="110" cy="72" rx="23" ry="21" fill="#34252b" />
-                  <ellipse cx="118" cy="75" rx="13" ry="11" fill="#4b3840" />
-                  <polygon class="ear" points="101,53 108,35 117,54" fill="#34252b" />
-                  <polygon class="ear right" points="118,51 131,37 132,57" fill="#34252b" />
-                  <rect x="63" y="121" width="8" height="24" rx="4" fill="#8d7279" />
-                  <rect x="82" y="123" width="8" height="22" rx="4" fill="#8d7279" />
-                  <rect x="101" y="122" width="8" height="23" rx="4" fill="#8d7279" />
-                  <rect x="119" y="121" width="8" height="24" rx="4" fill="#8d7279" />
-                  <path class="fringe" d="M96 58 q11 -12 24 -4" stroke="#1a1317" stroke-width="6" fill="none" stroke-linecap="round" />
-                  <circle cx="106" cy="71" r="2.4" fill="#ff9a9a" />
-                  <circle cx="118" cy="71" r="2.4" fill="#ff9a9a" />
-                  <g class="blink">
-                    <rect x="103" y="69.5" width="6" height="1.1" rx="0.55" fill="#ff9a9a" />
-                    <rect x="115" y="69.5" width="6" height="1.1" rx="0.55" fill="#ff9a9a" />
-                  </g>
-                  <path d="M109 80 q4 3 8 0" stroke="#d39a9a" stroke-width="1.7" fill="none" stroke-linecap="round" />
-                  <path class="tail" d="M52 93 q-10 3 -6 12" stroke="#34252b" stroke-width="8" fill="none" stroke-linecap="round" />
-                  <path class="collar" d="M98 88 h28" stroke="#8d8b8c" stroke-width="6" fill="none" stroke-linecap="round" />
-                  <polygon points="104,88 108,93 100,93" fill="#c1c0c1" />
-                  <polygon points="114,88 118,93 110,93" fill="#c1c0c1" />
-                  <polygon points="124,88 128,93 120,93" fill="#c1c0c1" />
-                  <circle cx="121" cy="78" r="2.6" stroke="#d9d7d8" stroke-width="1.5" fill="none" />
-                </svg>
-              </div>
-            </div>
-            <p class="muted">The strongest dark lead: spiked collar, tiny ring, ember eyes, small headbang.</p>
-            <span class="status">bold / mischievous</span>
-          </article>
-
-          <article class="card dark">
-            <span class="badge">dark-doom-alpaca</span>
-            <h3>Doom Alpaca</h3>
-            <div class="stage">
-              <div class="llama">
-                <svg viewBox="0 0 160 160" aria-hidden="true">
-                  <ellipse cx="86" cy="102" rx="36" ry="28" fill="#2f252a" />
-                  <ellipse cx="110" cy="72" rx="23" ry="21" fill="#2f252a" />
-                  <ellipse cx="118" cy="75" rx="13" ry="11" fill="#43363b" />
-                  <polygon class="ear" points="101,53 108,35 117,54" fill="#2f252a" />
-                  <polygon class="ear right" points="118,51 131,37 132,57" fill="#2f252a" />
-                  <rect x="63" y="121" width="8" height="24" rx="4" fill="#8d7279" />
-                  <rect x="82" y="123" width="8" height="22" rx="4" fill="#8d7279" />
-                  <rect x="101" y="122" width="8" height="23" rx="4" fill="#8d7279" />
-                  <rect x="119" y="121" width="8" height="24" rx="4" fill="#8d7279" />
-                  <path class="fringe" d="M99 55 q14 -6 24 2 q-5 13 -16 17" fill="#171115" />
-                  <circle cx="107" cy="72" r="2.3" fill="#ffb3b3" />
-                  <g class="blink">
-                    <rect x="104" y="70" width="6" height="1.1" rx="0.55" fill="#ffb3b3" />
-                  </g>
-                  <path d="M110 80 q4 2 8 -1" stroke="#d6acad" stroke-width="1.6" fill="none" stroke-linecap="round" />
-                  <path class="tail" d="M52 93 q-10 3 -6 12" stroke="#2f252a" stroke-width="8" fill="none" stroke-linecap="round" />
-                  <path class="chain" d="M101 90 q14 9 28 0" stroke="#a9a4a7" stroke-width="3" fill="none" stroke-linecap="round" />
-                  <circle cx="108" cy="91" r="2.1" fill="#c4bec1" />
-                  <circle cx="115" cy="92" r="2.1" fill="#c4bec1" />
-                  <circle cx="122" cy="91" r="2.1" fill="#c4bec1" />
-                </svg>
-              </div>
-            </div>
-            <p class="muted">The cooler fashion-forward dark option, with fringe and subtle chain detail.</p>
-            <span class="status">slick / cool</span>
-          </article>
-
-          <article class="card dark">
-            <span class="badge">dark-stage-beast</span>
-            <h3>Stage Beast</h3>
-            <div class="stage">
-              <div class="llama">
-                <svg viewBox="0 0 160 160" aria-hidden="true">
-                  <ellipse cx="86" cy="102" rx="36" ry="28" fill="#32242a" />
-                  <ellipse cx="110" cy="72" rx="23" ry="21" fill="#32242a" />
-                  <ellipse cx="118" cy="75" rx="13" ry="11" fill="#47343b" />
-                  <polygon class="ear" points="101,53 108,35 117,54" fill="#32242a" />
-                  <polygon class="ear right" points="118,51 131,37 132,57" fill="#32242a" />
-                  <rect x="63" y="121" width="8" height="24" rx="4" fill="#8d7279" />
-                  <rect x="82" y="123" width="8" height="22" rx="4" fill="#8d7279" />
-                  <rect x="101" y="122" width="8" height="23" rx="4" fill="#8d7279" />
-                  <rect x="119" y="121" width="8" height="24" rx="4" fill="#8d7279" />
-                  <path d="M101 67 q4 -4 8 0" stroke="#ffb9b9" stroke-width="1.7" fill="none" stroke-linecap="round" />
-                  <path d="M114 67 q4 -4 8 0" stroke="#ffb9b9" stroke-width="1.7" fill="none" stroke-linecap="round" />
-                  <g class="blink">
-                    <rect x="101" y="69.7" width="8" height="1.1" rx="0.55" fill="#ffb9b9" />
-                    <rect x="114" y="69.7" width="8" height="1.1" rx="0.55" fill="#ffb9b9" />
-                  </g>
-                  <path d="M109 80 q4 4 9 0" stroke="#d6acad" stroke-width="1.7" fill="none" stroke-linecap="round" />
-                  <path class="tail" d="M52 93 q-10 3 -6 12" stroke="#32242a" stroke-width="8" fill="none" stroke-linecap="round" />
-                  <path class="cape" d="M71 84 q-14 10 -7 28 q13 2 25 -6 q-7 -13 -18 -22" fill="#6c2731" opacity="0.88" />
-                  <circle class="glow" cx="130" cy="58" r="7" fill="#ff6d6d" opacity="0.45" />
-                </svg>
-              </div>
-            </div>
-            <p class="muted">The theatrical one: cape shape, bigger pose, and a little stage-drama energy.</p>
-            <span class="status">dramatic / fun</span>
-          </article>
-        </div>
+          <h3>Dark finish</h3>
+          <p>The midnight field deepens the mark without changing the silhouette or breaking small-size clarity.</p>
+        </article>
       </section>
-    </main>
+
+      <section class="panel" style="margin-top: 24px;">
+        <h2>What changed</h2>
+        <ul>
+          <li>The older mascot artwork is no longer the direction for shipped surfaces.</li>
+          <li>The OL mark now carries entry, help, PDF, and installer branding.</li>
+          <li>Theme variation is handled through finish and lighting, not character swaps.</li>
+        </ul>
+      </section>
+    </div>
   </body>
 </html>

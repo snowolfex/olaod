@@ -9,6 +9,7 @@ AppId={{E34B88F5-6396-4AD7-8F7B-DB9A85B44214}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher=Wolfe Dezines
+SetupIconFile={#BundleRoot}\oload.ico
 LicenseFile={#LegalRoot}\EULA.txt
 InfoBeforeFile={#LegalRoot}\SOURCE-AVAILABLE-NOTICE.txt
 DefaultDirName={localappdata}\Oload
@@ -21,7 +22,7 @@ WizardStyle=modern
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest
 DisableProgramGroupPage=yes
-UninstallDisplayIcon={app}\start-oload.cmd
+UninstallDisplayIcon={app}\oload.ico
 VersionInfoCompany=Wolfe Dezines
 VersionInfoCopyright=Copyright (c) 2026 Wolfe Dezines
 
@@ -33,17 +34,18 @@ Source: "{#BundleRoot}\uninstall-oload.ps1"; DestDir: "{app}"; Flags: ignorevers
 Source: "{#BundleRoot}\EULA.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BundleRoot}\SOURCE-AVAILABLE-NOTICE.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BundleRoot}\README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#BundleRoot}\oload.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\Oload"; Filename: "{app}\start-oload.cmd"
+Name: "{group}\Oload"; Filename: "{app}\start-oload.cmd"; IconFilename: "{app}\oload.ico"
 Name: "{group}\Uninstall Oload"; Filename: "{uninstallexe}"
-Name: "{userdesktop}\Oload"; Filename: "{app}\start-oload.cmd"; Tasks: desktopicon
+Name: "{userdesktop}\Oload"; Filename: "{app}\start-oload.cmd"; Tasks: desktopicon; IconFilename: "{app}\oload.ico"
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; Flags: unchecked
 
 [Run]
-Filename: "powershell.exe"; Parameters: "-NoLogo -NoProfile -ExecutionPolicy Bypass -File ""{app}\install-oload.ps1"" -InstallRoot ""{app}"" -Port ""{code:GetPort}"" {code:GetBindLanArg} -OllamaBaseUrl ""{code:GetOllamaBaseUrl}"" -NodeMode ""{code:GetNodeMode}"" -OllamaMode ""{code:GetOllamaMode}"" -DefaultLanguage ""{code:GetDefaultLanguage}"" -UpdateManifestUrl ""{code:GetUpdateManifestUrl}"" -UpdateChannel ""{code:GetUpdateChannel}"" -AdminPassword ""{code:GetAdminPassword}"" -SessionSecret ""{code:GetSessionSecret}"" {code:GetStartNowArg} -NonInteractive"; Flags: waituntilterminated
+Filename: "powershell.exe"; Parameters: "-NoLogo -NoProfile -ExecutionPolicy Bypass -File ""{app}\install-oload.ps1"" -InstallRoot ""{app}"" -Port ""{code:GetPort}"" {code:GetBindLanArg} -OllamaBaseUrl ""{code:GetOllamaBaseUrl}"" -NodeMode ""{code:GetNodeMode}"" -OllamaMode ""{code:GetOllamaMode}"" -DefaultLanguage ""{code:GetDefaultLanguage}"" -UpdateManifestUrl ""{code:GetUpdateManifestUrl}"" -UpdateChannel ""{code:GetUpdateChannel}"" -UpdateManifestPublicKey ""{code:GetUpdateManifestPublicKey}"" -AdminPassword ""{code:GetAdminPassword}"" -SessionSecret ""{code:GetSessionSecret}"" {code:GetStartNowArg} -NonInteractive"; Flags: waituntilterminated
 
 [UninstallRun]
 Filename: "powershell.exe"; Parameters: "-NoLogo -NoProfile -ExecutionPolicy Bypass -File ""{app}\uninstall-oload.ps1"" -InstallRoot ""{app}"""; Flags: waituntilterminated; RunOnceId: "OloadScriptUninstall"
@@ -107,10 +109,12 @@ begin
   RuntimePage.Values[2] := '';
   RuntimePage.Add('Update channel:', False);
   RuntimePage.Values[3] := 'stable';
-  RuntimePage.Add('Bootstrap admin password (optional):', False);
+  RuntimePage.Add('Update public key (optional):', False);
   RuntimePage.Values[4] := '';
-  RuntimePage.Add('Session secret (blank = auto-generate):', False);
+  RuntimePage.Add('Bootstrap admin password (optional):', False);
   RuntimePage.Values[5] := '';
+  RuntimePage.Add('Session secret (blank = auto-generate):', False);
+  RuntimePage.Values[6] := '';
 
   LanguagePage := CreateCustomPage(RuntimePage.ID,
     'Default language',
@@ -127,11 +131,11 @@ begin
   LanguageCombo.Top := LanguageLabel.Top + LanguageLabel.Height + ScaleY(6);
   LanguageCombo.Width := LanguagePage.SurfaceWidth;
   LanguageCombo.Items.Add('Auto');
-  LanguageCombo.Items.Add('United States');
+  LanguageCombo.Items.Add('English (United States)');
   LanguageCombo.Items.Add('Arabic');
   LanguageCombo.Items.Add('Bengali');
   LanguageCombo.Items.Add('Chinese');
-  LanguageCombo.Items.Add('English');
+  LanguageCombo.Items.Add('English (United Kingdom / England)');
   LanguageCombo.Items.Add('Persian');
   LanguageCombo.Items.Add('French');
   LanguageCombo.Items.Add('Hindi');
@@ -207,12 +211,12 @@ end;
 
 function GetAdminPassword(Param: String): String;
 begin
-  Result := RuntimePage.Values[4];
+  Result := RuntimePage.Values[5];
 end;
 
 function GetSessionSecret(Param: String): String;
 begin
-  Result := RuntimePage.Values[5];
+  Result := RuntimePage.Values[6];
 end;
 
 function GetUpdateManifestUrl(Param: String): String;
@@ -225,6 +229,11 @@ begin
   Result := RuntimePage.Values[3];
 end;
 
+function GetUpdateManifestPublicKey(Param: String): String;
+begin
+  Result := RuntimePage.Values[4];
+end;
+
 function GetDefaultLanguage(Param: String): String;
 begin
   case LanguageCombo.ItemIndex of
@@ -233,7 +242,7 @@ begin
     2: Result := 'arabic';
     3: Result := 'bengali';
     4: Result := 'chinese';
-    5: Result := 'english';
+    5: Result := 'united-kingdom';
     6: Result := 'farsi';
     7: Result := 'french';
     8: Result := 'hindi';

@@ -4,7 +4,7 @@ import {
   listAiWorkspaceProfiles,
   saveAiWorkspaceProfile,
 } from "@/lib/ai-profiles";
-import type { AiGroundingMode, AiProviderId } from "@/lib/ai-types";
+import type { AiGroundingMode, AiProviderId, AiToolId } from "@/lib/ai-types";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +36,8 @@ export async function POST(request: Request) {
     temperature?: number;
     useKnowledge?: boolean;
     groundingMode?: Exclude<AiGroundingMode, "off">;
+    enabledToolIds?: AiToolId[];
+    knowledgeBaseIds?: string[];
   };
 
   const profiles = await saveAiWorkspaceProfile({
@@ -48,6 +50,8 @@ export async function POST(request: Request) {
     temperature: payload.temperature,
     useKnowledge: payload.useKnowledge,
     groundingMode: payload.groundingMode,
+    enabledToolIds: payload.enabledToolIds,
+    knowledgeBaseIds: payload.knowledgeBaseIds,
   });
 
   return Response.json({ profiles });

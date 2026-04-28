@@ -1,73 +1,49 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="860" viewBox="0 0 1400 860" role="img" aria-label="Plush llama premium color board">
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="860" viewBox="0 0 1400 860" role="img" aria-labelledby="title desc">
+  <title id="title">OL icon theme board</title>
+  <desc id="desc">A richer OL monogram board showing light, tech, and dark finishes.</desc>
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#f5ede0"/>
-      <stop offset="100%" stop-color="#eadccd"/>
-    </linearGradient>
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#7b624d" flood-opacity="0.18"/>
-    </filter>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#f9f0e5" /><stop offset="100%" stop-color="#eadccd" /></linearGradient>
+    <linearGradient id="ringLight" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#ffe1b6" /><stop offset="100%" stop-color="#b05d25" /></linearGradient>
+    <linearGradient id="letterLight" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#f5bb74" /><stop offset="100%" stop-color="#7d3c19" /></linearGradient>
+    <linearGradient id="ringTech" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#ffd49c" /><stop offset="100%" stop-color="#bd672c" /></linearGradient>
+    <linearGradient id="letterTech" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#ffe3ad" /><stop offset="100%" stop-color="#87411a" /></linearGradient>
+    <linearGradient id="ringDark" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#f6ca92" /><stop offset="100%" stop-color="#b35b28" /></linearGradient>
+    <linearGradient id="letterDark" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#efaa61" /><stop offset="100%" stop-color="#7a3418" /></linearGradient>
   </defs>
+  <rect width="1400" height="860" fill="url(#bg)" />
+  <text x="72" y="88" font-family="Segoe UI, Arial, sans-serif" font-size="40" font-weight="700" fill="#4a3629">OL icon theme board</text>
+  <text x="72" y="126" font-family="Segoe UI, Arial, sans-serif" font-size="20" fill="#705847">Current Oload mark system for light, tech, and dark surfaces.</text>
 
-  <rect width="1400" height="860" fill="url(#bg)"/>
-
-  <text x="72" y="84" font-family="Segoe UI, Arial, sans-serif" font-size="38" font-weight="700" fill="#4a3629">Plush Llama Premium Color Board</text>
-  <text x="72" y="122" font-family="Segoe UI, Arial, sans-serif" font-size="19" fill="#705847">Warmer neutrals, deeper contrast, and richer accents for a premium plush mascot.</text>
-
-  <g filter="url(#shadow)">
-    <rect x="72" y="170" width="390" height="270" rx="30" fill="#fff9f2"/>
-    <text x="104" y="216" font-family="Segoe UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#4a3629">Premium Cream</text>
-    <text x="104" y="246" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#786252">Elegant, soft, and safest for branding.</text>
-    <rect x="104" y="284" width="72" height="118" rx="22" fill="#F2E3CF"/>
-    <rect x="192" y="284" width="72" height="118" rx="22" fill="#D6BC9A"/>
-    <rect x="280" y="284" width="72" height="118" rx="22" fill="#6A4A38"/>
-    <rect x="368" y="284" width="54" height="118" rx="22" fill="#557F7A"/>
-    <text x="104" y="422" font-family="Consolas, monospace" font-size="14" fill="#786252">#F2E3CF  #D6BC9A  #6A4A38  #557F7A</text>
+  <g transform="translate(88 190)">
+    <rect width="360" height="540" rx="32" fill="rgba(255,255,255,0.54)" stroke="rgba(90,58,38,0.14)" />
+    <circle cx="180" cy="212" r="118" fill="url(#ringLight)" />
+    <circle cx="180" cy="212" r="60" fill="#fff8ee" />
+    <path d="M171 96a118 118 0 0 1 95 51" fill="none" stroke="#fff5e2" stroke-width="16" stroke-linecap="round" opacity="0.72" />
+    <path d="M204 126h34v96h60v34h-94z" fill="url(#letterLight)" />
+    <circle cx="180" cy="212" r="118" fill="none" stroke="#6f3714" stroke-width="6" opacity="0.46" />
+    <text x="36" y="420" font-family="Segoe UI, Arial, sans-serif" font-size="34" font-weight="700" fill="#4a3629">Light</text>
+    <text x="36" y="462" font-family="Segoe UI, Arial, sans-serif" font-size="20" fill="#705847">Warm and editorial.</text>
   </g>
 
-  <g filter="url(#shadow)">
-    <rect x="505" y="170" width="390" height="270" rx="30" fill="#fff9f2"/>
-    <text x="537" y="216" font-family="Segoe UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#4a3629">Soft Caramel</text>
-    <text x="537" y="246" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#786252">Slightly sweeter, still plush and premium.</text>
-    <rect x="537" y="284" width="72" height="118" rx="22" fill="#F5EEE4"/>
-    <rect x="625" y="284" width="72" height="118" rx="22" fill="#C9A07C"/>
-    <rect x="713" y="284" width="72" height="118" rx="22" fill="#704E3F"/>
-    <rect x="801" y="284" width="54" height="118" rx="22" fill="#7699A7"/>
-    <text x="537" y="422" font-family="Consolas, monospace" font-size="14" fill="#786252">#F5EEE4  #C9A07C  #704E3F  #7699A7</text>
+  <g transform="translate(520 190)">
+    <rect width="360" height="540" rx="32" fill="#122335" stroke="rgba(133,230,246,0.24)" />
+    <circle cx="180" cy="212" r="118" fill="url(#ringTech)" />
+    <circle cx="180" cy="212" r="60" fill="#effcff" />
+    <path d="M171 96a118 118 0 0 1 95 51" fill="none" stroke="#ddfbff" stroke-width="16" stroke-linecap="round" opacity="0.78" />
+    <path d="M204 126h34v96h60v34h-94z" fill="url(#letterTech)" />
+    <circle cx="180" cy="212" r="118" fill="none" stroke="#8be8f5" stroke-width="6" opacity="0.72" />
+    <text x="36" y="420" font-family="Segoe UI, Arial, sans-serif" font-size="34" font-weight="700" fill="#ffffff">Tech</text>
+    <text x="36" y="462" font-family="Segoe UI, Arial, sans-serif" font-size="20" fill="#c7d6df">Cool signal edge.</text>
   </g>
 
-  <g filter="url(#shadow)">
-    <rect x="938" y="170" width="390" height="270" rx="30" fill="#fff9f2"/>
-    <text x="970" y="216" font-family="Segoe UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#4a3629">Mocha Moss</text>
-    <text x="970" y="246" font-family="Segoe UI, Arial, sans-serif" font-size="16" fill="#786252">Earthier and a bit more boutique.</text>
-    <rect x="970" y="284" width="72" height="118" rx="22" fill="#CDB198"/>
-    <rect x="1058" y="284" width="72" height="118" rx="22" fill="#EFE1D0"/>
-    <rect x="1146" y="284" width="72" height="118" rx="22" fill="#5B453A"/>
-    <rect x="1234" y="284" width="54" height="118" rx="22" fill="#6F7F62"/>
-    <text x="970" y="422" font-family="Consolas, monospace" font-size="14" fill="#786252">#CDB198  #EFE1D0  #5B453A  #6F7F62</text>
-  </g>
-
-  <g filter="url(#shadow)">
-    <rect x="72" y="500" width="1256" height="284" rx="30" fill="#fff9f2"/>
-    <text x="108" y="552" font-family="Segoe UI, Arial, sans-serif" font-size="28" font-weight="700" fill="#4a3629">Chosen stack</text>
-    <text x="108" y="588" font-family="Segoe UI, Arial, sans-serif" font-size="19" fill="#705847">Use Premium Cream unless a warmer or earthier tone is needed for a specific scene.</text>
-
-    <circle cx="232" cy="676" r="58" fill="#F2E3CF"/>
-    <circle cx="362" cy="676" r="58" fill="#D6BC9A"/>
-    <circle cx="492" cy="676" r="58" fill="#6A4A38"/>
-    <circle cx="622" cy="676" r="58" fill="#241A16"/>
-    <circle cx="752" cy="676" r="58" fill="#557F7A"/>
-
-    <text x="176" y="756" font-family="Consolas, monospace" font-size="16" fill="#705847">wool</text>
-    <text x="302" y="756" font-family="Consolas, monospace" font-size="16" fill="#705847">face</text>
-    <text x="434" y="756" font-family="Consolas, monospace" font-size="16" fill="#705847">nose</text>
-    <text x="563" y="756" font-family="Consolas, monospace" font-size="16" fill="#705847">eyes</text>
-    <text x="684" y="756" font-family="Consolas, monospace" font-size="16" fill="#705847">accent</text>
-
-    <text x="904" y="610" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="700" fill="#4a3629">Do not drift into</text>
-    <text x="904" y="646" font-family="Segoe UI, Arial, sans-serif" font-size="18" fill="#705847">pink body tones</text>
-    <text x="904" y="676" font-family="Segoe UI, Arial, sans-serif" font-size="18" fill="#705847">hard plastic reflections</text>
-    <text x="904" y="706" font-family="Segoe UI, Arial, sans-serif" font-size="18" fill="#705847">hyper-real animal fur</text>
-    <text x="904" y="736" font-family="Segoe UI, Arial, sans-serif" font-size="18" fill="#705847">thin or angular face shapes</text>
+  <g transform="translate(952 190)">
+    <rect width="360" height="540" rx="32" fill="#21191d" stroke="rgba(255,255,255,0.12)" />
+    <circle cx="180" cy="212" r="118" fill="url(#ringDark)" />
+    <circle cx="180" cy="212" r="60" fill="#231c1a" />
+    <path d="M171 96a118 118 0 0 1 95 51" fill="none" stroke="#ffe8ce" stroke-width="16" stroke-linecap="round" opacity="0.72" />
+    <path d="M204 126h34v96h60v34h-94z" fill="url(#letterDark)" />
+    <circle cx="180" cy="212" r="118" fill="none" stroke="#f2dfcb" stroke-width="6" opacity="0.5" />
+    <text x="36" y="420" font-family="Segoe UI, Arial, sans-serif" font-size="34" font-weight="700" fill="#ffffff">Dark</text>
+    <text x="36" y="462" font-family="Segoe UI, Arial, sans-serif" font-size="20" fill="#d8cbc1">Midnight depth, same mark.</text>
   </g>
 </svg>

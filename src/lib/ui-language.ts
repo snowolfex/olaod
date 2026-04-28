@@ -1,7 +1,7 @@
 import type { VoiceTranscriptionLanguage } from "@/lib/user-types";
 import uiLiteralTranslations from "@/lib/ui-language-literals.json";
 
-export type ResolvedUiLanguage = Exclude<VoiceTranscriptionLanguage, "auto" | "united-states">;
+export type ResolvedUiLanguage = Exclude<VoiceTranscriptionLanguage, "auto" | "united-states" | "united-kingdom">;
 
 const UI_LITERAL_TRANSLATIONS = uiLiteralTranslations as Record<string, Partial<Record<ResolvedUiLanguage, string>>>;
 
@@ -289,7 +289,7 @@ const EXTRA_UI_TRANSLATIONS: Record<ResolvedUiLanguage, Partial<Record<UiTransla
 };
 
 export function resolveUiLanguage(language?: VoiceTranscriptionLanguage | null): ResolvedUiLanguage {
-  if (!language || language === "auto" || language === "united-states") {
+  if (!language || language === "auto" || language === "united-states" || language === "united-kingdom" || language === "english") {
     return "english";
   }
 

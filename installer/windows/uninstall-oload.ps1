@@ -129,13 +129,22 @@ $embeddedOllamaModels = Join-Path $runtimeRoot "ollama-models"
 $nodeExistedBefore = Read-BoolState $state "NodeExistedBeforeInstall"
 $nodeInstalledByOload = Read-BoolState $state "NodeInstalledByOload"
 $nodePath = $state["NodePath"]
+$managedNodeRoot = $state["ManagedNodeRoot"]
 $ollamaExistedBefore = Read-BoolState $state "OllamaExistedBeforeInstall"
 $ollamaInstalledByOload = Read-BoolState $state "OllamaInstalledByOload"
 $ollamaPath = $state["OllamaPath"]
+$managedOllamaRoot = $state["ManagedOllamaRoot"]
+$managedOllamaModelsRoot = $state["ManagedOllamaModelsRoot"]
+$managedRuntimeRoot = $state["RuntimeRoot"]
+$runtimeEnvPath = $state["RuntimeEnvPath"]
+$installStatePath = $state["InstallStatePath"]
+$installManifestPath = $state["InstallManifestPath"]
+$uninstallNotesPath = $state["UninstallNotesPath"]
 
-if ($nodeInstalledByOload -and (Test-Path (Join-Path $runtimeRoot "node"))) {
-  if (Read-YesNoPrompt "Remove the Oload-managed Node.js/npm runtime at $runtimeRoot\node?" $true) {
-    Remove-PathIfPresent (Join-Path $runtimeRoot "node")
+if ($nodeInstalledByOload -and (Test-Path $(if ($managedNodeRoot) { $managedNodeRoot } else { Join-Path $runtimeRoot "node" }))) {
+  $nodeRuntimeRoot = if ($managedNodeRoot) { $managedNodeRoot } else { Join-Path $runtimeRoot "node" }
+  if (Read-YesNoPrompt "Remove the Oload-managed Node.js/npm runtime at $nodeRuntimeRoot?" $true) {
+    Remove-PathIfPresent $nodeRuntimeRoot
   }
 } elseif ($nodeExistedBefore -or $nodePath) {
   $existingNodePath = if ($nodePath) { $nodePath } else { "the previously verified system Node.js location" }
@@ -159,9 +168,11 @@ if ($ollamaExistedBefore) {
 if ($removeOllama -and (Read-YesNoPrompt "Removing Ollama can also remove all local models. Continue?" $false)) {
   Get-Process ollama -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
   if ($ollamaInstalledByOload -and $ollamaPath -and $ollamaPath.StartsWith($resolvedInstallRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
-    Remove-PathIfPresent $embeddedOllamaRoot
-    if (Read-YesNoPrompt "Also remove the isolated Ollama models stored at $embeddedOllamaModels?" $true) {
-      Remove-PathIfPresent $embeddedOllamaModels
+    $ollamaRuntimeRoot = if ($managedOllamaRoot) { $managedOllamaRoot } else { $embeddedOllamaRoot }
+    $ollamaModelsRoot = if ($managedOllamaModelsRoot) { $managedOllamaModelsRoot } else { $embeddedOllamaModels }
+    Remove-PathIfPresent $ollamaRuntimeRoot
+    if (Read-YesNoPrompt "Also remove the isolated Ollama models stored at $ollamaModelsRoot?" $true) {
+      Remove-PathIfPresent $ollamaModelsRoot
     }
   } else {
     $ollamaEntry = Find-UninstallEntry @("Ollama")
@@ -175,10 +186,11 @@ if ($removeOllama -and (Read-YesNoPrompt "Removing Ollama can also remove all lo
   }
 }
 
-Remove-PathIfPresent $runtimeRoot
-Remove-PathIfPresent (Join-Path $resolvedInstallRoot ".env.runtime")
-Remove-PathIfPresent (Join-Path $resolvedInstallRoot ".oload-install-state")
-Remove-PathIfPresent (Join-Path $resolvedInstallRoot "UNINSTALL-NOTES.txt")
+Remove-PathIfPresent $(if ($managedRuntimeRoot) { $managedRuntimeRoot } else { $runtimeRoot })
+Remove-PathIfPresent $(if ($runtimeEnvPath) { $runtimeEnvPath } else { Join-Path $resolvedInstallRoot ".env.runtime" })
+Remove-PathIfPresent $(if ($installStatePath) { $installStatePath } else { Join-Path $resolvedInstallRoot ".oload-install-state" })
+Remove-PathIfPresent $(if ($installManifestPath) { $installManifestPath } else { Join-Path $resolvedInstallRoot "INSTALL-MANIFEST.txt" })
+Remove-PathIfPresent $(if ($uninstallNotesPath) { $uninstallNotesPath } else { Join-Path $resolvedInstallRoot "UNINSTALL-NOTES.txt" })
 Remove-PathIfPresent (Join-Path $resolvedInstallRoot "oload.log")
 
 Write-Host "Oload uninstall dependency checks completed."

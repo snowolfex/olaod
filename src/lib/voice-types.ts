@@ -3,10 +3,10 @@ import type { VoiceTranscriptionLanguage } from "@/lib/user-types";
 export const VOICE_TRANSCRIPTION_LANGUAGE_OPTIONS = [
   "auto",
   "united-states",
+  "united-kingdom",
   "arabic",
   "bengali",
   "chinese",
-  "english",
   "farsi",
   "french",
   "hindi",
@@ -17,13 +17,16 @@ export const VOICE_TRANSCRIPTION_LANGUAGE_OPTIONS = [
   "spanish",
 ] as const;
 
+type VoiceSelectableLanguage = typeof VOICE_TRANSCRIPTION_LANGUAGE_OPTIONS[number];
+
 export const VOICE_LANGUAGE_META: Record<VoiceTranscriptionLanguage, { flag: string; label: string }> = {
   auto: { flag: "🌐", label: "Auto" },
-  "united-states": { flag: "🇺🇸", label: "United States" },
+  "united-states": { flag: "🇺🇸", label: "English (United States)" },
+  "united-kingdom": { flag: "🇬🇧", label: "English (United Kingdom / England)" },
   arabic: { flag: "🇸🇦", label: "Arabic" },
   bengali: { flag: "🇧🇩", label: "Bengali" },
   chinese: { flag: "🇨🇳", label: "Chinese" },
-  english: { flag: "🇬🇧", label: "English" },
+  english: { flag: "🇬🇧", label: "English (United Kingdom / England)" },
   farsi: { flag: "🇮🇷", label: "Persian" },
   french: { flag: "🇫🇷", label: "French" },
   hindi: { flag: "🇮🇳", label: "Hindi" },
@@ -37,7 +40,7 @@ export const VOICE_LANGUAGE_META: Record<VoiceTranscriptionLanguage, { flag: str
 export type { VoiceTranscriptionLanguage } from "@/lib/user-types";
 
 export function isVoiceTranscriptionLanguage(value: string): value is VoiceTranscriptionLanguage {
-  return VOICE_TRANSCRIPTION_LANGUAGE_OPTIONS.includes(value as VoiceTranscriptionLanguage);
+  return value === "english" || VOICE_TRANSCRIPTION_LANGUAGE_OPTIONS.includes(value as VoiceSelectableLanguage);
 }
 
 export function getVoiceLanguageLabel(language: VoiceTranscriptionLanguage) {
@@ -53,5 +56,5 @@ export function resolveVoiceModelLanguage(language: VoiceTranscriptionLanguage) 
     return undefined;
   }
 
-  return language === "united-states" ? "english" : language;
+  return language === "united-states" || language === "united-kingdom" ? "english" : language;
 }

@@ -64,7 +64,7 @@ test("covers role management refresh, role updates, deletion, and session guardr
 
   await page.goto("/");
   await expect(page.getByLabel("Sign out")).toBeVisible();
-  await page.getByRole("button", { name: "Admin" }).click();
+  await page.getByRole("button", { name: "Admin Ops" }).click();
   await page.getByRole("button", { name: "Hide command deck" }).click();
 
   await expect(page.getByRole("button", { name: "Refresh users" })).toBeVisible();

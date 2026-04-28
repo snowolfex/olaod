@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { getDataStorePath } from "@/lib/data-store";
 import { getConfiguredDefaultVoiceTranscriptionLanguage } from "@/lib/default-voice-language";
+import { resolveVoiceTranscriptionLanguageAlias } from "@/lib/default-voice-language";
 import { normalizeModelName, normalizeSystemPrompt, normalizeTemperature } from "@/lib/system-prompt";
 import type {
   AuthProvider,
@@ -68,9 +69,12 @@ function normalizeOptionalBoolean(value: unknown) {
 }
 
 function normalizeVoiceTranscriptionLanguage(value: unknown): VoiceTranscriptionLanguage | undefined {
-  return typeof value === "string" && isVoiceTranscriptionLanguage(value)
-    ? value as VoiceTranscriptionLanguage
-    : undefined;
+  if (typeof value !== "string" || !value.trim()) {
+    return undefined;
+  }
+
+  const resolved = resolveVoiceTranscriptionLanguageAlias(value);
+  return isVoiceTranscriptionLanguage(resolved) ? resolved : undefined;
 }
 
 function resolveStoredVoiceTranscriptionLanguage(value: unknown) {

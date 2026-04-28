@@ -1,0 +1,62 @@
+name: Release Updates
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  id-token: write
+  pages: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      OLOAD_UPDATE_BASE_URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}
+      OLOAD_UPDATE_CHANNEL: stable
+      OLOAD_UPDATE_MANIFEST_KEY_ID: github-release-stable
+      OLOAD_UPDATE_MANIFEST_PRIVATE_KEY: ${{ secrets.OLOAD_UPDATE_MANIFEST_PRIVATE_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build signed update packages
+        shell: pwsh
+        run: npm run bundle:updates
+
+      - name: Publish release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/updates/linux/*
+            dist/updates/windows/*
+
+      - name: Prepare GitHub Pages manifest
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release-pages/updates/stable | Out-Null
+          New-Item -ItemType Directory -Force -Path release-pages/updates/releases/${{ github.ref_name }} | Out-Null
+          Copy-Item dist/updates/manifest.json release-pages/updates/stable/manifest.json -Force
+          Copy-Item dist/updates/manifest.json release-pages/updates/releases/${{ github.ref_name }}/manifest.json -Force
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: release-pages
+
+      - name: Deploy Pages
+        uses: actions/deploy-pages@v4

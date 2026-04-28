@@ -69,7 +69,7 @@ test("exports and restores workspace backups, including invalidating stale user 
 
     await page.goto("/");
     await expect(page.getByLabel("Sign out")).toBeVisible();
-    await page.getByRole("button", { name: "Admin" }).click();
+    await page.getByRole("button", { name: "Admin Ops" }).click();
     await page.getByRole("button", { name: "Hide command deck" }).click();
 
     await expect(page.getByText("Workspace backup")).toBeVisible();
@@ -310,7 +310,7 @@ test("recovers cleanly when a restore downgrades the current user's access", asy
 
     await page.goto("/");
     await expect(page.getByLabel("Sign out")).toBeVisible();
-    await page.getByRole("button", { name: "Admin" }).click();
+    await page.getByRole("button", { name: "Admin Ops" }).click();
     await page.getByRole("button", { name: "Hide command deck" }).click();
 
     const adminCookieHeader = await getCookieHeader(page);

@@ -190,8 +190,8 @@ resolve_voice_language() {
     cn|chinese|zh)
       printf '%s\n' 'chinese'
       ;;
-    gb|en|english)
-      printf '%s\n' 'english'
+    gb|en|english|england|uk|united-kingdom|unitedkingdom)
+      printf '%s\n' 'united-kingdom'
       ;;
     fa|farsi|ir)
       printf '%s\n' 'farsi'
@@ -258,6 +258,7 @@ voice_language_code_for() {
     arabic) printf '%s\n' 'ar' ;;
     bengali) printf '%s\n' 'bn' ;;
     chinese) printf '%s\n' 'cn' ;;
+    united-kingdom) printf '%s\n' 'gb' ;;
     english) printf '%s\n' 'gb' ;;
     farsi) printf '%s\n' 'fa' ;;
     french) printf '%s\n' 'fr' ;;
@@ -657,8 +658,44 @@ copy_app_payload() {
   cp "$script_dir/EULA.txt" "$target_root/EULA.txt"
   cp "$script_dir/SOURCE-AVAILABLE-NOTICE.txt" "$target_root/SOURCE-AVAILABLE-NOTICE.txt"
   cp "$script_dir/README.md" "$target_root/README.md"
+  if [[ -f "$script_dir/oload.png" ]]; then
+    cp "$script_dir/oload.png" "$target_root/oload.png"
+  fi
   chmod +x "$target_root/start-oload.sh"
   chmod +x "$target_root/uninstall-oload.sh"
+}
+
+create_desktop_launcher() {
+  local target_root="$1"
+  local desktop_applications_dir="$HOME/.local/share/applications"
+  local desktop_entry_path="$desktop_applications_dir/oload.desktop"
+  local icon_path="$target_root/oload.png"
+
+  desktop_entry_path_value=''
+  desktop_icon_path_value=''
+
+  if [[ ! -f "$icon_path" ]]; then
+    return
+  fi
+
+  mkdir -p "$desktop_applications_dir"
+
+  cat >"$desktop_entry_path" <<EOF
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Oload
+Comment=Private AI workspace and admin console for local model operations
+Exec="$target_root/start-oload.sh" --detach
+Icon=$icon_path
+Terminal=false
+Categories=Development;Utility;
+StartupNotify=true
+EOF
+
+  chmod +x "$desktop_entry_path"
+  desktop_entry_path_value="$desktop_entry_path"
+  desktop_icon_path_value="$icon_path"
 }
 
 write_runtime_env() {
@@ -669,8 +706,9 @@ write_runtime_env() {
   local default_language="$5"
   local update_manifest_url="$6"
   local update_channel="$7"
-  local admin_password="$8"
-  local session_secret="$9"
+  local update_manifest_public_key="$8"
+  local admin_password="$9"
+  local session_secret="${10}"
 
   cat >"$target_root/.env.runtime" <<EOF
 HOSTNAME=$hostname
@@ -680,6 +718,7 @@ OLLAMA_BASE_URL=$ollama_base_url
 OLOAD_DEFAULT_LANGUAGE=$default_language
 OLOAD_UPDATE_MANIFEST_URL=$update_manifest_url
 OLOAD_UPDATE_CHANNEL=$update_channel
+OLOAD_UPDATE_MANIFEST_PUBLIC_KEY=$update_manifest_public_key
 OLOAD_ADMIN_PASSWORD=$admin_password
 OLOAD_SESSION_SECRET=$session_secret
 EOF
@@ -698,6 +737,7 @@ NodeDetectedPath=$node_detected_path
 NodeExistedBeforeInstall=$node_existed_before_install
 NodeInstalledByOload=$node_installed_by_oload
 NodePath=$node_effective_path
+ManagedNodeRoot=${managed_node_root:-}
 NodeVersion=$node_version
 OllamaChoice=$ollama_choice
 OllamaAction=$ollama_action
@@ -705,7 +745,69 @@ OllamaDetectedPath=$ollama_detected_path
 OllamaExistedBeforeInstall=$ollama_existed_before_install
 OllamaInstalledByOload=$ollama_installed_by_oload
 OllamaPath=$ollama_effective_path
+ManagedOllamaRoot=${managed_ollama_root:-}
+ManagedOllamaModelsRoot=${managed_ollama_models_root:-}
 OllamaVersion=$ollama_version
+RuntimeRoot=$runtime_root
+AppPayloadRoot=$target_root/app
+StartScriptPath=$target_root/start-oload.sh
+UninstallScriptPath=$target_root/uninstall-oload.sh
+RuntimeEnvPath=$target_root/.env.runtime
+InstallStatePath=$target_root/.oload-install-state
+InstallManifestPath=$target_root/INSTALL-MANIFEST.txt
+UninstallNotesPath=$target_root/UNINSTALL-NOTES.txt
+ReadmePath=$target_root/README.md
+EulaPath=$target_root/EULA.txt
+SourceNoticePath=$target_root/SOURCE-AVAILABLE-NOTICE.txt
+AppIconPath=${desktop_icon_path_value:-$target_root/oload.png}
+DesktopEntryPath=${desktop_entry_path_value:-}
+EOF
+}
+
+write_install_manifest() {
+  local target_root="$1"
+
+  cat >"$target_root/INSTALL-MANIFEST.txt" <<EOF
+Oload install manifest
+
+Install root: $target_root
+Installed at: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+Platform: Linux
+
+App footprint:
+- App payload directory: $target_root/app
+- Runtime root: $runtime_root
+- Start launcher: $target_root/start-oload.sh
+- Uninstall launcher: $target_root/uninstall-oload.sh
+- Runtime env file: $target_root/.env.runtime
+- Install state file: $target_root/.oload-install-state
+- Install manifest file: $target_root/INSTALL-MANIFEST.txt
+- Uninstall notes file: $target_root/UNINSTALL-NOTES.txt
+- README: $target_root/README.md
+- EULA copy: $target_root/EULA.txt
+- Source notice copy: $target_root/SOURCE-AVAILABLE-NOTICE.txt
+- App icon: ${desktop_icon_path_value:-$target_root/oload.png}
+- Desktop launcher: ${desktop_entry_path_value:-not created}
+
+Dependency decisions:
+- Node.js mode: ${node_choice:-unknown}
+- Node.js detected shared path: ${node_detected_path:-not found}
+- Node.js effective path: ${node_effective_path:-unknown}
+- Node.js managed runtime root: ${managed_node_root:-not managed by Oload}
+- Node.js existed before install: ${node_existed_before_install:-false}
+- Node.js installed by Oload: ${node_installed_by_oload:-false}
+
+- Ollama mode: ${ollama_choice:-unknown}
+- Ollama detected shared path: ${ollama_detected_path:-not found}
+- Ollama effective path: ${ollama_effective_path:-unknown}
+- Ollama managed runtime root: ${managed_ollama_root:-not managed by Oload}
+- Ollama managed models root: ${managed_ollama_models_root:-not managed by Oload}
+- Ollama existed before install: ${ollama_existed_before_install:-false}
+- Ollama installed by Oload: ${ollama_installed_by_oload:-false}
+
+Uninstall behavior:
+- uninstall-oload.sh removes the install root and uses the managed runtime paths above for dependency cleanup prompts.
+- Shared dependencies are only removed if the operator explicitly confirms it.
 EOF
 }
 
@@ -729,11 +831,24 @@ Ollama:
 - Verified existing path before install: ${ollama_detected_path:-not found}
 - Selected mode: ${ollama_choice:-unknown}
 - Effective Ollama path: ${ollama_effective_path:-unknown}
+- Managed Ollama runtime root: ${managed_ollama_root:-not managed by Oload}
+- Managed Ollama models root: ${managed_ollama_models_root:-not managed by Oload}
 - Existed before this install: ${ollama_existed_before_install:-false}
 - Installed by Oload: ${ollama_installed_by_oload:-false}
 
+Managed Oload paths:
+- App payload directory: $target_root/app
+- Runtime root: $runtime_root
+- Runtime env file: $target_root/.env.runtime
+- Install state file: $target_root/.oload-install-state
+- Install manifest file: $target_root/INSTALL-MANIFEST.txt
+- Uninstall notes file: $target_root/UNINSTALL-NOTES.txt
+- App icon: ${desktop_icon_path_value:-$target_root/oload.png}
+- Desktop launcher: ${desktop_entry_path_value:-not created}
+
 Default language: ${default_language:-united-states}
 
+See INSTALL-MANIFEST.txt for the full installed-path inventory.
 Run uninstall-oload.sh to remove Oload. The uninstall flow will ask again before removing shared Node.js/npm or Ollama dependencies.
 Ollama removal always requires an extra confirmation because it can also remove all local models.
 EOF
@@ -849,6 +964,7 @@ fi
 ollama_base_url="$(prompt_value 'Ollama base URL' 'http://127.0.0.1:11434')"
 update_manifest_url="$(prompt_value 'Optional update manifest URL (leave blank to disable live updates)')"
 update_channel="$(prompt_value 'Update channel' 'stable')"
+update_manifest_public_key="$(prompt_value 'Update manifest public key (PEM, leave blank to skip verification)')"
 if [[ -n "$default_language_arg" ]]; then
   if ! default_language="$(resolve_voice_language "$default_language_arg")"; then
     printf 'Unsupported default language code: %s\n' "$default_language_arg" >&2
@@ -888,11 +1004,23 @@ ollama_installed_by_oload='false'
 ollama_version=''
 node_path="$(ensure_node_runtime "$runtime_root" "$node_mode" "$existing_node_path" "$existing_node_version")"
 ollama_path="$(ensure_ollama_installed "$runtime_root" "$ollama_mode" "$existing_ollama_path" "$existing_ollama_version")"
+managed_node_root=''
+managed_ollama_root=''
+managed_ollama_models_root=''
+if [[ "$node_installed_by_oload" == 'true' ]]; then
+  managed_node_root="$runtime_root/node"
+fi
+if [[ "$ollama_installed_by_oload" == 'true' ]]; then
+  managed_ollama_root="$runtime_root/ollama"
+  managed_ollama_models_root="$runtime_root/ollama-models"
+fi
 ensure_ollama_running "$ollama_path" "$ollama_base_url" "$runtime_root/ollama-models"
 copy_app_payload "$install_root"
+create_desktop_launcher "$install_root"
 write_install_state "$install_root"
+write_install_manifest "$install_root"
 write_uninstall_notes "$install_root"
-write_runtime_env "$install_root" "$hostname" "$port" "$ollama_base_url" "$default_language" "$update_manifest_url" "$update_channel" "$admin_password" "$session_secret"
+write_runtime_env "$install_root" "$hostname" "$port" "$ollama_base_url" "$default_language" "$update_manifest_url" "$update_channel" "$update_manifest_public_key" "$admin_password" "$session_secret"
 
 if prompt_yes_no 'Start Oload after install' 'yes'; then
   "$install_root/start-oload.sh" --detach
@@ -907,4 +1035,8 @@ fi
 printf '\nInstalled Oload to %s\n' "$install_root"
 printf 'Launch later with %s/start-oload.sh\n' "$install_root"
 printf 'Uninstall later with %s/uninstall-oload.sh\n' "$install_root"
+printf 'Install manifest written to %s/INSTALL-MANIFEST.txt\n' "$install_root"
+if [[ -n "${desktop_entry_path_value:-}" ]]; then
+  printf 'Desktop launcher written to %s\n' "$desktop_entry_path_value"
+fi
 printf 'Open http://%s:%s after the server finishes booting.\n' "$launch_host" "$port"

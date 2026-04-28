@@ -27,6 +27,9 @@ const DEFAULT_SETTINGS: ConversationSettings = {
   useKnowledge: false,
   groundingMode: "off",
   assistantProfileId: null,
+  enabledToolIds: [],
+  knowledgeBaseIds: [],
+  attachmentDocuments: [],
 };
 
 function createId() {

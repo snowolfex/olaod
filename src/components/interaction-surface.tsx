@@ -512,6 +512,21 @@ export function InteractionSurface({
     setActiveMobileTab("admin");
   }
 
+  async function openAdminAccessFromChat() {
+    if (!canOpenAdmin) {
+      return;
+    }
+
+    setActiveAdminTab("access");
+
+    if (isDesktopViewport) {
+      await onDesktopPageChange("admin");
+      return;
+    }
+
+    setActiveMobileTab("admin");
+  }
+
   async function handleDeckTabChange(nextTab: MobileDeckTab) {
     if (isDesktopViewport) {
       await onDesktopPageChange(nextTab);
@@ -531,6 +546,7 @@ export function InteractionSurface({
         isReachable={status.isReachable}
         models={chatModels}
         onActiveConversationChange={onActiveConversationChange}
+        onRequestOpenAccessPanel={openAdminAccessFromChat}
         onRequestOpenModelOperations={openAdminModelsFromChat}
         onUiLanguagePreferenceChange={onUiLanguagePreferenceChange}
         runningModels={runningChatModelNames}
@@ -579,6 +595,7 @@ export function InteractionSurface({
               isReachable={status.isReachable}
               models={chatModels}
               onActiveConversationChange={onActiveConversationChange}
+              onRequestOpenAccessPanel={openAdminAccessFromChat}
               onRequestOpenModelOperations={openAdminModelsFromChat}
               onUiLanguagePreferenceChange={onUiLanguagePreferenceChange}
               runningModels={runningChatModelNames}

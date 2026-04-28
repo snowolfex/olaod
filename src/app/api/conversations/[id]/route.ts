@@ -43,7 +43,18 @@ export async function PATCH(
 
     const payload = (await request.json()) as {
       title?: string;
-      messages?: Array<{ role: "system" | "user" | "assistant"; content: string }>;
+      messages?: Array<{
+        role: "system" | "user" | "assistant";
+        content: string;
+        toolCalls?: Array<{
+          id: string;
+          toolId: "search-knowledge" | "list-knowledge-bases" | "workspace-snapshot";
+          title: string;
+          arguments: Record<string, unknown>;
+          status: "completed" | "failed";
+          output: string;
+        }>;
+      }>;
       settings?: {
         model?: string;
         providerId?: "ollama" | "anthropic" | "openai";
@@ -52,6 +63,15 @@ export async function PATCH(
         useKnowledge?: boolean;
         groundingMode?: "off" | "balanced" | "strict";
         assistantProfileId?: string | null;
+        enabledToolIds?: Array<"search-knowledge" | "list-knowledge-bases" | "workspace-snapshot">;
+        knowledgeBaseIds?: string[];
+        attachmentDocuments?: Array<{
+          id: string;
+          name: string;
+          contentType: string;
+          textContent: string;
+          uploadedAt: string;
+        }>;
       };
       archived?: boolean;
     };

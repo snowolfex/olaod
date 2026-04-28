@@ -21,60 +21,52 @@ const paletteByTheme: Record<AppThemeId, {
   cardBorder: string;
   stageBackground: string;
   innerGlow: string;
-  wool: string;
-  woolShadow: string;
-  face: string;
-  nose: string;
-  eye: string;
-  highlight: string;
-  blush: string;
-  accent: string;
-  innerArmShadow: string;
+  ringStart: string;
+  ringEnd: string;
+  ringStroke: string;
+  lStart: string;
+  lEnd: string;
+  gloss: string;
+  shadow: string;
 }> = {
   light: {
-    badgeText: "Premium cream",
+    badgeText: "Warm monogram",
     cardBorder: "border-white/45",
     stageBackground: "linear-gradient(180deg,#fbf3e8 0%,#f0e2d2 58%,#e8d6c3 100%)",
     innerGlow: "rgba(255,255,255,0.45)",
-    wool: "#F2E3CF",
-    woolShadow: "#CDB198",
-    face: "#D6BC9A",
-    nose: "#6A4A38",
-    eye: "#241A16",
-    highlight: "#FFF8EF",
-    blush: "#EFCBB7",
-    accent: "#557F7A",
-    innerArmShadow: "#CDB198",
+    ringStart: "#FFE0B4",
+    ringEnd: "#B05C25",
+    ringStroke: "#6F3714",
+    lStart: "#7F3F1B",
+    lEnd: "#F2B06C",
+    gloss: "#FFF6E5",
+    shadow: "rgba(77,56,38,0.18)",
   },
   tech: {
-    badgeText: "Tech plush",
+    badgeText: "Signal monogram",
     cardBorder: "border-cyan-200/25",
     stageBackground: "linear-gradient(180deg,#18283a 0%,#102133 55%,#0f1b28 100%)",
     innerGlow: "rgba(116,241,255,0.1)",
-    wool: "#E7DCCB",
-    woolShadow: "#B6A48C",
-    face: "#D3BEA4",
-    nose: "#5A4136",
-    eye: "#0E141A",
-    highlight: "#EFFFFF",
-    blush: "#C9B39E",
-    accent: "#59D0D4",
-    innerArmShadow: "#8A837D",
+    ringStart: "#FFD196",
+    ringEnd: "#B7642A",
+    ringStroke: "#85E6F6",
+    lStart: "#8B431B",
+    lEnd: "#FFD28C",
+    gloss: "#DDFCFF",
+    shadow: "rgba(2,14,20,0.34)",
   },
   dark: {
-    badgeText: "Midnight plush",
+    badgeText: "Midnight monogram",
     cardBorder: "border-white/10",
     stageBackground: "linear-gradient(180deg,#2a2527 0%,#1d171b 55%,#140f13 100%)",
     innerGlow: "rgba(255,255,255,0.06)",
-    wool: "#66524C",
-    woolShadow: "#443532",
-    face: "#B59B84",
-    nose: "#2D1F1C",
-    eye: "#120E0D",
-    highlight: "#F7E5D6",
-    blush: "#C59A8C",
-    accent: "#D06A52",
-    innerArmShadow: "#362B29",
+    ringStart: "#F6C88D",
+    ringEnd: "#B15928",
+    ringStroke: "#F2E0CB",
+    lStart: "#7D3519",
+    lEnd: "#EFA45A",
+    gloss: "#FFE8CF",
+    shadow: "rgba(0,0,0,0.34)",
   },
 };
 
@@ -117,36 +109,24 @@ export function PlushLlamaHero({
             boxShadow: `inset 0 1px 0 ${palette.innerGlow}`,
           }}
         >
-          <svg viewBox="0 0 180 180" role="img" aria-label="Plush llama mascot preview" className="h-auto w-full">
-            <ellipse cx="90" cy="154" rx="38" ry="9" fill="rgba(91,69,58,0.12)" />
-            <g>
-              <ellipse cx="63" cy="47" rx="12" ry="28" fill={palette.wool} transform="rotate(-14 63 47)" />
-              <ellipse cx="117" cy="47" rx="12" ry="28" fill={palette.wool} transform="rotate(14 117 47)" />
-              <ellipse cx="66" cy="49" rx="5" ry="16" fill={palette.face} transform="rotate(-14 66 49)" />
-              <ellipse cx="114" cy="49" rx="5" ry="16" fill={palette.face} transform="rotate(14 114 49)" />
-              <circle cx="90" cy="78" r="42" fill={palette.wool} />
-              <ellipse cx="90" cy="122" rx="30" ry="22" fill={palette.wool} />
-              <path d="M77 103c4 7 10 10 19 11c10 1 20-1 28-7c7 6 15 8 23 7c-4 8-11 14-20 16c-15 4-35 2-47-6c-7-4-11-12-3-21z" fill={palette.wool} />
-              <ellipse cx="90" cy="84" rx="27" ry="21" fill={palette.face} />
-              <path d="M76 42c4-11 10-16 15-17c1 7 4 13 10 18" fill={palette.wool} />
-              <path d="M88 31c5-4 9-6 13-7c1 5 5 10 11 16" fill={palette.wool} />
-              <path d="M101 36c5-3 8-4 11-5c0 4 2 8 6 12" fill={palette.wool} />
-              <ellipse cx="78" cy="74" rx="4.5" ry="5.5" fill={palette.eye} />
-              <ellipse cx="104" cy="74" rx="4.5" ry="5.5" fill={palette.eye} />
-              <circle cx="76.5" cy="72.5" r="1.4" fill={palette.highlight} />
-              <circle cx="102.5" cy="72.5" r="1.4" fill={palette.highlight} />
-              <ellipse cx="88" cy="88" rx="5.5" ry="4.5" fill={palette.nose} />
-              <path d="M77 102c4 5 9 7 14 7c5 0 10-2 14-7" fill="none" stroke={palette.nose} strokeWidth="3.5" strokeLinecap="round" />
-              <ellipse cx="75" cy="93" rx="6" ry="3.2" fill={palette.blush} opacity="0.28" />
-              <ellipse cx="108" cy="93" rx="6" ry="3.2" fill={palette.blush} opacity="0.28" />
-              <path d="M59 104c-10 7-17 18-20 34c-1 7 2 13 8 14c7 1 13-3 19-9c6-8 10-18 13-31c2-9 1-15-3-20z" fill={palette.wool} />
-              <path d="M74 107c-5 6-8 13-10 22c-2 8-2 15 0 22c-4-1-7-4-9-7c-2-4-2-9 0-15c3-10 9-18 19-27c1 2 1 3 0 5z" fill={palette.innerArmShadow} opacity="0.42" />
-              <path d="M49 143c4-4 9-6 15-6c4 0 8 1 10 4c-2 7-7 13-15 18c-5 3-10 4-14 2c-3-2-5-4-4-8c1-4 4-7 8-10z" fill={palette.accent} opacity="0.9" />
-              <path d="M121 104c10 7 17 18 20 34c1 7-2 13-8 14c-7 1-13-3-19-9c-6-8-10-18-13-31c-2-9-1-15 3-20z" fill={palette.wool} />
-              <path d="M106 107c5 6 8 13 10 22c2 8 2 15 0 22c4-1 7-4 9-7c2-4 2-9 0-15c-3-10-9-18-19-27c-1 2-1 3 0 5z" fill={palette.innerArmShadow} opacity="0.42" />
-              <path d="M131 143c-4-4-9-6-15-6c-4 0-8 1-10 4c2 7 7 13 15 18c5 3 10 4 14 2c3-2 5-4 4-8c-1-4-4-7-8-10z" fill={palette.accent} opacity="0.9" />
-              {theme === "tech" ? <rect x="98" y="68" width="24" height="5" rx="2.5" fill={palette.accent} opacity="0.9" /> : null}
-              {theme === "dark" ? <rect x="93" y="100" width="28" height="5" rx="2.5" fill={palette.accent} opacity="0.8" /> : null}
+          <svg viewBox="0 0 180 180" role="img" aria-label="OL brand icon preview" className="h-auto w-full">
+            <defs>
+              <linearGradient id={`ring-${theme}`} x1="24" y1="24" x2="132" y2="132" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stopColor={palette.ringStart} />
+                <stop offset="100%" stopColor={palette.ringEnd} />
+              </linearGradient>
+              <linearGradient id={`letter-${theme}`} x1="96" y1="40" x2="96" y2="128" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stopColor={palette.lEnd} />
+                <stop offset="100%" stopColor={palette.lStart} />
+              </linearGradient>
+            </defs>
+            <ellipse cx="90" cy="152" rx="40" ry="11" fill={palette.shadow} />
+            <g transform="translate(16 14)">
+              <circle cx="72" cy="72" r="50" fill={`url(#ring-${theme})`} />
+              <circle cx="72" cy="72" r="27" fill="rgba(255,255,255,0.94)" />
+              <path d="M72 22a50 50 0 0 1 48 37" fill="none" stroke={palette.gloss} strokeWidth="8" strokeLinecap="round" opacity="0.72" />
+              <path d="M100 44h16v50h29v16H100z" fill={`url(#letter-${theme})`} />
+              <circle cx="72" cy="72" r="50" fill="none" stroke={palette.ringStroke} strokeWidth="3.5" opacity="0.5" />
             </g>
           </svg>
         </div>

@@ -35,14 +35,14 @@ export function AuthGate({ defaultUiLanguage, initialSession }: AuthGateProps) {
 
           <div className="grid gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] lg:items-start">
             <PlushLlamaHero
-              badge="Entry mascot"
-              title="Plush llama splash lane"
-              description="The sign-in entry now uses the same plush mascot family as Help and the exported operator guide."
-              summary="This is the real splash-side mascot surface: one shared plush silhouette, with the app theme selecting the light, tech, or dark variant automatically."
-              detailLeftTitle="Shared base"
-              detailLeftBody="Same tuft, muzzle, plush limbs, and stuffed-animal proportions across all themes."
+              badge="Entry mark"
+              title="OL brand lane"
+              description="The sign-in entry now uses the OL monogram instead of the older mascot treatment."
+              summary="This is the real entry-side brand surface: one shared OL icon language, with the app theme selecting the light, tech, or dark finish automatically."
+              detailLeftTitle="Core mark"
+              detailLeftBody="A warm ringed O with the inline L anchored into the right side of the form for small-size recognition."
               detailRightTitle="Theme behavior"
-              detailRightBody="Light uses premium cream, Tech adds cool cyan trim, and Dark shifts to midnight plush with ember accents."
+              detailRightBody="Light keeps the warm premium gradient, Tech adds cooler signal highlights, and Dark pushes the same mark into a deeper midnight finish."
               compact
             />
 

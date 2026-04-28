@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
+import { AppUpdateMonitor } from "@/components/app-update-monitor";
 import { VoiceLanguageSelect } from "@/components/voice-language-select";
 import { getHelpHint } from "@/lib/help-manual";
 import { readQuickHelpEnabled, writeQuickHelpEnabled } from "@/lib/help-preferences";
@@ -11,12 +12,16 @@ import { resolveUiLanguage, translateUi, translateUiText } from "@/lib/ui-langua
 import type { OllamaModel } from "@/lib/ollama";
 import type {
   AiGroundingMode,
+  AiKnowledgeBase,
+  AiKnowledgeDebugResponse,
   AiModelSummary,
   AiKnowledgeDebugResult,
   AiKnowledgeEntry,
   AiKnowledgeOverlapResult,
   AiProviderConfigSummary,
   AiProviderId,
+  AiToolDefinition,
+  AiToolId,
   AiWorkspaceProfile,
 } from "@/lib/ai-types";
 import type { ManagedUser, PublicUser, SessionUser, UserSessionStatus, VoiceTranscriptionLanguage } from "@/lib/user-types";
@@ -37,6 +42,14 @@ type AiModelsResponse = {
 
 type AiProfilesResponse = {
   profiles: AiWorkspaceProfile[];
+};
+
+type AiKnowledgeBasesResponse = {
+  knowledgeBases: AiKnowledgeBase[];
+};
+
+type AiToolsResponse = {
+  tools: AiToolDefinition[];
 };
 
 type VerificationChallenge = {
@@ -79,6 +92,62 @@ function literalForLanguage(
   variables?: Record<string, string | number>,
 ) {
   return translateUiText(language ?? "united-states", sourceText, variables);
+}
+
+type KnowledgeDebugViewMode = "list" | "map";
+
+type KnowledgeDebugMapNode = {
+  id: string;
+  title: string;
+  angle: number;
+  x: number;
+  y: number;
+  radius: number;
+  hybridScore: number;
+  lexicalScore: number;
+  vectorSimilarity: number | null;
+  duplicatePenalty: number;
+  vectorAvailable: boolean;
+};
+
+function clampValue(value: number, minimum: number, maximum: number) {
+  return Math.min(maximum, Math.max(minimum, value));
+}
+
+function buildKnowledgeDebugMapNodes(results: AiKnowledgeDebugResult[]) {
+  if (results.length === 0) {
+    return [];
+  }
+
+  const maxScore = Math.max(...results.map((entry) => entry.breakdown.hybridScore), 1);
+
+  return results.map((entry, index) => {
+    const angle = (-Math.PI / 2) + ((Math.PI * 2) / results.length) * index;
+    const normalizedScore = entry.breakdown.hybridScore / maxScore;
+    const scoreDistance = 114 - (normalizedScore * 42);
+    const similarityOffset = entry.breakdown.vectorSimilarity === null
+      ? 10
+      : (1 - clampValue(entry.breakdown.vectorSimilarity, 0, 1)) * 26;
+    const distance = clampValue(scoreDistance + similarityOffset, 58, 132);
+
+    return {
+      id: entry.id,
+      title: entry.title,
+      angle,
+      x: 160 + Math.cos(angle) * distance,
+      y: 160 + Math.sin(angle) * distance,
+      radius: 14 + (normalizedScore * 14),
+      hybridScore: entry.breakdown.hybridScore,
+      lexicalScore: entry.breakdown.lexicalScoreTotal,
+      vectorSimilarity: entry.breakdown.vectorSimilarity,
+      duplicatePenalty: entry.breakdown.duplicatePenalty,
+      vectorAvailable: entry.breakdown.vectorAvailable,
+    } satisfies KnowledgeDebugMapNode;
+  });
+}
+
+function truncateKnowledgeMapLabel(value: string) {
+  return value.length > 22 ? `${value.slice(0, 19)}...` : value;
 }
 
 function formatProviderLabel(providerId: AiProviderId, language?: VoiceTranscriptionLanguage) {
@@ -352,12 +421,25 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
   const [profileTemperature, setProfileTemperature] = useState(0.4);
   const [profileUseKnowledge, setProfileUseKnowledge] = useState(true);
   const [profileGroundingMode, setProfileGroundingMode] = useState<Exclude<AiGroundingMode, "off">>("balanced");
+  const [profileEnabledToolIds, setProfileEnabledToolIds] = useState<AiToolId[]>([]);
+  const [profileKnowledgeBaseIds, setProfileKnowledgeBaseIds] = useState<string[]>([]);
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [isLoadingProfiles, setIsLoadingProfiles] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [busyProfileId, setBusyProfileId] = useState<string | null>(null);
   const [profileSummary, setProfileSummary] = useState<string | null>(null);
   const [profileSummaryTone, setProfileSummaryTone] = useState<"success" | "warning">("success");
+  const [workspaceTools, setWorkspaceTools] = useState<AiToolDefinition[]>([]);
+  const [isLoadingWorkspaceTools, setIsLoadingWorkspaceTools] = useState(true);
+  const [knowledgeBases, setKnowledgeBases] = useState<AiKnowledgeBase[]>([]);
+  const [knowledgeBaseName, setKnowledgeBaseName] = useState("");
+  const [knowledgeBaseDescription, setKnowledgeBaseDescription] = useState("");
+  const [knowledgeBaseEntryIds, setKnowledgeBaseEntryIds] = useState<string[]>([]);
+  const [editingKnowledgeBaseId, setEditingKnowledgeBaseId] = useState<string | null>(null);
+  const [isLoadingKnowledgeBases, setIsLoadingKnowledgeBases] = useState(true);
+  const [isSavingKnowledgeBase, setIsSavingKnowledgeBase] = useState(false);
+  const [busyKnowledgeBaseId, setBusyKnowledgeBaseId] = useState<string | null>(null);
+  const [knowledgeBaseSummary, setKnowledgeBaseSummary] = useState<string | null>(null);
   const [knowledgeEntries, setKnowledgeEntries] = useState<AiKnowledgeEntry[]>([]);
   const [knowledgeTitle, setKnowledgeTitle] = useState("");
   const [knowledgeSource, setKnowledgeSource] = useState("manual");
@@ -381,6 +463,8 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
   const [knowledgeDebugProviderId, setKnowledgeDebugProviderId] = useState<AiProviderId | "all">("all");
   const [knowledgeDebugModelId, setKnowledgeDebugModelId] = useState("");
   const [knowledgeDebugResults, setKnowledgeDebugResults] = useState<AiKnowledgeDebugResult[]>([]);
+  const [knowledgeDebugResponse, setKnowledgeDebugResponse] = useState<AiKnowledgeDebugResponse | null>(null);
+  const [knowledgeDebugViewMode, setKnowledgeDebugViewMode] = useState<KnowledgeDebugViewMode>("list");
   const [isRunningKnowledgeDebug, setIsRunningKnowledgeDebug] = useState(false);
   const configuredProviderCount = providerConfigs.filter((provider) => provider.configured).length;
 
@@ -880,6 +964,52 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
     }
   }, [literal]);
 
+  const refreshWorkspaceTools = useCallback(async () => {
+    setIsLoadingWorkspaceTools(true);
+
+    try {
+      const response = await fetch("/api/ai/tools", { cache: "no-store" });
+
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+
+      const payload = (await response.json()) as AiToolsResponse;
+      setWorkspaceTools(payload.tools);
+    } catch (toolError) {
+      setError(
+        toolError instanceof Error
+          ? toolError.message
+          : literal("Unable to load workspace tools."),
+      );
+    } finally {
+      setIsLoadingWorkspaceTools(false);
+    }
+  }, [literal]);
+
+  const refreshKnowledgeBases = useCallback(async () => {
+    setIsLoadingKnowledgeBases(true);
+
+    try {
+      const response = await fetch("/api/admin/ai/knowledge-bases", { cache: "no-store" });
+
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+
+      const payload = (await response.json()) as AiKnowledgeBasesResponse;
+      setKnowledgeBases(payload.knowledgeBases);
+    } catch (knowledgeBaseError) {
+      setError(
+        knowledgeBaseError instanceof Error
+          ? knowledgeBaseError.message
+          : literal("Unable to load knowledge bases."),
+      );
+    } finally {
+      setIsLoadingKnowledgeBases(false);
+    }
+  }, [literal]);
+
   function resetProfileForm() {
     setEditingProfileId(null);
     setProfileName("");
@@ -890,6 +1020,39 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
     setProfileTemperature(0.4);
     setProfileUseKnowledge(true);
     setProfileGroundingMode("balanced");
+    setProfileEnabledToolIds([]);
+    setProfileKnowledgeBaseIds([]);
+  }
+
+  function resetKnowledgeBaseForm() {
+    setEditingKnowledgeBaseId(null);
+    setKnowledgeBaseName("");
+    setKnowledgeBaseDescription("");
+    setKnowledgeBaseEntryIds([]);
+  }
+
+  function toggleProfileTool(toolId: AiToolId) {
+    setProfileEnabledToolIds((current) =>
+      current.includes(toolId)
+        ? current.filter((currentToolId) => currentToolId !== toolId)
+        : [...current, toolId],
+    );
+  }
+
+  function toggleProfileKnowledgeBase(knowledgeBaseId: string) {
+    setProfileKnowledgeBaseIds((current) =>
+      current.includes(knowledgeBaseId)
+        ? current.filter((currentKnowledgeBaseId) => currentKnowledgeBaseId !== knowledgeBaseId)
+        : [...current, knowledgeBaseId],
+    );
+  }
+
+  function toggleKnowledgeBaseEntry(entryId: string) {
+    setKnowledgeBaseEntryIds((current) =>
+      current.includes(entryId)
+        ? current.filter((currentEntryId) => currentEntryId !== entryId)
+        : [...current, entryId],
+    );
   }
 
   function startEditingProfile(profile: AiWorkspaceProfile) {
@@ -902,6 +1065,15 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
     setProfileTemperature(profile.temperature);
     setProfileUseKnowledge(profile.useKnowledge);
     setProfileGroundingMode(profile.groundingMode);
+    setProfileEnabledToolIds(profile.enabledToolIds);
+    setProfileKnowledgeBaseIds(profile.knowledgeBaseIds);
+  }
+
+  function startEditingKnowledgeBase(knowledgeBase: AiKnowledgeBase) {
+    setEditingKnowledgeBaseId(knowledgeBase.id);
+    setKnowledgeBaseName(knowledgeBase.name);
+    setKnowledgeBaseDescription(knowledgeBase.description);
+    setKnowledgeBaseEntryIds(knowledgeBase.entryIds);
   }
 
   async function saveProfile() {
@@ -925,6 +1097,8 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
           temperature: profileTemperature,
           useKnowledge: profileUseKnowledge,
           groundingMode: profileGroundingMode,
+          enabledToolIds: profileEnabledToolIds,
+          knowledgeBaseIds: profileKnowledgeBaseIds,
         }),
       });
 
@@ -947,6 +1121,46 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       );
     } finally {
       setIsSavingProfile(false);
+    }
+  }
+
+  async function saveKnowledgeBase() {
+    setIsSavingKnowledgeBase(true);
+    setError(null);
+    setKnowledgeBaseSummary(null);
+
+    try {
+      const response = await fetch("/api/admin/ai/knowledge-bases", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: editingKnowledgeBaseId,
+          name: knowledgeBaseName,
+          description: knowledgeBaseDescription,
+          entryIds: knowledgeBaseEntryIds,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+
+      const payload = (await response.json()) as AiKnowledgeBasesResponse;
+      setKnowledgeBases(payload.knowledgeBases);
+      setKnowledgeBaseSummary(editingKnowledgeBaseId
+        ? literal("Updated knowledge base \"{name}\".", { name: knowledgeBaseName.trim() })
+        : literal("Saved knowledge base \"{name}\".", { name: knowledgeBaseName.trim() }));
+      resetKnowledgeBaseForm();
+    } catch (knowledgeBaseError) {
+      setError(
+        knowledgeBaseError instanceof Error
+          ? knowledgeBaseError.message
+          : literal("Unable to save the knowledge base."),
+      );
+    } finally {
+      setIsSavingKnowledgeBase(false);
     }
   }
 
@@ -982,6 +1196,41 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       );
     } finally {
       setBusyProfileId(null);
+    }
+  }
+
+  async function deleteKnowledgeBase(id: string) {
+    setBusyKnowledgeBaseId(id);
+    setError(null);
+    setKnowledgeBaseSummary(null);
+
+    try {
+      const response = await fetch("/api/admin/ai/knowledge-bases", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id }),
+      });
+
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+
+      const payload = (await response.json()) as AiKnowledgeBasesResponse;
+      setKnowledgeBases(payload.knowledgeBases);
+
+      if (editingKnowledgeBaseId === id) {
+        resetKnowledgeBaseForm();
+      }
+    } catch (knowledgeBaseError) {
+      setError(
+        knowledgeBaseError instanceof Error
+          ? knowledgeBaseError.message
+          : literal("Unable to delete the knowledge base."),
+      );
+    } finally {
+      setBusyKnowledgeBaseId(null);
     }
   }
 
@@ -1108,6 +1357,8 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
       void refreshUsers();
       void refreshProviderConfigs();
       void refreshProfiles();
+      void refreshWorkspaceTools();
+      void refreshKnowledgeBases();
       void refreshKnowledgeEntries();
       void refreshKnowledgeModelSuggestions();
       return;
@@ -1116,10 +1367,12 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
     setManagedUsers([]);
     setProviderConfigs([]);
     setWorkspaceProfiles([]);
+    setWorkspaceTools([]);
+    setKnowledgeBases([]);
     setKnowledgeEntries([]);
     setKnowledgeOverlapResults([]);
     setKnownModelsByProvider({});
-  }, [refreshKnowledgeEntries, refreshKnowledgeModelSuggestions, refreshProfiles, refreshProviderConfigs, refreshUsers, session.user?.id, session.user?.role]);
+  }, [refreshKnowledgeBases, refreshKnowledgeEntries, refreshKnowledgeModelSuggestions, refreshProfiles, refreshProviderConfigs, refreshUsers, refreshWorkspaceTools, session.user?.id, session.user?.role]);
 
   function buildKnowledgeImportMetadata() {
     return {
@@ -1337,6 +1590,7 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
 
     if (!query) {
       setKnowledgeDebugResults([]);
+      setKnowledgeDebugResponse(null);
       return;
     }
 
@@ -1365,7 +1619,8 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
         throw new Error(await readErrorMessage(response));
       }
 
-      const payload = (await response.json()) as { results: AiKnowledgeDebugResult[] };
+      const payload = (await response.json()) as AiKnowledgeDebugResponse;
+      setKnowledgeDebugResponse(payload);
       setKnowledgeDebugResults(payload.results);
     } catch (knowledgeError) {
       setError(
@@ -1381,6 +1636,8 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
   function toggleKnowledgeDebugModelId(modelId: string) {
     setKnowledgeDebugModelId((current) => current === modelId ? "" : modelId);
   }
+
+  const knowledgeDebugMapNodes = buildKnowledgeDebugMapNodes(knowledgeDebugResults);
 
   function toggleKnowledgeProviderScope(providerId: AiProviderId) {
     setKnowledgeProviderIds((current) =>
@@ -2104,6 +2361,16 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
             <p className="mt-2 text-base font-semibold text-foreground">{session.user?.role === "admin" ? literal("Administrative") : session.user ? literal("Self-service") : literal("Entry required")}</p>
             <p className="mt-1 text-xs leading-5 text-muted">{isAdminSession ? literal("Backup restore and role changes stay gated to admin sessions.") : literal("Only your own account settings appear here outside admin sessions.")}</p>
           </div>
+        </div>
+      ) : null}
+
+      {isAdminSession ? (
+        <div className="mt-4">
+          <AppUpdateMonitor
+            canManageUpdates
+            displayMode="inline"
+            uiLanguagePreference={activeUiLanguage}
+          />
         </div>
       ) : null}
 
@@ -2963,6 +3230,153 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
 
             <div className="mt-4 rounded-[24px] bg-white px-4 py-4">
               <div className="flex flex-col items-start gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">
+                    {editingKnowledgeBaseId ? literal("Edit knowledge base") : literal("New knowledge base")}
+                  </p>
+                  <p className="mt-1 text-xs text-muted">
+                    {literal("Group saved knowledge entries into reusable corpora that can be attached to assistant agents or individual chats.")}
+                  </p>
+                </div>
+                <div className="flex w-full gap-2 sm:w-auto sm:flex-wrap">
+                  <button
+                    className="ui-button ui-button-secondary flex-1 px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none"
+                    disabled={isLoadingKnowledgeBases}
+                    type="button"
+                    onClick={refreshKnowledgeBases}
+                  >
+                    {isLoadingKnowledgeBases ? literal("Refreshing...") : literal("Refresh bases")}
+                  </button>
+                  {editingKnowledgeBaseId ? (
+                    <button
+                      className="ui-button ui-button-secondary flex-1 px-4 py-2 text-sm sm:flex-none"
+                      type="button"
+                      onClick={resetKnowledgeBaseForm}
+                    >
+                      {literal("Cancel edit")}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <input
+                  className="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
+                  placeholder={literal("Knowledge base name")}
+                  value={knowledgeBaseName}
+                  onChange={(event) => setKnowledgeBaseName(event.target.value)}
+                />
+                <input
+                  className="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm text-foreground outline-none"
+                  placeholder={literal("Short description")}
+                  value={knowledgeBaseDescription}
+                  onChange={(event) => setKnowledgeBaseDescription(event.target.value)}
+                />
+              </div>
+              <div className="mt-3 rounded-2xl border border-line/80 bg-[var(--panel)]/60 px-4 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">{literal("Included entries")}</p>
+                    <p className="mt-1 text-xs text-muted">{literal("Select any saved knowledge entries that should travel together as one reusable base.")}</p>
+                  </div>
+                  <span className="ui-pill ui-pill-soft border border-line text-xs text-muted">
+                    {literal("{count} selected", { count: knowledgeBaseEntryIds.length })}
+                  </span>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {isLoadingKnowledge ? (
+                    <span className="text-xs text-muted">{literal("Loading saved knowledge entries...")}</span>
+                  ) : knowledgeEntries.length > 0 ? knowledgeEntries.map((entry) => (
+                    <button
+                      key={`knowledge-base-entry-${entry.id}`}
+                      className={`ui-button ui-button-chip shrink-0 px-3 py-2 text-xs ${
+                        knowledgeBaseEntryIds.includes(entry.id) ? "ui-button-primary" : "ui-button-secondary"
+                      }`}
+                      type="button"
+                      onClick={() => toggleKnowledgeBaseEntry(entry.id)}
+                    >
+                      {entry.title}
+                    </button>
+                  )) : (
+                    <span className="text-xs text-muted">{literal("Save one or more shared knowledge entries below first, then group them here into a reusable base.")}</span>
+                  )}
+                </div>
+              </div>
+              {knowledgeBaseSummary ? (
+                <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50/90 px-4 py-3 text-sm text-emerald-950">
+                  {knowledgeBaseSummary}
+                </div>
+              ) : null}
+              <button
+                className="ui-button ui-button-primary mt-3 w-full px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                disabled={isSavingKnowledgeBase}
+                type="button"
+                onClick={() => {
+                  void saveKnowledgeBase();
+                }}
+              >
+                {isSavingKnowledgeBase ? literal("Saving...") : editingKnowledgeBaseId ? literal("Update knowledge base") : literal("Save knowledge base")}
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {knowledgeBases.length > 0 ? knowledgeBases.map((knowledgeBase) => (
+                <div key={knowledgeBase.id} className="rounded-[24px] bg-white px-4 py-4">
+                  <div className="flex flex-col items-start gap-3 sm:flex-row sm:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">{knowledgeBase.name}</p>
+                      <p className="mt-1 text-xs text-muted">
+                        {literal("{count} entries · updated {date}", {
+                          count: knowledgeBase.entryIds.length,
+                          date: new Date(knowledgeBase.updatedAt).toLocaleString(),
+                        })}
+                      </p>
+                    </div>
+                    <div className="flex w-full gap-2 sm:w-auto sm:flex-wrap">
+                      <button
+                        className="ui-button ui-button-chip ui-button-secondary flex-1 px-3 py-2 text-xs sm:flex-none"
+                        type="button"
+                        onClick={() => startEditingKnowledgeBase(knowledgeBase)}
+                      >
+                        {literal("Edit")}
+                      </button>
+                      <button
+                        className="ui-button ui-button-chip ui-button-danger flex-1 px-3 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none"
+                        disabled={busyKnowledgeBaseId === knowledgeBase.id}
+                        type="button"
+                        onClick={() => {
+                          void deleteKnowledgeBase(knowledgeBase.id);
+                        }}
+                      >
+                        {busyKnowledgeBaseId === knowledgeBase.id ? literal("Deleting...") : literal("Delete")}
+                      </button>
+                    </div>
+                  </div>
+                  {knowledgeBase.description ? (
+                    <p className="mt-3 text-sm leading-6 text-muted">{knowledgeBase.description}</p>
+                  ) : null}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {knowledgeBase.entryIds.length > 0 ? knowledgeBase.entryIds.map((entryId) => {
+                      const entry = knowledgeEntries.find((item) => item.id === entryId);
+
+                      return (
+                        <span key={entryId} className="ui-pill ui-pill-soft border border-line text-xs text-muted">
+                          {entry?.title ?? entryId}
+                        </span>
+                      );
+                    }) : (
+                      <span className="text-xs text-muted">{literal("No entries are attached yet.")}</span>
+                    )}
+                  </div>
+                </div>
+              )) : (
+                <div className="rounded-[24px] border border-dashed border-line bg-white/45 px-4 py-4 text-sm text-muted">
+                  {literal("No reusable knowledge bases yet.")}
+                </div>
+              )}
+            </div>
+
+            <div className="mt-4 rounded-[24px] bg-white px-4 py-4">
+              <div className="flex flex-col items-start gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                 <p className="text-sm font-semibold text-foreground">
                   {editingProfileId ? literal("Edit assistant profile") : literal("New assistant profile")}
                 </p>
@@ -3072,6 +3486,64 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                   ))}
                 </div>
               </div>
+              <div className="mt-3 rounded-2xl border border-line/80 bg-[var(--panel)]/60 px-4 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">{literal("Workspace tools")}</p>
+                    <p className="mt-1 text-xs text-muted">{literal("Choose which built-in tools this specialist may call before composing a final answer.")}</p>
+                  </div>
+                  <span className="ui-pill ui-pill-soft border border-line text-xs text-muted">
+                    {literal("{count} selected", { count: profileEnabledToolIds.length })}
+                  </span>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {isLoadingWorkspaceTools ? (
+                    <span className="text-xs text-muted">{literal("Loading built-in workspace tools...")}</span>
+                  ) : workspaceTools.length > 0 ? workspaceTools.map((tool) => (
+                    <button
+                      key={`profile-tool-${tool.id}`}
+                      className={`ui-button ui-button-chip shrink-0 px-3 py-2 text-xs ${
+                        profileEnabledToolIds.includes(tool.id) ? "ui-button-primary" : "ui-button-secondary"
+                      }`}
+                      type="button"
+                      onClick={() => toggleProfileTool(tool.id)}
+                    >
+                      {tool.label}
+                    </button>
+                  )) : (
+                    <span className="text-xs text-muted">{literal("Built-in workspace tools are provided by the shared gateway. If this stays empty, refresh the Access page and verify the local app state.")}</span>
+                  )}
+                </div>
+              </div>
+              <div className="mt-3 rounded-2xl border border-line/80 bg-[var(--panel)]/60 px-4 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">{literal("Bound knowledge bases")}</p>
+                    <p className="mt-1 text-xs text-muted">{literal("Attach reusable corpora that should follow this specialist into each chat.")}</p>
+                  </div>
+                  <span className="ui-pill ui-pill-soft border border-line text-xs text-muted">
+                    {literal("{count} selected", { count: profileKnowledgeBaseIds.length })}
+                  </span>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {isLoadingKnowledgeBases ? (
+                    <span className="text-xs text-muted">{literal("Loading reusable knowledge bases...")}</span>
+                  ) : knowledgeBases.length > 0 ? knowledgeBases.map((knowledgeBase) => (
+                    <button
+                      key={`profile-knowledge-base-${knowledgeBase.id}`}
+                      className={`ui-button ui-button-chip shrink-0 px-3 py-2 text-xs ${
+                        profileKnowledgeBaseIds.includes(knowledgeBase.id) ? "ui-button-primary" : "ui-button-secondary"
+                      }`}
+                      type="button"
+                      onClick={() => toggleProfileKnowledgeBase(knowledgeBase.id)}
+                    >
+                      {knowledgeBase.name}
+                    </button>
+                  )) : (
+                    <span className="text-xs text-muted">{literal("No reusable knowledge bases exist yet. Create them in the knowledge-base section below after you save shared knowledge entries.")}</span>
+                  )}
+                </div>
+              </div>
               {profileSummary ? (
                 <div className={`mt-3 rounded-2xl px-4 py-3 text-sm ${profileSummaryTone === "success" ? "border border-emerald-200 bg-emerald-50/90 text-emerald-950" : "border border-amber-200 bg-amber-50/90 text-amber-950"}`}>
                   {profileSummary}
@@ -3134,6 +3606,12 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                     </span>
                     <span className="ui-pill ui-pill-neutral border border-line text-xs text-muted">
                       {literal("Temp {value}", { value: profile.temperature.toFixed(1) })}
+                    </span>
+                    <span className="ui-pill ui-pill-neutral border border-line text-xs text-muted">
+                      {literal("Tools {count}", { count: profile.enabledToolIds.length })}
+                    </span>
+                    <span className="ui-pill ui-pill-neutral border border-line text-xs text-muted">
+                      {literal("Bases {count}", { count: profile.knowledgeBaseIds.length })}
                     </span>
                   </div>
                 </div>
@@ -3453,6 +3931,11 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                         ? literal("Models: {models}", { models: entry.modelIds.join(", ") })
                         : literal("Models: all")}
                     </span>
+                    <span className="ui-pill ui-pill-neutral border border-line text-xs text-muted">
+                      {literal("Bases: {count}", {
+                        count: knowledgeBases.filter((knowledgeBase) => knowledgeBase.entryIds.includes(entry.id)).length,
+                      })}
+                    </span>
                   </div>
                   <p className="mt-3 text-sm leading-6 text-muted">{entry.content}</p>
                 </div>
@@ -3522,8 +4005,120 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                   <span className="text-xs text-muted">{literal("No model suggestions are available for this debug scope yet.")}</span>
                 )}
               </div>
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-[22px] border border-line/80 bg-white/45 px-4 py-3">
+                <div>
+                  <p className="text-sm font-semibold text-foreground">
+                    {knowledgeDebugResponse?.scoringMode === "hybrid"
+                      ? literal("Hybrid lexical + vector ranking")
+                      : literal("Lexical-only ranking")}
+                  </p>
+                  <p className="mt-1 text-xs text-muted">
+                    {knowledgeDebugResponse
+                      ? knowledgeDebugResponse.vectorAvailable
+                        ? literal("Using {model} across {count} scoped knowledge entries.", {
+                          model: knowledgeDebugResponse.vectorModel ?? literal("local embeddings"),
+                          count: knowledgeDebugResponse.knowledgeCount,
+                        })
+                        : knowledgeDebugResponse.fallbackReason === "no-knowledge"
+                          ? literal("No knowledge entries match the current provider and model scope yet.")
+                          : literal("Vector signals are unavailable, so this debug run is using lexical fallback.")
+                      : literal("Run a debug search to inspect hybrid retrieval and vector proximity.")}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    className={`ui-button px-3 py-2 text-xs ${knowledgeDebugViewMode === "list" ? "ui-button-primary" : "ui-button-secondary"}`}
+                    type="button"
+                    onClick={() => setKnowledgeDebugViewMode("list")}
+                  >
+                    {literal("Ranked list")}
+                  </button>
+                  <button
+                    className={`ui-button px-3 py-2 text-xs ${knowledgeDebugViewMode === "map" ? "ui-button-primary" : "ui-button-secondary"}`}
+                    disabled={knowledgeDebugResults.length === 0}
+                    type="button"
+                    onClick={() => setKnowledgeDebugViewMode("map")}
+                  >
+                    {literal("Vector map")}
+                  </button>
+                </div>
+              </div>
+              {knowledgeDebugViewMode === "map" && knowledgeDebugResults.length > 0 ? (
+                <div className="mt-4 rounded-[24px] border border-line/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.95),rgba(245,240,232,0.82))] p-4">
+                  <div className="flex flex-wrap gap-2 text-xs text-muted">
+                    <span className="ui-pill ui-pill-neutral border border-line">{literal("center = query")}</span>
+                    <span className="ui-pill ui-pill-neutral border border-line">{literal("node size = hybrid score")}</span>
+                    <span className="ui-pill ui-pill-neutral border border-line">{literal("distance = semantic closeness")}</span>
+                    <span className="ui-pill ui-pill-neutral border border-line">{literal("dashed line = lexical fallback")}</span>
+                  </div>
+                  <svg className="mt-4 h-auto w-full" viewBox="0 0 320 320" role="img" aria-label={literal("Shared knowledge vector map")}>
+                    <defs>
+                      <radialGradient id="knowledge-debug-center" cx="50%" cy="50%" r="60%">
+                        <stop offset="0%" stopColor="#f4d8b2" />
+                        <stop offset="100%" stopColor="#e7b47c" />
+                      </radialGradient>
+                    </defs>
+                    <circle cx="160" cy="160" r="126" fill="rgba(214, 186, 145, 0.08)" stroke="rgba(143, 111, 74, 0.2)" strokeDasharray="6 8" />
+                    <circle cx="160" cy="160" r="84" fill="rgba(214, 186, 145, 0.08)" stroke="rgba(143, 111, 74, 0.16)" strokeDasharray="4 6" />
+                    {knowledgeDebugMapNodes.map((node) => (
+                      <line
+                        key={`edge-${node.id}`}
+                        x1="160"
+                        y1="160"
+                        x2={node.x}
+                        y2={node.y}
+                        stroke={node.vectorAvailable ? "rgba(108, 86, 57, 0.45)" : "rgba(108, 86, 57, 0.25)"}
+                        strokeDasharray={node.vectorAvailable ? undefined : "6 6"}
+                        strokeWidth={Math.max(1.5, node.hybridScore / 12)}
+                      />
+                    ))}
+                    <circle cx="160" cy="160" r="28" fill="url(#knowledge-debug-center)" stroke="#8a5b31" strokeWidth="2" />
+                    <text x="160" y="156" fill="#5f3a1f" fontSize="12" fontWeight="700" textAnchor="middle">{literal("Query")}</text>
+                    <text x="160" y="172" fill="#6d4a29" fontSize="10" textAnchor="middle">{truncateKnowledgeMapLabel(knowledgeDebugQuery.trim())}</text>
+                    {knowledgeDebugMapNodes.map((node) => (
+                      <g key={node.id}>
+                        <circle
+                          cx={node.x}
+                          cy={node.y}
+                          r={node.radius}
+                          fill={node.vectorAvailable ? "rgba(195, 122, 69, 0.78)" : "rgba(125, 130, 141, 0.7)"}
+                          stroke={node.duplicatePenalty > 0 ? "#6c3f1b" : "#fff8ef"}
+                          strokeWidth={node.duplicatePenalty > 0 ? 2.5 : 2}
+                        />
+                        <text x={node.x} y={node.y + 4} fill="#fffaf4" fontSize="10" fontWeight="700" textAnchor="middle">
+                          {node.hybridScore}
+                        </text>
+                        <text
+                          x={node.x + (Math.cos(node.angle) >= 0 ? node.radius + 8 : -(node.radius + 8))}
+                          y={node.y + (Math.sin(node.angle) >= 0 ? node.radius + 6 : -(node.radius + 2))}
+                          fill="#6b5944"
+                          fontSize="10"
+                          fontWeight="600"
+                          textAnchor={Math.cos(node.angle) >= 0 ? "start" : "end"}
+                        >
+                          {truncateKnowledgeMapLabel(node.title)}
+                        </text>
+                      </g>
+                    ))}
+                  </svg>
+                  <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                    {knowledgeDebugResults.map((entry) => (
+                      <div key={`map-legend-${entry.id}`} className="rounded-2xl border border-line/80 bg-white/70 px-3 py-3 text-xs text-muted">
+                        <p className="font-semibold text-foreground">{entry.title}</p>
+                        <p className="mt-1">{literal("Hybrid {hybrid} · lexical {lexical}", {
+                          hybrid: entry.breakdown.hybridScore,
+                          lexical: entry.breakdown.lexicalScoreTotal,
+                        })}</p>
+                        <p className="mt-1">{entry.breakdown.vectorSimilarity !== null
+                          ? literal("Vector {value}", { value: entry.breakdown.vectorSimilarity.toFixed(3) })
+                          : literal("Lexical fallback only")}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
               <div className="mt-4 space-y-3">
-                {knowledgeDebugResults.length > 0 ? knowledgeDebugResults.map((entry) => (
+                {knowledgeDebugViewMode === "list" && knowledgeDebugResults.length > 0 ? knowledgeDebugResults.map((entry) => (
                   <div key={entry.id} className="rounded-[22px] border border-line/80 bg-[var(--panel)]/70 px-4 py-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
@@ -3543,19 +4138,38 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                         <span className="ui-pill ui-pill-neutral border border-line">{literal("phrase {value}", { value: entry.breakdown.exactPhraseBonus })}</span>
                         <span className="ui-pill ui-pill-neutral border border-line">{literal("all tokens {value}", { value: entry.breakdown.allTokenBonus })}</span>
                         <span className="ui-pill ui-pill-neutral border border-line">{literal("tag bonus {value}", { value: entry.breakdown.exactTagBonus })}</span>
+                        {entry.breakdown.vectorAvailable ? (
+                          <span className="ui-pill ui-pill-neutral border border-line">
+                            {literal("vector {value}", { value: entry.breakdown.vectorScore })}
+                          </span>
+                        ) : null}
                       </div>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted">
+                      <span className="ui-pill ui-pill-soft border border-line">{literal("lexical {value}", { value: entry.breakdown.lexicalScoreTotal })}</span>
                       <span className="ui-pill ui-pill-soft border border-line">{literal("title {value}", { value: entry.breakdown.titleScore })}</span>
                       <span className="ui-pill ui-pill-soft border border-line">{literal("tags {value}", { value: entry.breakdown.tagsScore })}</span>
                       <span className="ui-pill ui-pill-soft border border-line">{literal("source {value}", { value: entry.breakdown.sourceScore })}</span>
                       <span className="ui-pill ui-pill-soft border border-line">{literal("chunk {value}", { value: entry.breakdown.chunkScore })}</span>
+                      <span className="ui-pill ui-pill-soft border border-line">{literal("hybrid {value}", { value: entry.breakdown.hybridScore })}</span>
                       {entry.breakdown.duplicatePenalty > 0 ? (
                         <span className="ui-pill ui-pill-soft border border-line">
                           {literal("duplicate penalty -{value}", { value: entry.breakdown.duplicatePenalty })}
                         </span>
                       ) : null}
                     </div>
+                    {entry.breakdown.vectorAvailable && entry.breakdown.vectorSimilarity !== null ? (
+                      <p className="mt-3 text-xs leading-6 text-muted">
+                        {literal("Vector similarity: {similarity} via {model}.", {
+                          similarity: entry.breakdown.vectorSimilarity.toFixed(3),
+                          model: entry.breakdown.vectorModel ?? literal("local embeddings"),
+                        })}
+                      </p>
+                    ) : (
+                      <p className="mt-3 text-xs leading-6 text-muted">
+                        {literal("Vector signals are unavailable right now, so this ranking is lexical only.")}
+                      </p>
+                    )}
                     {entry.breakdown.duplicatePenalty > 0 && entry.breakdown.duplicateReferenceTitle ? (
                       <p className="mt-3 text-xs leading-6 text-muted">
                         {literal("Suppressed against {title} (overlap {score}).", {
@@ -3576,13 +4190,13 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
                     ) : null}
                     <p className="mt-3 text-sm leading-6 text-muted">{entry.content}</p>
                   </div>
-                )) : (
+                )) : knowledgeDebugViewMode === "list" ? (
                   <div className="rounded-[22px] border border-dashed border-line bg-white/45 px-4 py-4 text-sm text-muted">
                     {knowledgeDebugQuery.trim()
                       ? literal("No ranked matches yet for this debug search.")
                       : literal("Run a debug search to inspect how the shared knowledge index ranks entries.")}
                   </div>
-                )}
+                ) : null}
               </div>
             </div>
           </div>

@@ -9,6 +9,7 @@ param(
   [string]$DefaultLanguage,
   [string]$UpdateManifestUrl,
   [string]$UpdateChannel,
+  [string]$UpdateManifestPublicKey,
   [System.Security.SecureString]$AdminPassword,
   [string]$SessionSecret,
   [switch]$StartNow,
@@ -21,11 +22,11 @@ $script:CachedNodeRelease = $null
 $script:CachedOllamaRelease = $null
 $VoiceLanguageOptions = @(
   [pscustomobject]@{ Code = "auto"; Value = "auto"; Label = "Auto" },
-  [pscustomobject]@{ Code = "us"; Value = "united-states"; Label = "United States" },
+  [pscustomobject]@{ Code = "us"; Value = "united-states"; Label = "English (United States)" },
   [pscustomobject]@{ Code = "ar"; Value = "arabic"; Label = "Arabic" },
   [pscustomobject]@{ Code = "bn"; Value = "bengali"; Label = "Bengali" },
   [pscustomobject]@{ Code = "cn"; Value = "chinese"; Label = "Chinese" },
-  [pscustomobject]@{ Code = "gb"; Value = "english"; Label = "English" },
+  [pscustomobject]@{ Code = "gb"; Value = "united-kingdom"; Label = "English (United Kingdom / England)" },
   [pscustomobject]@{ Code = "fa"; Value = "farsi"; Label = "Persian" },
   [pscustomobject]@{ Code = "fr"; Value = "french"; Label = "French" },
   [pscustomobject]@{ Code = "hi"; Value = "hindi"; Label = "Hindi" },
@@ -200,6 +201,10 @@ function Resolve-VoiceLanguage([string]$Value) {
   }
 
   switch ($normalized) {
+    "english" { return "united-kingdom" }
+    "england" { return "united-kingdom" }
+    "uk" { return "united-kingdom" }
+    "unitedkingdom" { return "united-kingdom" }
     "unitedstates" { return "united-states" }
     default {
       throw "Unsupported default language '$Value'. Use one of: $((($VoiceLanguageOptions | ForEach-Object Code) -join ", "))."
@@ -741,6 +746,55 @@ function Write-InstallState([string]$TargetRoot, [hashtable]$Values) {
   Set-Content -Path (Join-Path $TargetRoot ".oload-install-state") -Value ($lines -join "`r`n") -Encoding ASCII
 }
 
+function Write-InstallManifest([string]$TargetRoot, [hashtable]$Values) {
+  $lines = @(
+    "Oload install manifest",
+    "",
+    "Install root: $($Values.InstallRoot)",
+    "Installed at: $($Values.InstalledAt)",
+    "Platform: Windows",
+    "",
+    "App footprint:",
+    "- App payload directory: $($Values.AppPayloadRoot)",
+    "- Runtime root: $($Values.RuntimeRoot)",
+    "- Start launcher (PowerShell): $($Values.StartScriptPath)",
+    "- Start launcher (CMD): $($Values.StartCommandPath)",
+    "- Uninstall launcher (PowerShell): $($Values.UninstallScriptPath)",
+    "- Uninstall launcher (CMD): $($Values.UninstallCommandPath)",
+    "- Runtime env file: $($Values.RuntimeEnvPath)",
+    "- Install state file: $($Values.InstallStatePath)",
+    "- Install manifest file: $($Values.InstallManifestPath)",
+    "- Uninstall notes file: $($Values.UninstallNotesPath)",
+    "- README: $($Values.ReadmePath)",
+    "- EULA copy: $($Values.EulaPath)",
+    "- Source notice copy: $($Values.SourceNoticePath)",
+    "",
+    "Dependency decisions:",
+    "- Node.js mode: $($Values.NodeChoice)",
+    "- Node.js detected shared path: $($Values.NodeDetectedPath)",
+    "- Node.js effective path: $($Values.NodePath)",
+    "- Node.js managed runtime root: $($Values.ManagedNodeRoot)",
+    "- Node.js existed before install: $($Values.NodeExistedBeforeInstall)",
+    "- Node.js installed by Oload: $($Values.NodeInstalledByOload)",
+    "",
+    "- Ollama mode: $($Values.OllamaChoice)",
+    "- Ollama detected shared path: $($Values.OllamaDetectedPath)",
+    "- Ollama effective path: $($Values.OllamaPath)",
+    "- Ollama managed runtime root: $($Values.ManagedOllamaRoot)",
+    "- Ollama managed models root: $($Values.ManagedOllamaModelsRoot)",
+    "- Ollama existed before install: $($Values.OllamaExistedBeforeInstall)",
+    "- Ollama installed by Oload: $($Values.OllamaInstalledByOload)",
+    "",
+    "Uninstall behavior:",
+    "- The native Windows uninstaller removes the installed app footprint under the install root.",
+    "- uninstall-oload.ps1 also uses the managed runtime paths above for dependency cleanup prompts.",
+    "- Shared dependencies are only removed if the operator explicitly confirms it.",
+    ""
+  )
+
+  Set-Content -Path (Join-Path $TargetRoot "INSTALL-MANIFEST.txt") -Value ($lines -join "`r`n") -Encoding ASCII
+}
+
 function Write-UninstallNotes([string]$TargetRoot, [hashtable]$Values) {
   $lines = @(
     "Oload uninstall notes",
@@ -759,11 +813,22 @@ function Write-UninstallNotes([string]$TargetRoot, [hashtable]$Values) {
     "- Verified existing path before install: $($Values.OllamaDetectedPath)",
     "- Selected mode: $($Values.OllamaChoice)",
     "- Effective Ollama path: $($Values.OllamaPath)",
+    "- Managed Ollama runtime root: $($Values.ManagedOllamaRoot)",
+    "- Managed Ollama models root: $($Values.ManagedOllamaModelsRoot)",
     "- Existed before this install: $($Values.OllamaExistedBeforeInstall)",
     "- Installed by Oload: $($Values.OllamaInstalledByOload)",
     "",
+    "Managed Oload paths:",
+    "- App payload directory: $($Values.AppPayloadRoot)",
+    "- Runtime root: $($Values.RuntimeRoot)",
+    "- Runtime env file: $($Values.RuntimeEnvPath)",
+    "- Install state file: $($Values.InstallStatePath)",
+    "- Install manifest file: $($Values.InstallManifestPath)",
+    "- Uninstall notes file: $($Values.UninstallNotesPath)",
+    "",
     "Default language: $($Values.DefaultLanguage)",
     "",
+    "See INSTALL-MANIFEST.txt for the full installed-path inventory.",
     "Use uninstall-oload.ps1 or uninstall-oload.cmd for script-based uninstall, or the native Oload uninstaller if this install came from OloadSetup.exe.",
     "The uninstall flow will ask again before removing shared Node.js/npm or Ollama dependencies.",
     "Ollama removal always requires an extra confirmation because it can remove all local models.",
@@ -793,6 +858,8 @@ $updateManifestUrlDefault = if ($UpdateManifestUrl) { $UpdateManifestUrl } else 
 $updateManifestUrl = Read-ValuePrompt "Optional update manifest URL (leave blank to disable live updates)" $updateManifestUrlDefault
 $updateChannelDefault = if ($UpdateChannel) { $UpdateChannel } else { "stable" }
 $updateChannel = Read-ValuePrompt "Update channel" $updateChannelDefault
+$updateManifestPublicKeyDefault = if ($UpdateManifestPublicKey) { $UpdateManifestPublicKey } else { "" }
+$UpdateManifestPublicKey = Read-ValuePrompt "Update manifest public key (PEM, leave blank to skip verification)" $updateManifestPublicKeyDefault
 $defaultLanguage = Read-VoiceLanguagePrompt $(if ($DefaultLanguage) { $DefaultLanguage } else { "united-states" })
 $adminPassword = Read-ValuePrompt "Optional bootstrap admin password (leave blank to skip)" $adminPasswordDefault
 $sessionSecret = Read-ValuePrompt "Session secret (leave blank to auto-generate)" $SessionSecret
@@ -818,14 +885,30 @@ if (-not $sessionSecret) {
 }
 
 $runtimeRoot = Join-Path $resolvedInstallRoot "runtime"
+$installStatePath = Join-Path $resolvedInstallRoot ".oload-install-state"
+$installManifestPath = Join-Path $resolvedInstallRoot "INSTALL-MANIFEST.txt"
+$runtimeEnvPath = Join-Path $resolvedInstallRoot ".env.runtime"
+$uninstallNotesPath = Join-Path $resolvedInstallRoot "UNINSTALL-NOTES.txt"
+$appPayloadRoot = Join-Path $resolvedInstallRoot "app"
+$startScriptPath = Join-Path $resolvedInstallRoot "start-oload.ps1"
+$startCommandPath = Join-Path $resolvedInstallRoot "start-oload.cmd"
+$uninstallScriptPath = Join-Path $resolvedInstallRoot "uninstall-oload.ps1"
+$uninstallCommandPath = Join-Path $resolvedInstallRoot "uninstall-oload.cmd"
+$readmePath = Join-Path $resolvedInstallRoot "README.md"
+$eulaPath = Join-Path $resolvedInstallRoot "EULA.txt"
+$sourceNoticePath = Join-Path $resolvedInstallRoot "SOURCE-AVAILABLE-NOTICE.txt"
+$installedAt = (Get-Date).ToString("o")
 
 $nodeSelection = Install-NodeRuntime $runtimeRoot $nodeMode $verifiedSystemNode
 $ollamaSelection = Install-OllamaIfNeeded $runtimeRoot $ollamaMode $verifiedOllama
+$managedNodeRoot = if ($nodeSelection.InstalledByOload) { Join-Path $runtimeRoot "node" } else { "" }
+$managedOllamaRoot = if ($ollamaSelection.InstalledByOload) { Join-Path $runtimeRoot "ollama" } else { "" }
+$managedOllamaModelsRoot = if ($ollamaSelection.InstalledByOload) { Join-Path $runtimeRoot "ollama-models" } else { "" }
 Start-OllamaIfNeeded $ollamaSelection.Path $ollamaBaseUrl
 Copy-AppPayload $bundleRoot $resolvedInstallRoot
 Write-InstallState $resolvedInstallRoot @{
   InstallRoot = $resolvedInstallRoot
-  InstalledAt = (Get-Date).ToString("o")
+  InstalledAt = $installedAt
   DefaultLanguage = $defaultLanguage
   NodeChoice = $nodeSelection.Choice
   NodeAction = $nodeSelection.Action
@@ -833,6 +916,7 @@ Write-InstallState $resolvedInstallRoot @{
   NodeExistedBeforeInstall = $nodeSelection.ExistedBeforeInstall
   NodeInstalledByOload = $nodeSelection.InstalledByOload
   NodePath = $nodeSelection.Path
+  ManagedNodeRoot = $managedNodeRoot
   NodeVersion = $nodeSelection.Version
   OllamaChoice = $ollamaSelection.Choice
   OllamaAction = $ollamaSelection.Action
@@ -840,22 +924,75 @@ Write-InstallState $resolvedInstallRoot @{
   OllamaExistedBeforeInstall = $ollamaSelection.ExistedBeforeInstall
   OllamaInstalledByOload = $ollamaSelection.InstalledByOload
   OllamaPath = $ollamaSelection.Path
+  ManagedOllamaRoot = $managedOllamaRoot
+  ManagedOllamaModelsRoot = $managedOllamaModelsRoot
   OllamaVersion = $ollamaSelection.Version
+  RuntimeRoot = $runtimeRoot
+  AppPayloadRoot = $appPayloadRoot
+  StartScriptPath = $startScriptPath
+  StartCommandPath = $startCommandPath
+  UninstallScriptPath = $uninstallScriptPath
+  UninstallCommandPath = $uninstallCommandPath
+  RuntimeEnvPath = $runtimeEnvPath
+  InstallStatePath = $installStatePath
+  InstallManifestPath = $installManifestPath
+  UninstallNotesPath = $uninstallNotesPath
+  ReadmePath = $readmePath
+  EulaPath = $eulaPath
+  SourceNoticePath = $sourceNoticePath
+}
+Write-InstallManifest $resolvedInstallRoot @{
+  InstallRoot = $resolvedInstallRoot
+  InstalledAt = $installedAt
+  NodeChoice = $nodeSelection.Choice
+  NodeDetectedPath = if ($nodeSelection.DetectedPath) { $nodeSelection.DetectedPath } else { "not found" }
+  NodeExistedBeforeInstall = $nodeSelection.ExistedBeforeInstall
+  NodeInstalledByOload = $nodeSelection.InstalledByOload
+  NodePath = $nodeSelection.Path
+  ManagedNodeRoot = if ($managedNodeRoot) { $managedNodeRoot } else { "not managed by Oload" }
+  OllamaChoice = $ollamaSelection.Choice
+  OllamaDetectedPath = if ($ollamaSelection.DetectedPath) { $ollamaSelection.DetectedPath } else { "not found" }
+  OllamaExistedBeforeInstall = $ollamaSelection.ExistedBeforeInstall
+  OllamaInstalledByOload = $ollamaSelection.InstalledByOload
+  OllamaPath = $ollamaSelection.Path
+  ManagedOllamaRoot = if ($managedOllamaRoot) { $managedOllamaRoot } else { "not managed by Oload" }
+  ManagedOllamaModelsRoot = if ($managedOllamaModelsRoot) { $managedOllamaModelsRoot } else { "not managed by Oload" }
+  RuntimeRoot = $runtimeRoot
+  AppPayloadRoot = $appPayloadRoot
+  StartScriptPath = $startScriptPath
+  StartCommandPath = $startCommandPath
+  UninstallScriptPath = $uninstallScriptPath
+  UninstallCommandPath = $uninstallCommandPath
+  RuntimeEnvPath = $runtimeEnvPath
+  InstallStatePath = $installStatePath
+  InstallManifestPath = $installManifestPath
+  UninstallNotesPath = $uninstallNotesPath
+  ReadmePath = $readmePath
+  EulaPath = $eulaPath
+  SourceNoticePath = $sourceNoticePath
 }
 Write-UninstallNotes $resolvedInstallRoot @{
   InstallRoot = $resolvedInstallRoot
-  InstalledAt = (Get-Date).ToString("o")
+  InstalledAt = $installedAt
   DefaultLanguage = $defaultLanguage
   NodeChoice = $nodeSelection.Choice
   NodeDetectedPath = if ($nodeSelection.DetectedPath) { $nodeSelection.DetectedPath } else { "not found" }
   NodeExistedBeforeInstall = $nodeSelection.ExistedBeforeInstall
   NodeInstalledByOload = $nodeSelection.InstalledByOload
   NodePath = $nodeSelection.Path
+  RuntimeRoot = $runtimeRoot
+  AppPayloadRoot = $appPayloadRoot
+  RuntimeEnvPath = $runtimeEnvPath
+  InstallStatePath = $installStatePath
+  InstallManifestPath = $installManifestPath
+  UninstallNotesPath = $uninstallNotesPath
   OllamaChoice = $ollamaSelection.Choice
   OllamaDetectedPath = if ($ollamaSelection.DetectedPath) { $ollamaSelection.DetectedPath } else { "not found" }
   OllamaExistedBeforeInstall = $ollamaSelection.ExistedBeforeInstall
   OllamaInstalledByOload = $ollamaSelection.InstalledByOload
   OllamaPath = $ollamaSelection.Path
+  ManagedOllamaRoot = if ($managedOllamaRoot) { $managedOllamaRoot } else { "not managed by Oload" }
+  ManagedOllamaModelsRoot = if ($managedOllamaModelsRoot) { $managedOllamaModelsRoot } else { "not managed by Oload" }
 }
 Write-RuntimeEnv $resolvedInstallRoot @{
   HOSTNAME = $hostname
@@ -865,6 +1002,7 @@ Write-RuntimeEnv $resolvedInstallRoot @{
   OLOAD_DEFAULT_LANGUAGE = $defaultLanguage
   OLOAD_UPDATE_MANIFEST_URL = $updateManifestUrl
   OLOAD_UPDATE_CHANNEL = $updateChannel
+  OLOAD_UPDATE_MANIFEST_PUBLIC_KEY = $UpdateManifestPublicKey
   OLOAD_ADMIN_PASSWORD = $adminPassword
   OLOAD_SESSION_SECRET = $sessionSecret
 }
@@ -879,4 +1017,5 @@ $launchUrl = if ($hostname -eq "0.0.0.0") { "http://localhost:$($port)" } else {
 
 Write-Host "`nInstalled Oload to $resolvedInstallRoot"
 Write-Host "Launch later with $resolvedInstallRoot\start-oload.cmd"
+Write-Host "Install manifest written to $resolvedInstallRoot\INSTALL-MANIFEST.txt"
 Write-Host "Open $launchUrl after the server finishes booting."

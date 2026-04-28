@@ -13,9 +13,43 @@ export type AiModelCapability =
 
 export type AiChatRole = "system" | "user" | "assistant";
 
+export type AiToolId = "search-knowledge" | "list-knowledge-bases" | "workspace-snapshot";
+
+export type AiToolCallStatus = "completed" | "failed";
+
+export type AiToolCall = {
+  id: string;
+  toolId: AiToolId;
+  title: string;
+  arguments: Record<string, unknown>;
+  status: AiToolCallStatus;
+  output: string;
+};
+
+export type AiChatAttachmentDocument = {
+  id: string;
+  name: string;
+  contentType: string;
+  textContent: string;
+  uploadedAt: string;
+};
+
+export type AiToolDefinition = {
+  id: AiToolId;
+  label: string;
+  description: string;
+  promptHint: string;
+  inputSchema: {
+    type: "object";
+    properties: Record<string, { type: "string"; description: string }>;
+    required?: string[];
+  };
+};
+
 export type AiChatMessage = {
   role: AiChatRole;
   content: string;
+  toolCalls?: AiToolCall[];
 };
 
 export type AiChatRequest = {
@@ -26,11 +60,16 @@ export type AiChatRequest = {
   systemPrompt?: string;
   useKnowledge?: boolean;
   groundingMode?: AiGroundingMode;
+  assistantProfileId?: string | null;
+  enabledToolIds?: AiToolId[];
+  knowledgeBaseIds?: string[];
+  attachmentDocuments?: AiChatAttachmentDocument[];
 };
 
 export type AiGroundingMode = "off" | "balanced" | "strict";
 
 export const AI_KNOWLEDGE_SOURCES_HEADER = "x-oload-knowledge-sources";
+export const AI_TOOL_CALLS_HEADER = "x-oload-tool-calls";
 
 export type AiProviderSummary = {
   id: AiProviderId;
@@ -87,6 +126,14 @@ export type AiKnowledgeEntry = {
   updatedAt: string;
 };
 
+export type AiKnowledgeBase = {
+  id: string;
+  name: string;
+  description: string;
+  entryIds: string[];
+  updatedAt: string;
+};
+
 export type AiKnowledgeSearchResult = AiKnowledgeEntry & {
   score: number;
 };
@@ -99,6 +146,13 @@ export type AiKnowledgeScoreBreakdown = {
   tagsScore: number;
   sourceScore: number;
   chunkScore: number;
+  lexicalScoreTotal: number;
+  vectorScore: number;
+  vectorSimilarity: number | null;
+  vectorAvailable: boolean;
+  vectorModel: string | null;
+  hybridScore: number;
+  scoringMode: "lexical" | "hybrid";
   duplicatePenalty: number;
   duplicateReferenceTitle: string | null;
   duplicateReferenceScore: number;
@@ -108,6 +162,18 @@ export type AiKnowledgeScoreBreakdown = {
 
 export type AiKnowledgeDebugResult = AiKnowledgeSearchResult & {
   breakdown: AiKnowledgeScoreBreakdown;
+};
+
+export type AiKnowledgeDebugResponse = {
+  query: string;
+  providerId?: AiProviderId | null;
+  modelId?: string;
+  scoringMode: "lexical" | "hybrid";
+  vectorAvailable: boolean;
+  vectorModel: string | null;
+  knowledgeCount: number;
+  fallbackReason: "no-query" | "no-knowledge" | "vector-unavailable" | null;
+  results: AiKnowledgeDebugResult[];
 };
 
 export type AiKnowledgeOverlapBreakdown = {
@@ -150,5 +216,7 @@ export type AiWorkspaceProfile = {
   temperature: number;
   useKnowledge: boolean;
   groundingMode: Exclude<AiGroundingMode, "off">;
+  enabledToolIds: AiToolId[];
+  knowledgeBaseIds: string[];
   updatedAt: string;
 };

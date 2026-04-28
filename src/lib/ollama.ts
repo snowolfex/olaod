@@ -1,4 +1,4 @@
-import type { AiKnowledgeCitation } from "@/lib/ai-types";
+import type { AiKnowledgeCitation, AiToolCall } from "@/lib/ai-types";
 
 export type OllamaCliStatus = {
   isInstalled: boolean;
@@ -32,6 +32,7 @@ export type OllamaChatMessage = {
   role: OllamaChatRole;
   content: string;
   knowledgeCitations?: AiKnowledgeCitation[];
+  toolCalls?: AiToolCall[];
 };
 
 export type OllamaChatRequest = {
@@ -55,6 +56,12 @@ export type OllamaPullStreamChunk = {
   status?: string;
   completed?: number;
   total?: number;
+  error?: string;
+};
+
+type OllamaEmbedResponse = {
+  embeddings?: number[][];
+  embedding?: number[];
   error?: string;
 };
 
@@ -169,6 +176,42 @@ export async function requestOllamaChatStream(
   return response;
 }
 
+export async function requestOllamaChatText(
+  payload: OllamaChatRequest,
+  signal?: AbortSignal,
+) {
+  const response = await fetch(`${getOllamaBaseUrl()}/api/chat`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    cache: "no-store",
+    signal,
+    body: JSON.stringify({
+      model: payload.model,
+      messages: buildChatMessages(payload.messages, payload.systemPrompt),
+      stream: false,
+      options:
+        typeof payload.temperature === "number"
+          ? { temperature: payload.temperature }
+          : undefined,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readOllamaErrorMessage(response));
+  }
+
+  const payloadJson = await response.json() as { message?: { content?: string }; response?: string; error?: string };
+  const content = payloadJson.message?.content ?? payloadJson.response ?? "";
+
+  if (!content.trim()) {
+    throw new Error(payloadJson.error?.trim() || "Ollama returned an empty chat response.");
+  }
+
+  return content;
+}
+
 export async function deleteOllamaModel(name: string) {
   const playwrightResponse = getPlaywrightDeleteResponse(name);
 
@@ -203,4 +246,83 @@ export async function requestOllamaPullStream(name: string, signal?: AbortSignal
   });
 
   return response;
+}
+
+async function readOllamaErrorMessage(response: Response) {
+  try {
+    const payload = await response.json() as { error?: string; message?: string };
+    return payload.error?.trim() || payload.message?.trim() || `${response.status} ${response.statusText}`.trim();
+  } catch {
+    try {
+      const text = (await response.text()).trim();
+      return text || `${response.status} ${response.statusText}`.trim();
+    } catch {
+      return `${response.status} ${response.statusText}`.trim();
+    }
+  }
+}
+
+async function requestLegacyOllamaEmbedding(prompt: string, model: string, signal?: AbortSignal) {
+  const response = await fetch(`${getOllamaBaseUrl()}/api/embeddings`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    cache: "no-store",
+    signal,
+    body: JSON.stringify({
+      model,
+      prompt,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readOllamaErrorMessage(response));
+  }
+
+  const payload = await response.json() as OllamaEmbedResponse;
+  if (Array.isArray(payload.embedding)) {
+    return payload.embedding;
+  }
+
+  throw new Error(payload.error?.trim() || "Ollama returned an embedding response without a vector.");
+}
+
+export async function requestOllamaEmbeddings(input: string[], model: string, signal?: AbortSignal) {
+  if (input.length === 0) {
+    return [];
+  }
+
+  const embedResponse = await fetch(`${getOllamaBaseUrl()}/api/embed`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    cache: "no-store",
+    signal,
+    body: JSON.stringify({
+      model,
+      input,
+    }),
+  });
+
+  if (embedResponse.ok) {
+    const payload = await embedResponse.json() as OllamaEmbedResponse;
+    if (Array.isArray(payload.embeddings)) {
+      return payload.embeddings;
+    }
+
+    if (Array.isArray(payload.embedding)) {
+      return [payload.embedding];
+    }
+
+    throw new Error(payload.error?.trim() || "Ollama returned an embed response without vectors.");
+  }
+
+  const legacyEmbeddings: number[][] = [];
+  for (const value of input) {
+    legacyEmbeddings.push(await requestLegacyOllamaEmbedding(value, model, signal));
+  }
+
+  return legacyEmbeddings;
 }

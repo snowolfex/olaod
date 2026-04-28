@@ -1,4 +1,6 @@
-import { getDataStorePath, readJsonStore, updateJsonStore } from "@/lib/data-store";
+import { getDataStorePath, readJsonStore, updateJsonStore, writeJsonStore } from "@/lib/data-store";
+import { removeKnowledgeEntryFromBases } from "@/lib/ai-knowledge-bases";
+import { requestOllamaEmbeddings } from "@/lib/ollama";
 import type {
   AiKnowledgeDebugResult,
   AiKnowledgeEntry,
@@ -10,7 +12,24 @@ import type {
 } from "@/lib/ai-types";
 
 const STORE_PATH = getDataStorePath("ai-knowledge.json");
+const VECTOR_STORE_PATH = getDataStorePath("ai-knowledge-vectors.json");
 const KNOWLEDGE_CHUNK_TARGET_LENGTH = 700;
+const DEFAULT_KNOWLEDGE_EMBED_MODEL = process.env.OLOAD_KNOWLEDGE_EMBED_MODEL?.trim() || "nomic-embed-text";
+const MIN_VECTOR_ONLY_SIMILARITY = 0.63;
+
+type KnowledgeVectorRecord = {
+  key: string;
+  entryId: string;
+  updatedAt: string;
+  chunkIndex: number;
+  chunk: string;
+  embedding: number[];
+};
+
+type KnowledgeVectorStore = {
+  embeddingModel: string;
+  records: KnowledgeVectorRecord[];
+};
 
 function tokenize(value: string) {
   return value
@@ -35,6 +54,42 @@ function normalizeModelIds(modelIds: string[] | undefined) {
 
 function normalizeTags(tags: string[] | undefined) {
   return Array.from(new Set((tags ?? []).map((tag) => tag.trim()).filter(Boolean)));
+}
+
+function normalizeKnowledgeEntry(entry: AiKnowledgeEntry): AiKnowledgeEntry {
+  return {
+    ...entry,
+    providerIds: normalizeProviderIds(entry.providerIds),
+    modelIds: normalizeModelIds(entry.modelIds),
+    tags: normalizeTags(entry.tags),
+  };
+}
+
+function filterKnowledgeEntries(
+  entries: AiKnowledgeEntry[],
+  options?: { providerId?: AiProviderId; modelId?: string; entryIds?: string[] },
+) {
+  const allowedEntryIds = options?.entryIds && options.entryIds.length > 0
+    ? new Set(options.entryIds)
+    : null;
+
+  return entries.filter((entry) => {
+    if (allowedEntryIds && !allowedEntryIds.has(entry.id)) {
+      return false;
+    }
+
+    if (!options?.providerId || entry.providerIds.length === 0) {
+      // fall through to model filtering below
+    } else if (!entry.providerIds.includes(options.providerId)) {
+      return false;
+    }
+
+    if (!options?.modelId || entry.modelIds.length === 0) {
+      return true;
+    }
+
+    return entry.modelIds.includes(options.modelId);
+  });
 }
 
 function splitOversizedParagraph(paragraph: string) {
@@ -138,6 +193,7 @@ function buildKnowledgeScoreBreakdown(input: {
   const tagsScore = scoreKnowledgeText(input.tags.join(" "), input.tokens, 3);
   const sourceScore = scoreKnowledgeText(input.source, input.tokens, 2);
   const chunkScore = scoreKnowledgeText(input.chunk, input.tokens, 1);
+  const lexicalScoreTotal = exactPhraseBonus + allTokenBonus + exactTagBonus + titleScore + tagsScore + sourceScore + chunkScore;
   const matchedTokens = input.tokens.filter((token) => combinedText.includes(token));
 
   return {
@@ -148,6 +204,13 @@ function buildKnowledgeScoreBreakdown(input: {
     tagsScore,
     sourceScore,
     chunkScore,
+    lexicalScoreTotal,
+    vectorScore: 0,
+    vectorSimilarity: null,
+    vectorAvailable: false,
+    vectorModel: null,
+    hybridScore: lexicalScoreTotal,
+    scoringMode: "lexical",
     duplicatePenalty: 0,
     duplicateReferenceTitle: null,
     duplicateReferenceScore: 0,
@@ -166,13 +229,153 @@ function scoreKnowledgeEntry(input: {
 }) {
   const breakdown = buildKnowledgeScoreBreakdown(input);
 
-  return breakdown.exactPhraseBonus
-    + breakdown.allTokenBonus
-    + breakdown.exactTagBonus
-    + breakdown.titleScore
-    + breakdown.tagsScore
-    + breakdown.sourceScore
-    + breakdown.chunkScore;
+  return breakdown.lexicalScoreTotal;
+}
+
+function normalizeEmbeddingModelName(value: string | undefined) {
+  return value?.trim() || DEFAULT_KNOWLEDGE_EMBED_MODEL;
+}
+
+function createEmptyVectorStore(embeddingModel: string): KnowledgeVectorStore {
+  return {
+    embeddingModel,
+    records: [],
+  };
+}
+
+function buildKnowledgeChunkKey(entry: AiKnowledgeEntry, chunkIndex: number) {
+  return `${entry.id}:${entry.updatedAt}:${chunkIndex}`;
+}
+
+function cosineSimilarity(left: number[], right: number[]) {
+  if (left.length === 0 || right.length === 0 || left.length !== right.length) {
+    return null;
+  }
+
+  let dotProduct = 0;
+  let leftMagnitude = 0;
+  let rightMagnitude = 0;
+
+  for (let index = 0; index < left.length; index += 1) {
+    const leftValue = left[index] ?? 0;
+    const rightValue = right[index] ?? 0;
+    dotProduct += leftValue * rightValue;
+    leftMagnitude += leftValue * leftValue;
+    rightMagnitude += rightValue * rightValue;
+  }
+
+  if (leftMagnitude === 0 || rightMagnitude === 0) {
+    return null;
+  }
+
+  return dotProduct / (Math.sqrt(leftMagnitude) * Math.sqrt(rightMagnitude));
+}
+
+function scoreVectorSimilarity(similarity: number | null) {
+  if (similarity === null) {
+    return 0;
+  }
+
+  const normalized = Math.max(0, Math.min(1, (similarity - 0.55) / 0.25));
+  return Math.round(normalized * 12);
+}
+
+function applyVectorSignals(
+  breakdown: AiKnowledgeScoreBreakdown,
+  vectorSimilarity: number | null,
+  vectorModel: string | null,
+): AiKnowledgeScoreBreakdown {
+  const vectorScore = scoreVectorSimilarity(vectorSimilarity);
+  return {
+    ...breakdown,
+    vectorScore,
+    vectorSimilarity,
+    vectorAvailable: vectorSimilarity !== null,
+    vectorModel,
+    hybridScore: breakdown.lexicalScoreTotal + vectorScore,
+    scoringMode: vectorSimilarity !== null ? "hybrid" : "lexical",
+  };
+}
+
+async function loadKnowledgeVectorStore(embeddingModel: string) {
+  const current = await readJsonStore<KnowledgeVectorStore>(
+    VECTOR_STORE_PATH,
+    createEmptyVectorStore(embeddingModel),
+  );
+
+  if (current.embeddingModel !== embeddingModel) {
+    return createEmptyVectorStore(embeddingModel);
+  }
+
+  return current;
+}
+
+async function removeKnowledgeVectorsForEntryIds(entryIds: string[]) {
+  if (entryIds.length === 0) {
+    return;
+  }
+
+  const entryIdSet = new Set(entryIds);
+  await updateJsonStore<KnowledgeVectorStore>(
+    VECTOR_STORE_PATH,
+    createEmptyVectorStore(normalizeEmbeddingModelName(undefined)),
+    (current) => ({
+      embeddingModel: current.embeddingModel,
+      records: current.records.filter((record) => !entryIdSet.has(record.entryId)),
+    }),
+  );
+}
+
+async function ensureKnowledgeVectorIndex(entries: AiKnowledgeEntry[], embeddingModel: string) {
+  const currentStore = await loadKnowledgeVectorStore(embeddingModel);
+  const currentRecordMap = new Map(currentStore.records.map((record) => [record.key, record]));
+  const desiredKeys = new Set<string>();
+  const pendingInputs: string[] = [];
+  const pendingMetadata: Array<{ key: string; entryId: string; updatedAt: string; chunkIndex: number; chunk: string }> = [];
+
+  for (const entry of entries) {
+    const chunks = buildKnowledgeChunks(entry.content);
+    for (const [chunkIndex, chunk] of chunks.entries()) {
+      const key = buildKnowledgeChunkKey(entry, chunkIndex);
+      desiredKeys.add(key);
+      if (!currentRecordMap.has(key)) {
+        pendingInputs.push(chunk);
+        pendingMetadata.push({
+          key,
+          entryId: entry.id,
+          updatedAt: entry.updatedAt,
+          chunkIndex,
+          chunk,
+        });
+      }
+    }
+  }
+
+  const nextRecords = currentStore.records.filter((record) => desiredKeys.has(record.key));
+
+  if (pendingInputs.length === 0) {
+    return nextRecords;
+  }
+
+  const embeddings = await requestOllamaEmbeddings(pendingInputs, embeddingModel);
+  for (const [index, metadata] of pendingMetadata.entries()) {
+    const embedding = embeddings[index];
+    if (!Array.isArray(embedding) || embedding.length === 0) {
+      continue;
+    }
+
+    nextRecords.push({
+      ...metadata,
+      embedding,
+    });
+  }
+
+  await writeJsonStore(VECTOR_STORE_PATH, {
+    embeddingModel,
+    records: nextRecords,
+  } satisfies KnowledgeVectorStore, createEmptyVectorStore(embeddingModel));
+
+  return nextRecords;
 }
 
 function createId() {
@@ -381,10 +584,11 @@ function diversifyKnowledgeResults(results: AiKnowledgeDebugResult[], limit: num
 
 export async function listAiKnowledge() {
   const entries = await readJsonStore<Array<AiKnowledgeEntry & { providerIds?: AiProviderId[]; modelIds?: string[] }>>(STORE_PATH, []);
-  return entries.map((entry) => ({
+  return entries.map((entry) => normalizeKnowledgeEntry({
     ...entry,
-    providerIds: normalizeProviderIds(entry.providerIds),
-    modelIds: normalizeModelIds(entry.modelIds),
+    providerIds: entry.providerIds ?? [],
+    modelIds: entry.modelIds ?? [],
+    tags: entry.tags ?? [],
   }));
 }
 
@@ -420,6 +624,8 @@ export async function saveAiKnowledgeEntry(input: {
     return [nextEntry, ...next];
   });
 
+  await removeKnowledgeVectorsForEntryIds([nextEntry.id]);
+
   return entries.find((entry) => entry.id === nextEntry.id) ?? nextEntry;
 }
 
@@ -427,6 +633,8 @@ export async function deleteAiKnowledgeEntry(id: string) {
   await updateJsonStore<AiKnowledgeEntry[]>(STORE_PATH, [], (current) =>
     current.filter((entry) => entry.id !== id),
   );
+  await removeKnowledgeVectorsForEntryIds([id]);
+  await removeKnowledgeEntryFromBases(id);
 }
 
 export async function findAiKnowledgeOverlaps(input: {
@@ -471,7 +679,7 @@ export async function findAiKnowledgeOverlaps(input: {
 export async function searchAiKnowledge(
   query: string,
   limit = 4,
-  options?: { providerId?: AiProviderId; modelId?: string },
+  options?: { providerId?: AiProviderId; modelId?: string; entryIds?: string[]; additionalEntries?: AiKnowledgeEntry[] },
 ): Promise<AiKnowledgeSearchResult[]> {
   const results = await debugAiKnowledgeSearch(query, limit, options);
   return results.map((entry) => ({
@@ -490,7 +698,7 @@ export async function searchAiKnowledge(
 export async function debugAiKnowledgeSearch(
   query: string,
   limit = 4,
-  options?: { providerId?: AiProviderId; modelId?: string },
+  options?: { providerId?: AiProviderId; modelId?: string; entryIds?: string[]; additionalEntries?: AiKnowledgeEntry[] },
 ): Promise<AiKnowledgeDebugResult[]> {
   const tokens = tokenize(query);
   const normalizedQuery = query.trim().toLowerCase();
@@ -499,62 +707,131 @@ export async function debugAiKnowledgeSearch(
     return [];
   }
 
-  const entries = (await listAiKnowledge()).filter((entry) => {
-    if (!options?.providerId || entry.providerIds.length === 0) {
-      // fall through to model filtering below
-    } else if (!entry.providerIds.includes(options.providerId)) {
-      return false;
-    }
+  const persistentEntries = filterKnowledgeEntries(await listAiKnowledge(), options);
+  const additionalEntries = filterKnowledgeEntries(
+    (options?.additionalEntries ?? []).map((entry) => normalizeKnowledgeEntry(entry)),
+    options,
+  );
+  const entries = [...persistentEntries, ...additionalEntries];
 
-    if (!options?.modelId || entry.modelIds.length === 0) {
-      return true;
-    }
+  const embeddingModel = normalizeEmbeddingModelName(process.env.OLOAD_KNOWLEDGE_EMBED_MODEL);
+  let queryEmbedding: number[] | null = null;
+  let vectorRecordMap = new Map<string, KnowledgeVectorRecord>();
+  let vectorAvailable = false;
 
-    return entry.modelIds.includes(options.modelId);
-  });
+  try {
+    if (entries.length > 0) {
+      const [embeddedQuery] = await requestOllamaEmbeddings([query], embeddingModel);
+      if (Array.isArray(embeddedQuery) && embeddedQuery.length > 0) {
+        queryEmbedding = embeddedQuery;
+        const vectorRecords = await ensureKnowledgeVectorIndex(entries, embeddingModel);
+        vectorRecordMap = new Map(vectorRecords.map((record) => [record.key, record]));
+        vectorAvailable = true;
+      }
+    }
+  } catch {
+    queryEmbedding = null;
+    vectorRecordMap = new Map<string, KnowledgeVectorRecord>();
+    vectorAvailable = false;
+  }
 
   const scoredEntries = entries
     .map((entry) => {
       const bestChunk = buildKnowledgeChunks(entry.content)
-        .map((chunk) => ({
-          chunk,
-          breakdown: buildKnowledgeScoreBreakdown({
+        .map((chunk, chunkIndex) => {
+          const lexicalBreakdown = buildKnowledgeScoreBreakdown({
             title: entry.title,
             source: entry.source,
             tags: entry.tags,
             chunk,
             tokens,
             normalizedQuery,
-          }),
-          score: scoreKnowledgeEntry({
-            title: entry.title,
-            source: entry.source,
-            tags: entry.tags,
+          });
+          const vectorRecord = vectorRecordMap.get(buildKnowledgeChunkKey(entry, chunkIndex));
+          const vectorSimilarity = queryEmbedding && vectorRecord
+            ? cosineSimilarity(queryEmbedding, vectorRecord.embedding)
+            : null;
+          const breakdown = applyVectorSignals(
+            lexicalBreakdown,
+            vectorSimilarity,
+            vectorAvailable ? embeddingModel : null,
+          );
+          return {
             chunk,
-            tokens,
-            normalizedQuery,
-          }),
-        }))
+            breakdown,
+            score: breakdown.hybridScore,
+          };
+        })
         .sort((left, right) => right.score - left.score || right.chunk.length - left.chunk.length)[0];
 
       const score = bestChunk?.score ?? 0;
+      const vectorSimilarity = bestChunk?.breakdown.vectorSimilarity ?? null;
+      const shouldInclude = score > 0 && (
+        (bestChunk?.breakdown.lexicalScoreTotal ?? 0) > 0
+        || vectorSimilarity === null
+        || vectorSimilarity >= MIN_VECTOR_ONLY_SIMILARITY
+      );
 
       return {
         ...entry,
         content: bestChunk?.chunk ?? entry.content,
-        breakdown: bestChunk?.breakdown ?? buildKnowledgeScoreBreakdown({
-          title: entry.title,
-          source: entry.source,
-          tags: entry.tags,
-          chunk: entry.content,
-          tokens,
-          normalizedQuery,
-        }),
+        breakdown: bestChunk?.breakdown ?? applyVectorSignals(
+          buildKnowledgeScoreBreakdown({
+            title: entry.title,
+            source: entry.source,
+            tags: entry.tags,
+            chunk: entry.content,
+            tokens,
+            normalizedQuery,
+          }),
+          null,
+          null,
+        ),
         score,
+        shouldInclude,
       };
     })
-    .filter((entry) => entry.score > 0)
+    .filter((entry) => entry.shouldInclude)
     .sort((left, right) => right.score - left.score || right.updatedAt.localeCompare(left.updatedAt));
 
-  return diversifyKnowledgeResults(scoredEntries, limit);
+  return diversifyKnowledgeResults(scoredEntries.map(({ shouldInclude: _shouldInclude, ...entry }) => entry), limit);
+}
+
+export async function getAiKnowledgeDebugSnapshot(
+  query: string,
+  limit = 4,
+  options?: { providerId?: AiProviderId; modelId?: string; entryIds?: string[]; additionalEntries?: AiKnowledgeEntry[] },
+) {
+  const normalizedQuery = query.trim();
+
+  if (!normalizedQuery) {
+    return {
+      query: normalizedQuery,
+      scoringMode: "lexical" as const,
+      vectorAvailable: false,
+      vectorModel: null,
+      knowledgeCount: 0,
+      fallbackReason: "no-query" as const,
+      results: [],
+    };
+  }
+
+  const results = await debugAiKnowledgeSearch(normalizedQuery, limit, options);
+  const entries = [
+    ...filterKnowledgeEntries(await listAiKnowledge(), options),
+    ...filterKnowledgeEntries((options?.additionalEntries ?? []).map((entry) => normalizeKnowledgeEntry(entry)), options),
+  ];
+
+  const vectorAvailable = results.some((entry) => entry.breakdown.vectorAvailable);
+  const vectorModel = results.find((entry) => entry.breakdown.vectorModel)?.breakdown.vectorModel ?? null;
+
+  return {
+    query: normalizedQuery,
+    scoringMode: vectorAvailable ? "hybrid" as const : "lexical" as const,
+    vectorAvailable,
+    vectorModel,
+    knowledgeCount: entries.length,
+    fallbackReason: entries.length === 0 ? "no-knowledge" as const : vectorAvailable ? null : "vector-unavailable" as const,
+    results,
+  };
 }

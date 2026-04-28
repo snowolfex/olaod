@@ -30,16 +30,23 @@ Live update configuration:
 
 - set `OLOAD_UPDATE_MANIFEST_URL` to a hosted copy of `manifest.json`
 - set `OLOAD_UPDATE_CHANNEL` if you want a value other than `stable`
-- the installer now prompts for both values and writes them into `.env.runtime`
-- on load, admin sessions check the manifest and can apply a live patch that restarts the local server automatically
+- set `OLOAD_UPDATE_MANIFEST_PUBLIC_KEY` to the Ed25519 public key that verifies the hosted manifest signature
+- the installer now prompts for all three values and writes them into `.env.runtime`
+- on load, Oload now auto-checks the manifest at launch, caches the signed result, and shows admins an inline green/red update status card in Access with `Check now` and `Install update` controls
 
 Technical:
 
-- Live updates are manifest-driven and patch the installed standalone payload in place rather than requiring a full reinstall.
+- Live updates are manifest-driven, use SHA-256 package validation plus Ed25519-signed manifest verification, and patch the installed standalone payload in place rather than requiring a full reinstall.
 
 Layman's terms:
 
-- If you host update packages and a manifest, admins can apply an app update from inside Oload instead of reinstalling the whole app.
+- If you host update packages, the matching signed manifest, and the public key, admins can see whether the install is current and apply an update from inside Oload instead of reinstalling the whole app.
+
+GitHub release publishing:
+
+- the repository now includes `.github/workflows/release-updates.yml` so pushing a `v*` tag builds signed update packages, uploads them to GitHub Releases, and publishes `updates/stable/manifest.json` plus a versioned manifest copy to GitHub Pages
+- set the GitHub Actions secret `OLOAD_UPDATE_MANIFEST_PRIVATE_KEY` to the Ed25519 private key used to sign the manifest
+- point installed environments at the GitHub Pages manifest URL and give them the matching public key through `OLOAD_UPDATE_MANIFEST_PUBLIC_KEY`
 
 Bundle targets:
 
@@ -68,7 +75,7 @@ Dependency choice and uninstall behavior:
 - if an operator chooses an existing shared `Node.js` or `Ollama` install and the detected version is older than the isolated default Oload can install, setup now warns first and then asks again before keeping that older shared runtime
 - the isolated Ollama path now uses the official release archives instead of the system installer or system service path, so it can run as a private Oload-managed runtime under the install root on both Windows and Linux
 - when a shared local Ollama is already present on `127.0.0.1:11434` and the operator keeps the isolated default, setup automatically shifts the private Oload Ollama runtime to `http://127.0.0.1:11435` so the isolated runtime can run separately instead of attaching to the existing shared service
-- both installers write uninstall notes that record whether each dependency already existed before Oload, which path was verified, and whether Oload installed its own copy
+- both installers now write both `UNINSTALL-NOTES.txt` and `INSTALL-MANIFEST.txt`, recording what Oload installed, the exact install-root paths it owns, which dependency paths were pre-existing, and which runtime paths are safe for the uninstall flow to remove automatically
 - uninstall now asks again before touching shared dependencies; for `Node.js / npm`, the flow warns when the runtime existed before Oload, and for `Ollama`, the flow always asks for confirmation before removing Ollama and again before removing all local models, with isolated Oload-managed Ollama models kept under the install root and removable separately from shared system model stores
 
 Install branding and legal flow:
@@ -81,15 +88,15 @@ Install branding and legal flow:
 
 Installer language selection:
 
-- the Windows native installer now exposes a real dropdown for every supported language in the app selector: `Auto`, `United States`, `Arabic`, `Bengali`, `Chinese`, `English`, `Persian`, `French`, `Hindi`, `Japanese`, `Korean`, `Portuguese`, `Russian`, and `Spanish`
+- the Windows native installer now exposes a real dropdown for every supported language in the app selector: `Auto`, `English (United States)`, `Arabic`, `Bengali`, `Chinese`, `English (United Kingdom / England)`, `Persian`, `French`, `Hindi`, `Japanese`, `Korean`, `Portuguese`, `Russian`, and `Spanish`
 - the Linux shell installer accepts `--language <code>` or `-l <code>` with the same coverage; supported short codes are `auto`, `us`, `ar`, `bn`, `cn`, `gb`, `fa`, `fr`, `hi`, `ja`, `ko`, `pt`, `ru`, and `es`
 - both installers persist the chosen value into `.env.runtime`, so the signed-out access flow, first account bootstrap, and later account defaults all start from the installed language choice
 
 Technical:
 
 - Installed builds keep the same local-first auth model as development builds, including first-user admin bootstrap and optional Google popup sign-in on the fixed localhost origin.
-- Installer language selection is runtime-configurable and feeds the same canonical language enum used by the app, with `united-states` normalized back to English UI copy and Whisper language routing where needed.
-- Installer dependency handling is now provenance-aware: setup records whether Node.js/npm and Ollama were verified as pre-existing or installed for Oload, and uninstall reads that state back before attempting any dependency removal.
+- Installer language selection is runtime-configurable and feeds the same canonical language enum used by the app, with both `united-states` and `united-kingdom` normalized back to shared English UI copy and Whisper language routing where needed.
+- Installer dependency handling is now provenance-aware: setup records whether Node.js/npm and Ollama were verified as pre-existing or installed for Oload, persists the exact managed runtime and support-file paths under the install root, and uninstall reads that state back before attempting any dependency removal.
 - Isolated Ollama installs now use embedded upstream release archives under `runtime/ollama`, and the launch scripts start that private runtime with a private `runtime/ollama-models` store when the configured `OLLAMA_BASE_URL` points at the local embedded service.
 
 Layman's terms:

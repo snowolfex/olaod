@@ -16,6 +16,37 @@ GitHub repo description: Mobile-first Next.js control plane for Ollama with a se
 
 ## Current product additions
 
+### Agentic chat, tools, knowledge bases, and attachments
+
+Technical:
+
+- The shared AI gateway at `/api/ai/chat` now supports a provider-agnostic tool-planning pass, built-in local tool execution, reusable knowledge-base bindings, and per-chat attachment documents that can be injected into retrieval without retraining or permanently importing the files.
+- Built-in tool definitions are exposed through `/api/ai/tools`, reusable knowledge bases are managed through `/api/admin/ai/knowledge-bases` and loaded in chat through `/api/ai/knowledge-bases`, and assistant profiles can now persist default tool and knowledge-base bindings alongside provider, model, prompt, temperature, and grounding settings.
+- Conversation settings now retain selected tools, selected knowledge bases, uploaded attachment documents, and executed tool-call summaries, so saved chats reopen with the same working context and can show which local tools were used for a reply.
+
+Layman's terms:
+
+- Chats can now do more than just answer from the model's memory. They can pull from reusable workspace knowledge, temporarily read text files you attach to the current conversation, and use built-in helper actions before composing the final reply.
+- You can save those defaults into named assistants so a specialist agent opens with the right tools and knowledge already attached.
+- When a reply used a local tool, the transcript can show that work instead of hiding it.
+
+### Operator walkthrough
+
+Technical:
+
+- Admins create or edit reusable shared-knowledge entries in Access, group those entries into named knowledge bases, and optionally bind those bases plus built-in tools to assistant profiles.
+- Operators can then start a chat, pick an assistant profile or manually toggle tools and knowledge bases, attach one or more text-like files for temporary retrieval, and send the request through the shared AI gateway.
+- The gateway performs grounding, optional tool planning and execution, then streams the final answer back to chat with source citations and any executed tool-call summaries.
+
+Layman's terms:
+
+1. Load notes or documents into Shared knowledge.
+2. Group related notes into a reusable knowledge base.
+3. Save an assistant that should always use certain tools or certain knowledge bases.
+4. In chat, pick that assistant or manually turn tools and knowledge bases on or off.
+5. Add temporary files when you want the model to use a document just for the current thread.
+6. Send the prompt and review both the answer and any sources or tool activity shown under the assistant response.
+
 ### Grounded chat and assistant profiles
 
 Technical:
@@ -49,14 +80,28 @@ Layman's terms:
 Technical:
 
 - Local accounts now support an in-app password reset request and completion flow without requiring an inbound email-link system.
-- Admin sessions can check a hosted update manifest, download a patch bundle, and apply it through the update routes without reinstalling the full app.
+- Admin sessions now auto-check a hosted update manifest at launch, verify an Ed25519 signature over the manifest plus SHA-256 hashes for the platform bundles, surface signed update state in Access, and can download and apply a patch bundle through the update routes without reinstalling the full app.
 - Workspace backup restore now includes clearer acknowledgement and current-session impact handling when a restore replaces or downgrades the signed-in user.
 
 Layman's terms:
 
 - If someone forgets a local password, the app can walk them through resetting it inside the product.
-- Admins can apply packaged updates from a hosted manifest instead of reinstalling everything from scratch.
+- Admins now get a clear update light in Access, can manually re-check release state, and can install a signed packaged update from inside the app instead of reinstalling everything from scratch.
 - Restoring a backup now warns more clearly when it is about to replace the current local workspace or sign the current user out.
+
+### Signed GitHub release updates
+
+Technical:
+
+- Update publishing now includes a GitHub Actions workflow at `.github/workflows/release-updates.yml` that builds the Windows and Linux update bundles on version tags, signs the manifest with an Ed25519 private key, uploads the bundles to GitHub Releases, and publishes stable plus versioned manifest URLs through GitHub Pages.
+- Installers now persist the manifest URL, update channel, and update-manifest public key so installed environments can verify the signed manifest before trusting any package URL.
+- The Access admin surface now includes an inline update panel with green/red state, `Check now`, and `Install update` actions.
+
+Layman's terms:
+
+- Tagging a release can now publish the update files automatically.
+- The app can tell whether an update is real before offering it.
+- Admins can see the status in one obvious spot instead of waiting for a floating banner.
 
 ## AI Reference
 

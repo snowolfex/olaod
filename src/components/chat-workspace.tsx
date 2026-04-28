@@ -15,11 +15,16 @@ import type {
 } from "@/lib/conversation-types";
 import {
   AI_KNOWLEDGE_SOURCES_HEADER,
+  AI_TOOL_CALLS_HEADER,
+  type AiChatAttachmentDocument,
   type AiGroundingMode,
+  type AiKnowledgeBase,
   type AiKnowledgeCitation,
   type AiModelSummary,
   type AiProviderId,
   type AiProviderSummary,
+  type AiToolCall,
+  type AiToolDefinition,
   type AiWorkspaceProfile,
 } from "@/lib/ai-types";
 import type { OllamaChatMessage, OllamaModel } from "@/lib/ollama";
@@ -40,6 +45,7 @@ type ChatWorkspaceProps = {
   initialConversations: ConversationSummary[];
   models: OllamaModel[];
   onActiveConversationChange?: (conversation: ActiveConversationSnapshot | null) => void;
+  onRequestOpenAccessPanel?: () => Promise<void> | void;
   onRequestOpenModelOperations?: () => Promise<void> | void;
   onUiLanguagePreferenceChange?: (language: VoiceTranscriptionLanguage) => void;
   runningModels?: string[];
@@ -65,6 +71,14 @@ type AiProvidersResponse = {
 
 type AiModelsResponse = {
   models: AiModelSummary[];
+};
+
+type AiKnowledgeBasesResponse = {
+  knowledgeBases: AiKnowledgeBase[];
+};
+
+type AiToolsResponse = {
+  tools: AiToolDefinition[];
 };
 
 type TalkToOption = {
@@ -485,6 +499,55 @@ function readKnowledgeCitationsHeader(response: Response) {
   }
 }
 
+function readToolCallsHeader(response: Response) {
+  const headerValue = response.headers.get(AI_TOOL_CALLS_HEADER);
+
+  if (!headerValue) {
+    return [] as AiToolCall[];
+  }
+
+  try {
+    const parsed = JSON.parse(headerValue) as unknown;
+
+    return Array.isArray(parsed)
+      ? parsed.filter((entry): entry is AiToolCall => {
+        if (!entry || typeof entry !== "object") {
+          return false;
+        }
+
+        const candidate = entry as Partial<AiToolCall>;
+        return typeof candidate.id === "string"
+          && typeof candidate.toolId === "string"
+          && typeof candidate.title === "string"
+          && candidate.arguments !== null
+          && typeof candidate.arguments === "object"
+          && (candidate.status === "completed" || candidate.status === "failed")
+          && typeof candidate.output === "string";
+      })
+      : [];
+  } catch {
+    return [] as AiToolCall[];
+  }
+}
+
+function isTextLikeAttachment(file: File) {
+  const normalizedName = file.name.toLowerCase();
+  return file.type.startsWith("text/")
+    || file.type === "application/json"
+    || file.type === "application/xml"
+    || normalizedName.endsWith(".md")
+    || normalizedName.endsWith(".txt")
+    || normalizedName.endsWith(".csv")
+    || normalizedName.endsWith(".json")
+    || normalizedName.endsWith(".xml")
+    || normalizedName.endsWith(".html")
+    || normalizedName.endsWith(".htm");
+}
+
+function createAttachmentId() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 function getAudioContextConstructor() {
   if (typeof window === "undefined") {
     return null;
@@ -618,6 +681,7 @@ export function ChatWorkspace({
   initialConversations,
   models,
   onActiveConversationChange,
+  onRequestOpenAccessPanel,
   onRequestOpenModelOperations,
   onUiLanguagePreferenceChange,
   runningModels = [],
@@ -679,12 +743,25 @@ export function ChatWorkspace({
   const [loadedArchivedFilterKey, setLoadedArchivedFilterKey] = useState<string | null>(null);
   const [loadedArchivedSortKey, setLoadedArchivedSortKey] = useState<string | null>(null);
   const [assistantProfiles, setAssistantProfiles] = useState<AiWorkspaceProfile[]>([]);
+  const [knowledgeBases, setKnowledgeBases] = useState<AiKnowledgeBase[]>([]);
+  const [availableTools, setAvailableTools] = useState<AiToolDefinition[]>([]);
   const [hostedTalkToOptions, setHostedTalkToOptions] = useState<TalkToOption[]>([]);
   const [isLoadingAssistantProfiles, setIsLoadingAssistantProfiles] = useState(false);
+  const [isLoadingKnowledgeBases, setIsLoadingKnowledgeBases] = useState(true);
+  const [isLoadingTools, setIsLoadingTools] = useState(true);
   const [isLoadingTalkToOptions, setIsLoadingTalkToOptions] = useState(false);
   const [talkToDialogMessage, setTalkToDialogMessage] = useState<string | null>(null);
   const [selectedAssistantProfileId, setSelectedAssistantProfileId] = useState(
     initialConversation?.settings.assistantProfileId ?? "",
+  );
+  const [selectedKnowledgeBaseIds, setSelectedKnowledgeBaseIds] = useState<string[]>(
+    initialConversation?.settings.knowledgeBaseIds ?? [],
+  );
+  const [selectedToolIds, setSelectedToolIds] = useState<Array<AiToolDefinition["id"]>>(
+    initialConversation?.settings.enabledToolIds ?? [],
+  );
+  const [attachmentDocuments, setAttachmentDocuments] = useState<AiChatAttachmentDocument[]>(
+    initialConversation?.settings.attachmentDocuments ?? [],
   );
   const [providerId, setProviderId] = useState<AiWorkspaceProfile["providerId"]>(
     initialConversation?.settings.providerId ?? "ollama",
@@ -717,6 +794,7 @@ export function ChatWorkspace({
   const [lastLatency, setLastLatency] = useState<number | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const draftInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const composerFormRef = useRef<HTMLFormElement | null>(null);
   const archivedConversationItemRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -767,6 +845,78 @@ export function ChatWorkspace({
     }
 
     void loadAssistantProfiles();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadKnowledgeBases() {
+      setIsLoadingKnowledgeBases(true);
+
+      try {
+        const response = await fetch("/api/ai/knowledge-bases", { cache: "no-store" });
+
+        if (!response.ok) {
+          throw new Error(await readErrorMessage(response));
+        }
+
+        const payload = (await response.json()) as AiKnowledgeBasesResponse;
+
+        if (!cancelled) {
+          setKnowledgeBases(payload.knowledgeBases);
+        }
+      } catch {
+        if (!cancelled) {
+          setKnowledgeBases([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingKnowledgeBases(false);
+        }
+      }
+    }
+
+    void loadKnowledgeBases();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadTools() {
+      setIsLoadingTools(true);
+
+      try {
+        const response = await fetch("/api/ai/tools", { cache: "no-store" });
+
+        if (!response.ok) {
+          throw new Error(await readErrorMessage(response));
+        }
+
+        const payload = (await response.json()) as AiToolsResponse;
+
+        if (!cancelled) {
+          setAvailableTools(payload.tools);
+        }
+      } catch {
+        if (!cancelled) {
+          setAvailableTools([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingTools(false);
+        }
+      }
+    }
+
+    void loadTools();
 
     return () => {
       cancelled = true;
@@ -1148,6 +1298,9 @@ export function ChatWorkspace({
       useKnowledge,
       groundingMode: useKnowledge ? groundingMode : "off",
       assistantProfileId: selectedAssistantProfileId || null,
+      enabledToolIds: selectedToolIds,
+      knowledgeBaseIds: selectedKnowledgeBaseIds,
+      attachmentDocuments,
     };
   }
 
@@ -1155,6 +1308,8 @@ export function ChatWorkspace({
     if (!profileId) {
       setSelectedAssistantProfileId("");
       setProviderId("ollama");
+      setSelectedToolIds([]);
+      setSelectedKnowledgeBaseIds([]);
       return;
     }
 
@@ -1171,6 +1326,8 @@ export function ChatWorkspace({
     setTemperature(profile.temperature);
     setUseKnowledge(profile.useKnowledge);
     setGroundingMode(profile.useKnowledge ? profile.groundingMode : "off");
+    setSelectedToolIds(profile.enabledToolIds);
+    setSelectedKnowledgeBaseIds(profile.knowledgeBaseIds);
   }
 
   async function handleTalkToEmptyAction() {
@@ -1182,6 +1339,67 @@ export function ChatWorkspace({
     setTalkToDialogMessage(
       literal("No models are started right now. Contact an administrator to start one from the Models page."),
     );
+  }
+
+  function toggleToolSelection(toolId: AiToolDefinition["id"]) {
+    setSelectedAssistantProfileId("");
+    setSelectedToolIds((current) =>
+      current.includes(toolId)
+        ? current.filter((currentToolId) => currentToolId !== toolId)
+        : [...current, toolId],
+    );
+  }
+
+  function toggleKnowledgeBaseSelection(knowledgeBaseId: string) {
+    setSelectedAssistantProfileId("");
+    setSelectedKnowledgeBaseIds((current) =>
+      current.includes(knowledgeBaseId)
+        ? current.filter((currentKnowledgeBaseId) => currentKnowledgeBaseId !== knowledgeBaseId)
+        : [...current, knowledgeBaseId],
+    );
+  }
+
+  function removeAttachmentDocument(attachmentId: string) {
+    setSelectedAssistantProfileId("");
+    setAttachmentDocuments((current) => current.filter((document) => document.id !== attachmentId));
+  }
+
+  async function handleAttachmentFiles(fileList: FileList | null) {
+    if (!fileList || fileList.length === 0) {
+      return;
+    }
+
+    const nextDocuments: AiChatAttachmentDocument[] = [];
+
+    for (const file of Array.from(fileList)) {
+      if (!isTextLikeAttachment(file)) {
+        setError(literal("Only text-like attachments are supported in chat right now."));
+        continue;
+      }
+
+      const textContent = (await file.text()).trim();
+
+      if (!textContent) {
+        continue;
+      }
+
+      nextDocuments.push({
+        id: createAttachmentId(),
+        name: file.name,
+        contentType: file.type || "text/plain",
+        textContent: textContent.slice(0, 200_000),
+        uploadedAt: new Date().toISOString(),
+      });
+    }
+
+    if (nextDocuments.length === 0) {
+      return;
+    }
+
+    setSelectedAssistantProfileId("");
+    setUseKnowledge(true);
+    setGroundingMode((current) => current === "off" ? "balanced" : current);
+    setAttachmentDocuments((current) => [...current, ...nextDocuments]);
   }
 
   async function createConversationRecord(nextMessages: OllamaChatMessage[]) {
@@ -1292,7 +1510,7 @@ export function ChatWorkspace({
     saveTimeoutRef.current = window.setTimeout(() => {
       queueSettingsSave();
     }, 500);
-  }, [activeConversationId, groundingMode, isStreaming, providerId, selectedAssistantProfileId, selectedModel, systemPrompt, temperature, useKnowledge]);
+  }, [activeConversationId, attachmentDocuments, groundingMode, isStreaming, providerId, selectedAssistantProfileId, selectedKnowledgeBaseIds, selectedModel, selectedToolIds, systemPrompt, temperature, useKnowledge]);
 
   useEffect(() => {
     setConversationTitleDraft(conversationTitle);
@@ -1343,6 +1561,9 @@ export function ChatWorkspace({
           ?? (conversation.settings.useKnowledge ? "balanced" : "off"),
       );
       setSelectedAssistantProfileId(conversation.settings.assistantProfileId ?? "");
+      setSelectedToolIds(conversation.settings.enabledToolIds ?? []);
+      setSelectedKnowledgeBaseIds(conversation.settings.knowledgeBaseIds ?? []);
+      setAttachmentDocuments(conversation.settings.attachmentDocuments ?? []);
       setDraft("");
       setLastLatency(null);
     } catch (loadError) {
@@ -1425,6 +1646,9 @@ export function ChatWorkspace({
     setUseKnowledge(false);
     setGroundingMode("off");
     setSelectedAssistantProfileId("");
+    setSelectedToolIds([]);
+    setSelectedKnowledgeBaseIds([]);
+    setAttachmentDocuments([]);
   }
 
   async function deleteConversationRecord(id: string) {
@@ -1524,6 +1748,9 @@ export function ChatWorkspace({
           ?? (payload.conversation.settings.useKnowledge ? "balanced" : "off"),
       );
       setSelectedAssistantProfileId(payload.conversation.settings.assistantProfileId ?? "");
+      setSelectedToolIds(payload.conversation.settings.enabledToolIds ?? []);
+      setSelectedKnowledgeBaseIds(payload.conversation.settings.knowledgeBaseIds ?? []);
+      setAttachmentDocuments(payload.conversation.settings.attachmentDocuments ?? []);
     } catch (archiveError) {
       setError(
         archiveError instanceof Error
@@ -1690,6 +1917,7 @@ export function ChatWorkspace({
     let ensuredConversationId = activeConversationId ?? undefined;
     let assistantContent = "";
     let knowledgeCitations: AiKnowledgeCitation[] = [];
+    let toolCalls: AiToolCall[] = [];
 
     abortControllerRef.current = controller;
     setError(null);
@@ -1719,6 +1947,10 @@ export function ChatWorkspace({
           systemPrompt,
           useKnowledge,
           groundingMode: useKnowledge ? groundingMode : "off",
+          assistantProfileId: selectedAssistantProfileId || null,
+          enabledToolIds: selectedToolIds,
+          knowledgeBaseIds: selectedKnowledgeBaseIds,
+          attachmentDocuments,
         }),
       });
 
@@ -1727,6 +1959,7 @@ export function ChatWorkspace({
       }
 
       knowledgeCitations = readKnowledgeCitationsHeader(response);
+  toolCalls = readToolCallsHeader(response);
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -1754,6 +1987,7 @@ export function ChatWorkspace({
               ...lastMessage,
               content: snapshot,
               knowledgeCitations,
+              toolCalls,
             };
 
             return updated;
@@ -1768,6 +2002,7 @@ export function ChatWorkspace({
           role: "assistant",
           content: assistantContent,
           knowledgeCitations,
+          toolCalls,
         },
       ], ensuredConversationId, { archived: false });
     } catch (error) {
@@ -1779,6 +2014,7 @@ export function ChatWorkspace({
               role: "assistant",
               content: assistantContent,
               knowledgeCitations,
+              toolCalls,
             },
           ], ensuredConversationId, { archived: false }).catch(() => undefined);
         }
@@ -1806,6 +2042,7 @@ export function ChatWorkspace({
             ...lastMessage,
             content: fallbackContent,
             knowledgeCitations,
+            toolCalls,
           };
 
           return updated;
@@ -1818,6 +2055,7 @@ export function ChatWorkspace({
           role: "assistant",
           content: fallbackContent,
           knowledgeCitations,
+          toolCalls,
         },
       ], ensuredConversationId, { archived: false }).catch(() => undefined);
     } finally {
@@ -3181,6 +3419,29 @@ export function ChatWorkspace({
               }`}>
                 {message.content || t("waitingForModelOutput")}
               </p>
+              {isAssistant && message.toolCalls && message.toolCalls.length > 0 ? (
+                <details className="mt-4 rounded-[22px] border border-line/70 bg-white/70 px-4 py-3 text-sm text-foreground">
+                  <summary className="cursor-pointer list-none font-semibold text-foreground">
+                    {literal("Tools used ({count})", { count: message.toolCalls.length })}
+                  </summary>
+                  <div className="mt-3 space-y-3">
+                    {message.toolCalls.map((toolCall) => (
+                      <div key={toolCall.id} className="rounded-[18px] border border-line bg-[var(--panel)]/70 px-3 py-3">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-semibold text-foreground">{toolCall.title}</p>
+                            <p className="mt-1 text-xs text-muted">{toolCall.toolId}</p>
+                          </div>
+                          <span className="ui-pill ui-pill-soft border border-line text-xs text-muted">
+                            {toolCall.status === "completed" ? literal("Completed") : literal("Failed")}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-xs leading-6 text-muted">{toolCall.output}</p>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              ) : null}
               {isAssistant && message.knowledgeCitations && message.knowledgeCitations.length > 0 ? (
                 <details className="mt-4 rounded-[22px] border border-line/70 bg-white/70 px-4 py-3 text-sm text-foreground">
                   <summary className="cursor-pointer list-none font-semibold text-foreground">
@@ -3227,6 +3488,15 @@ export function ChatWorkspace({
             </span>
             <span className="theme-surface-chip rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground">
               {assistantStyleBadgeLabel}
+            </span>
+            <span className="theme-surface-chip rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground">
+              {literal("Tools {count}", { count: selectedToolIds.length })}
+            </span>
+            <span className="theme-surface-chip rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground">
+              {literal("Bases {count}", { count: selectedKnowledgeBaseIds.length })}
+            </span>
+            <span className="theme-surface-chip rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground">
+              {literal("Files {count}", { count: attachmentDocuments.length })}
             </span>
           </div>
         </div>
@@ -3413,6 +3683,139 @@ export function ChatWorkspace({
                   {label}
                 </button>
               ))}
+            </div>
+          </div>
+        </div>
+        <div className="mt-3 grid gap-3 lg:grid-cols-3">
+          <div className="theme-surface-soft rounded-[24px] px-4 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="eyebrow text-muted">{literal("Tools")}</p>
+                <p className="mt-1 text-sm text-muted">
+                  {literal("Enable built-in workspace tools the model may call before answering.")}
+                </p>
+              </div>
+              <span className="theme-surface-chip rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground">
+                {selectedToolIds.length > 0 ? literal("{count} enabled", { count: selectedToolIds.length }) : literal("None")}
+              </span>
+            </div>
+            {isLoadingTools ? (
+              <p className="mt-3 text-xs text-muted">{literal("Loading built-in workspace tools...")}</p>
+            ) : availableTools.length > 0 ? (
+              <div className="mt-3 space-y-2">
+                {availableTools.map((tool) => (
+                  <button
+                    key={tool.id}
+                    className={`w-full rounded-[18px] border px-3 py-3 text-left transition ${selectedToolIds.includes(tool.id)
+                      ? "border-transparent bg-[var(--accent)] text-white"
+                      : "border-line bg-white/80 text-foreground hover:border-[var(--accent)]/40 hover:bg-white"}`}
+                    disabled={isStreaming || isLoadingTools}
+                    type="button"
+                    onClick={() => toggleToolSelection(tool.id)}
+                  >
+                    <span className="block text-sm font-semibold">{tool.label}</span>
+                    <span className={`mt-1 block text-xs leading-5 ${selectedToolIds.includes(tool.id) ? "text-white/80" : "text-muted"}`}>
+                      {tool.description}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-3 text-xs text-muted">
+                {literal("Built-in tools should load from the shared gateway. If this stays empty after refresh, check the local app state.")}
+              </p>
+            )}
+          </div>
+          <div className="theme-surface-soft rounded-[24px] px-4 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="eyebrow text-muted">{literal("Knowledge bases")}</p>
+                <p className="mt-1 text-sm text-muted">
+                  {literal("Bind reusable corpora to this chat without changing the assistant profile.")}
+                </p>
+              </div>
+              <span className="theme-surface-chip rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground">
+                {selectedKnowledgeBaseIds.length > 0 ? literal("{count} attached", { count: selectedKnowledgeBaseIds.length }) : literal("Global")}
+              </span>
+            </div>
+            {isLoadingKnowledgeBases ? (
+              <p className="mt-3 text-xs text-muted">{literal("Loading reusable knowledge bases...")}</p>
+            ) : knowledgeBases.length > 0 ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {knowledgeBases.map((knowledgeBase) => (
+                  <button
+                    key={knowledgeBase.id}
+                    className={`ui-button px-3 py-2 text-xs ${selectedKnowledgeBaseIds.includes(knowledgeBase.id) ? "ui-button-primary" : "ui-button-secondary"}`}
+                    disabled={isStreaming || isLoadingKnowledgeBases}
+                    type="button"
+                    onClick={() => toggleKnowledgeBaseSelection(knowledgeBase.id)}
+                  >
+                    {knowledgeBase.name}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-3 space-y-3">
+                <p className="text-xs text-muted">
+                  {literal("No reusable knowledge bases exist yet. Create them in Access after you save shared knowledge entries.")}
+                </p>
+                {onRequestOpenAccessPanel ? (
+                  <button
+                    className="ui-button ui-button-secondary px-3 py-2 text-xs"
+                    disabled={isStreaming}
+                    type="button"
+                    onClick={() => {
+                      void onRequestOpenAccessPanel?.();
+                    }}
+                  >
+                    {literal("Open Access")}
+                  </button>
+                ) : null}
+              </div>
+            )}
+          </div>
+          <div className="theme-surface-soft rounded-[24px] px-4 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="eyebrow text-muted">{literal("Chat attachments")}</p>
+                <p className="mt-1 text-sm text-muted">
+                  {literal("Attach text-like files for temporary retrieval in this conversation.")}
+                </p>
+              </div>
+              <button
+                className="ui-button ui-button-secondary px-3 py-2 text-xs"
+                disabled={isStreaming}
+                type="button"
+                onClick={() => attachmentInputRef.current?.click()}
+              >
+                {literal("Add files")}
+              </button>
+            </div>
+            <input
+              ref={attachmentInputRef}
+              accept=".txt,.md,.csv,.json,.xml,.html,.htm,text/*,application/json,application/xml"
+              className="hidden"
+              multiple
+              type="file"
+              onChange={(event) => {
+                void handleAttachmentFiles(event.target.files);
+                event.currentTarget.value = "";
+              }}
+            />
+            <div className="mt-3 flex flex-wrap gap-2">
+              {attachmentDocuments.length > 0 ? attachmentDocuments.map((document) => (
+                <button
+                  key={document.id}
+                  className="ui-button ui-button-secondary px-3 py-2 text-xs"
+                  disabled={isStreaming}
+                  type="button"
+                  onClick={() => removeAttachmentDocument(document.id)}
+                >
+                  {document.name} · {literal("Remove")}
+                </button>
+              )) : (
+                <span className="text-xs text-muted">{literal("No temporary attachments on this chat.")}</span>
+              )}
             </div>
           </div>
         </div>

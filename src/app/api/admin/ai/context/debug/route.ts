@@ -1,6 +1,6 @@
 import { requireAdminSession } from "@/lib/auth";
-import { debugAiKnowledgeSearch } from "@/lib/ai-context";
-import type { AiProviderId } from "@/lib/ai-types";
+import { getAiKnowledgeDebugSnapshot } from "@/lib/ai-context";
+import type { AiKnowledgeDebugResponse, AiProviderId } from "@/lib/ai-types";
 
 export const dynamic = "force-dynamic";
 
@@ -18,10 +18,20 @@ export async function GET(request: Request) {
   const providerId = searchParams.get("providerId")?.trim() as AiProviderId | null;
 
   if (!query) {
-    return Response.json({ query, providerId, results: [] });
+    return Response.json({
+      query,
+      providerId,
+      modelId,
+      scoringMode: "lexical",
+      vectorAvailable: false,
+      vectorModel: null,
+      knowledgeCount: 0,
+      fallbackReason: "no-query",
+      results: [],
+    } satisfies AiKnowledgeDebugResponse);
   }
 
-  const results = await debugAiKnowledgeSearch(
+  const snapshot = await getAiKnowledgeDebugSnapshot(
     query,
     Number.isFinite(limit) ? Math.max(1, Math.min(10, limit)) : 5,
     providerId || modelId ? {
@@ -30,5 +40,9 @@ export async function GET(request: Request) {
     } : undefined,
   );
 
-  return Response.json({ query, providerId, modelId, results });
+  return Response.json({
+    ...snapshot,
+    providerId,
+    modelId,
+  } satisfies AiKnowledgeDebugResponse);
 }

@@ -1,17 +1,24 @@
 import {
   AI_KNOWLEDGE_SOURCES_HEADER,
+  AI_TOOL_CALLS_HEADER,
+  type AiChatAttachmentDocument,
   type AiChatMessage,
   type AiChatRequest,
   type AiKnowledgeCitation,
+  type AiKnowledgeEntry,
   type AiModelSummary,
   type AiProviderId,
   type AiProviderSummary,
   type AiTerminologyEntry,
+  type AiToolCall,
+  type AiToolId,
 } from "@/lib/ai-types";
+import { getKnowledgeBaseEntryIds } from "@/lib/ai-knowledge-bases";
 import { searchAiKnowledge } from "@/lib/ai-context";
+import { AI_TOOL_DEFINITIONS, executeAiToolCalls } from "@/lib/ai-tools";
 import { dedupeKnowledgeCitations } from "@/lib/knowledge-citations";
 import { getProviderApiKey, listProviderConfigSummaries } from "@/lib/ai-provider-store";
-import { requestOllamaChatStream } from "@/lib/ollama";
+import { requestOllamaChatStream, requestOllamaChatText } from "@/lib/ollama";
 import { getOllamaStatus } from "@/lib/ollama-status";
 
 export const DEFAULT_AI_PROVIDER_ID: AiProviderId = "ollama";
@@ -130,6 +137,19 @@ function buildKnowledgeCitations(results: Awaited<ReturnType<typeof searchAiKnow
   })));
 }
 
+function buildAttachmentKnowledgeEntries(documents: AiChatAttachmentDocument[] | undefined): AiKnowledgeEntry[] {
+  return (documents ?? []).map((document) => ({
+    id: `attachment:${document.id}`,
+    title: document.name,
+    content: document.textContent,
+    source: `chat-attachment:${document.name}`,
+    tags: ["attachment"],
+    providerIds: [],
+    modelIds: [],
+    updatedAt: document.uploadedAt,
+  }));
+}
+
 function formatKnowledgeSourcesFooter(knowledgeCitations: AiKnowledgeCitation[]) {
   const titles = Array.from(new Set(knowledgeCitations.map((entry) => entry.title.trim()).filter(Boolean)));
 
@@ -143,6 +163,86 @@ function formatKnowledgeSourcesFooter(knowledgeCitations: AiKnowledgeCitation[])
 function buildSystemPrompt(basePrompt: string | undefined, knowledgePrompt: string | null) {
   const parts = [basePrompt?.trim(), knowledgePrompt].filter(Boolean);
   return parts.length > 0 ? parts.join("\n\n") : undefined;
+}
+
+function buildToolPlanningPrompt(enabledToolIds: AiToolId[]) {
+  const toolDefinitions = AI_TOOL_DEFINITIONS.filter((tool) => enabledToolIds.includes(tool.id));
+
+  if (toolDefinitions.length === 0) {
+    return null;
+  }
+
+  const toolBlocks = toolDefinitions.map((tool) => [
+    `Tool: ${tool.id}`,
+    `Label: ${tool.label}`,
+    `Description: ${tool.description}`,
+    `Hint: ${tool.promptHint}`,
+    `Required fields: ${(tool.inputSchema.required ?? []).join(", ") || "none"}`,
+  ].join("\n"));
+
+  return [
+    "Before answering, decide whether any tool is needed.",
+    "Return JSON only with this exact shape:",
+    '{"toolCalls":[{"toolId":"search-knowledge","arguments":{"query":"..."}}]}',
+    "If no tool is needed, return {\"toolCalls\":[]}",
+    "Never include markdown fences.",
+    "Only use the listed tools.",
+    ...toolBlocks,
+  ].join("\n\n");
+}
+
+function buildExecutedToolPrompt(toolCalls: AiToolCall[]) {
+  if (toolCalls.length === 0) {
+    return null;
+  }
+
+  return [
+    "Tool results are available below.",
+    "Use them when they help answer the user accurately, and mention limits when a tool failed or returned no results.",
+    ...toolCalls.map((toolCall, index) => [
+      `Tool result ${index + 1}: ${toolCall.title}`,
+      `Tool id: ${toolCall.toolId}`,
+      `Status: ${toolCall.status}`,
+      `Arguments: ${JSON.stringify(toolCall.arguments)}`,
+      toolCall.output,
+    ].join("\n")),
+  ].join("\n\n");
+}
+
+function extractJsonBlock(value: string) {
+  const trimmed = value.trim();
+
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+    return trimmed;
+  }
+
+  const fencedMatch = trimmed.match(/```(?:json)?\s*([\s\S]+?)\s*```/i);
+  if (fencedMatch?.[1]) {
+    return fencedMatch[1].trim();
+  }
+
+  const firstBrace = trimmed.indexOf("{");
+  const lastBrace = trimmed.lastIndexOf("}");
+  return firstBrace >= 0 && lastBrace > firstBrace ? trimmed.slice(firstBrace, lastBrace + 1) : trimmed;
+}
+
+function parseToolPlan(planText: string, enabledToolIds: AiToolId[]) {
+  const allowedToolIds = new Set(enabledToolIds);
+
+  try {
+    const payload = JSON.parse(extractJsonBlock(planText)) as {
+      toolCalls?: Array<{ toolId?: string; arguments?: Record<string, unknown> }>;
+    };
+
+    return (payload.toolCalls ?? [])
+      .filter((toolCall) => typeof toolCall.toolId === "string" && allowedToolIds.has(toolCall.toolId as AiToolId))
+      .map((toolCall) => ({
+        toolId: toolCall.toolId as AiToolId,
+        arguments: toolCall.arguments ?? {},
+      }));
+  } catch {
+    return [];
+  }
 }
 
 function buildAnthropicMessages(messages: AiChatMessage[], systemPrompt?: string) {
@@ -534,6 +634,53 @@ async function requestAnthropicChatTextResponse(payload: AiChatRequest, signal?:
   });
 }
 
+async function requestAnthropicChatText(payload: AiChatRequest, signal?: AbortSignal) {
+  const apiKey = await getProviderApiKey("anthropic");
+
+  if (!apiKey) {
+    throw new Error("Anthropic is not configured yet. Add an API key in provider settings first.");
+  }
+
+  const { system, messages } = buildAnthropicMessages(payload.messages, payload.systemPrompt);
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    signal,
+    body: JSON.stringify({
+      model: payload.model,
+      max_tokens: 1024,
+      stream: false,
+      system,
+      messages,
+      temperature: typeof payload.temperature === "number" ? payload.temperature : undefined,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  const responsePayload = await response.json() as {
+    content?: Array<{ type?: string; text?: string }>;
+    error?: { message?: string };
+  };
+  const text = responsePayload.content
+    ?.filter((block) => block.type === "text" && typeof block.text === "string")
+    .map((block) => block.text?.trim() ?? "")
+    .filter(Boolean)
+    .join("\n\n") ?? "";
+
+  if (!text) {
+    throw new Error(responsePayload.error?.message ?? "Anthropic returned an empty chat response.");
+  }
+
+  return text;
+}
+
 async function requestOpenAiChatTextResponse(payload: AiChatRequest, signal?: AbortSignal) {
   const apiKey = await getProviderApiKey("openai");
 
@@ -580,6 +727,46 @@ async function requestOpenAiChatTextResponse(payload: AiChatRequest, signal?: Ab
       "Cache-Control": "no-store, no-transform",
     },
   });
+}
+
+async function requestOpenAiChatText(payload: AiChatRequest, signal?: AbortSignal) {
+  const apiKey = await getProviderApiKey("openai");
+
+  if (!apiKey) {
+    throw new Error("OpenAI is not configured yet. Add an API key in provider settings first.");
+  }
+
+  const response = await fetch(`${getOpenAiBaseUrl()}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    signal,
+    body: JSON.stringify({
+      model: payload.model,
+      messages: buildOpenAiMessages(payload.messages, payload.systemPrompt),
+      max_tokens: 1024,
+      stream: false,
+      temperature: typeof payload.temperature === "number" ? payload.temperature : undefined,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  const responsePayload = await response.json() as {
+    choices?: Array<{ message?: { content?: string } }>;
+    error?: { message?: string };
+  };
+  const text = responsePayload.choices?.[0]?.message?.content?.trim() ?? "";
+
+  if (!text) {
+    throw new Error(responsePayload.error?.message ?? "OpenAI returned an empty chat response.");
+  }
+
+  return text;
 }
 
 async function requestOllamaChatTextResponse(payload: AiChatRequest, signal?: AbortSignal) {
@@ -696,8 +883,11 @@ function createPlaywrightAiPlainTextStream(payload: AiChatRequest, signal?: Abor
 }
 
 async function buildEffectiveChatPayload(payload: AiChatRequest) {
-  const groundingMode = payload.groundingMode ?? (payload.useKnowledge ? "balanced" : "off");
-  const useKnowledge = payload.useKnowledge && groundingMode !== "off";
+  const attachmentEntries = buildAttachmentKnowledgeEntries(payload.attachmentDocuments);
+  const knowledgeBaseEntryIds = await getKnowledgeBaseEntryIds(payload.knowledgeBaseIds);
+  const shouldUseKnowledge = payload.useKnowledge || attachmentEntries.length > 0 || knowledgeBaseEntryIds.length > 0;
+  const groundingMode = payload.groundingMode ?? (shouldUseKnowledge ? "balanced" : "off");
+  const useKnowledge = shouldUseKnowledge && groundingMode !== "off";
 
   if (!useKnowledge) {
     return {
@@ -710,6 +900,8 @@ async function buildEffectiveChatPayload(payload: AiChatRequest) {
   const knowledgeResults = await searchAiKnowledge(lastUserMessage?.content ?? "", 4, {
     providerId: payload.providerId,
     modelId: payload.model,
+    entryIds: knowledgeBaseEntryIds.length > 0 ? knowledgeBaseEntryIds : undefined,
+    additionalEntries: attachmentEntries,
   });
   const knowledgePrompt = buildSystemPrompt(
     buildGroundingInstruction(groundingMode) ?? undefined,
@@ -726,9 +918,74 @@ async function buildEffectiveChatPayload(payload: AiChatRequest) {
   };
 }
 
-function withKnowledgeHeaders(response: Response, knowledgeCitations: AiKnowledgeCitation[]) {
+async function requestAiChatTextCompletion(payload: AiChatRequest, signal?: AbortSignal) {
+  const providerId = payload.providerId ?? DEFAULT_AI_PROVIDER_ID;
+
+  if (providerId === "ollama") {
+    return requestOllamaChatText(payload, signal);
+  }
+
+  if (providerId === "anthropic") {
+    return requestAnthropicChatText(payload, signal);
+  }
+
+  return requestOpenAiChatText(payload, signal);
+}
+
+async function buildToolReadyPayload(payload: AiChatRequest, signal?: AbortSignal) {
+  const enabledToolIds = Array.from(new Set((payload.enabledToolIds ?? []).filter((toolId) =>
+    AI_TOOL_DEFINITIONS.some((tool) => tool.id === toolId),
+  )));
+
+  if (enabledToolIds.length === 0) {
+    return {
+      payload,
+      toolCalls: [] as AiToolCall[],
+    };
+  }
+
+  const planningPrompt = buildToolPlanningPrompt(enabledToolIds);
+
+  if (!planningPrompt) {
+    return {
+      payload,
+      toolCalls: [] as AiToolCall[],
+    };
+  }
+
+  const planText = await requestAiChatTextCompletion({
+    ...payload,
+    systemPrompt: buildSystemPrompt(payload.systemPrompt, planningPrompt),
+  }, signal);
+  const requestedCalls = parseToolPlan(planText, enabledToolIds);
+
+  if (requestedCalls.length === 0) {
+    return {
+      payload,
+      toolCalls: [] as AiToolCall[],
+    };
+  }
+
+  const toolCalls = await executeAiToolCalls(requestedCalls, {
+    attachmentDocuments: payload.attachmentDocuments,
+    knowledgeBaseIds: payload.knowledgeBaseIds,
+    providerId: payload.providerId,
+    modelId: payload.model,
+  });
+
+  return {
+    payload: {
+      ...payload,
+      systemPrompt: buildSystemPrompt(payload.systemPrompt, buildExecutedToolPrompt(toolCalls)),
+    },
+    toolCalls,
+  };
+}
+
+function withResponseHeaders(response: Response, knowledgeCitations: AiKnowledgeCitation[], toolCalls: AiToolCall[]) {
   const headers = new Headers(response.headers);
   headers.set(AI_KNOWLEDGE_SOURCES_HEADER, JSON.stringify(knowledgeCitations));
+  headers.set(AI_TOOL_CALLS_HEADER, JSON.stringify(toolCalls));
 
   const footer = formatKnowledgeSourcesFooter(knowledgeCitations);
 
@@ -792,7 +1049,7 @@ function buildHostedModels(providerId: Extract<AiProviderId, "anthropic" | "open
     installed: true,
     loaded: true,
     local: false,
-    capabilities: ["chat", "streaming"],
+    capabilities: ["chat", "streaming", "tool-use"],
   }));
 }
 
@@ -865,7 +1122,7 @@ export async function listAiModels(providerId?: AiProviderId): Promise<AiModelSu
       installed: true,
       loaded: loadedModelNames.has(model.name),
       local: true,
-      capabilities: ["chat", "streaming", "model-pull", "runtime-load"],
+      capabilities: ["chat", "streaming", "model-pull", "runtime-load", "tool-use"],
       sizeBytes: model.size,
       modifiedAt: model.modified_at,
     }));
@@ -883,23 +1140,27 @@ export async function listAiModels(providerId?: AiProviderId): Promise<AiModelSu
 
 export async function requestAiChatTextResponse(payload: AiChatRequest, signal?: AbortSignal) {
   const { payload: effectivePayload, knowledgeCitations } = await buildEffectiveChatPayload(payload);
-  const providerId = effectivePayload.providerId ?? DEFAULT_AI_PROVIDER_ID;
+  const { payload: toolReadyPayload, toolCalls } = await buildToolReadyPayload(effectivePayload, signal);
+  const providerId = toolReadyPayload.providerId ?? DEFAULT_AI_PROVIDER_ID;
 
   switch (providerId) {
     case "ollama":
-      return withKnowledgeHeaders(
-        await requestOllamaChatTextResponse(effectivePayload, signal),
+      return withResponseHeaders(
+        await requestOllamaChatTextResponse(toolReadyPayload, signal),
         knowledgeCitations,
+        toolCalls,
       );
     case "anthropic":
-      return withKnowledgeHeaders(
-        await requestAnthropicChatTextResponse(effectivePayload, signal),
+      return withResponseHeaders(
+        await requestAnthropicChatTextResponse(toolReadyPayload, signal),
         knowledgeCitations,
+        toolCalls,
       );
     case "openai":
-      return withKnowledgeHeaders(
-        await requestOpenAiChatTextResponse(effectivePayload, signal),
+      return withResponseHeaders(
+        await requestOpenAiChatTextResponse(toolReadyPayload, signal),
         knowledgeCitations,
+        toolCalls,
       );
     default:
       throw new Error(`Unsupported AI provider: ${providerId satisfies never}`);
@@ -909,7 +1170,7 @@ export async function requestAiChatTextResponse(payload: AiChatRequest, signal?:
 export async function requestPlaywrightAiChatTextResponse(payload: AiChatRequest, signal?: AbortSignal) {
   const { payload: effectivePayload, knowledgeCitations } = await buildEffectiveChatPayload(payload);
 
-  return withKnowledgeHeaders(
+  return withResponseHeaders(
     new Response(createPlaywrightAiPlainTextStream(effectivePayload, signal), {
       headers: {
         "Content-Type": "text/plain; charset=utf-8",
@@ -917,5 +1178,6 @@ export async function requestPlaywrightAiChatTextResponse(payload: AiChatRequest
       },
     }),
     knowledgeCitations,
+    [],
   );
 }

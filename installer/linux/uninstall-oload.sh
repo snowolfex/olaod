@@ -62,15 +62,26 @@ remove_path_if_present() {
 node_existed_before="$(read_state_value 'NodeExistedBeforeInstall')"
 node_installed_by_oload="$(read_state_value 'NodeInstalledByOload')"
 node_path="$(read_state_value 'NodePath')"
+managed_node_root="$(read_state_value 'ManagedNodeRoot')"
 ollama_existed_before="$(read_state_value 'OllamaExistedBeforeInstall')"
 ollama_installed_by_oload="$(read_state_value 'OllamaInstalledByOload')"
 ollama_path="$(read_state_value 'OllamaPath')"
-embedded_ollama_root="$install_root/runtime/ollama"
-embedded_ollama_models="$install_root/runtime/ollama-models"
+managed_ollama_root="$(read_state_value 'ManagedOllamaRoot')"
+managed_ollama_models="$(read_state_value 'ManagedOllamaModelsRoot')"
+managed_runtime_root="$(read_state_value 'RuntimeRoot')"
+runtime_env_path="$(read_state_value 'RuntimeEnvPath')"
+install_state_path="$(read_state_value 'InstallStatePath')"
+install_manifest_path="$(read_state_value 'InstallManifestPath')"
+uninstall_notes_path="$(read_state_value 'UninstallNotesPath')"
+desktop_entry_path="$(read_state_value 'DesktopEntryPath')"
+app_icon_path="$(read_state_value 'AppIconPath')"
+embedded_ollama_root="${managed_ollama_root:-$install_root/runtime/ollama}"
+embedded_ollama_models="${managed_ollama_models:-$install_root/runtime/ollama-models}"
 
-if [[ "$node_installed_by_oload" == 'true' && -d "$install_root/runtime/node" ]]; then
-  if prompt_yes_no "Remove the Oload-managed Node.js/npm runtime at $install_root/runtime/node?" yes; then
-    remove_path_if_present "$install_root/runtime/node"
+node_runtime_root="${managed_node_root:-$install_root/runtime/node}"
+if [[ "$node_installed_by_oload" == 'true' && -d "$node_runtime_root" ]]; then
+  if prompt_yes_no "Remove the Oload-managed Node.js/npm runtime at $node_runtime_root?" yes; then
+    remove_path_if_present "$node_runtime_root"
   fi
 elif [[ "$node_existed_before" == 'true' || -n "$node_path" ]]; then
   if prompt_yes_no "Node.js/npm was already present before Oload at ${node_path:-the verified system path}. Remove that shared installation too? This may affect other apps." no; then
@@ -115,9 +126,15 @@ if [[ "$remove_ollama" == 'yes' ]]; then
   fi
 fi
 
-remove_path_if_present "$install_root/.env.runtime"
-remove_path_if_present "$install_root/.oload-install-state"
-remove_path_if_present "$install_root/UNINSTALL-NOTES.txt"
+remove_path_if_present "${managed_runtime_root:-$install_root/runtime}"
+remove_path_if_present "${runtime_env_path:-$install_root/.env.runtime}"
+remove_path_if_present "${install_state_path:-$install_root/.oload-install-state}"
+remove_path_if_present "${install_manifest_path:-$install_root/INSTALL-MANIFEST.txt}"
+remove_path_if_present "${uninstall_notes_path:-$install_root/UNINSTALL-NOTES.txt}"
+remove_path_if_present "${desktop_entry_path:-}"
+if [[ -n "${app_icon_path:-}" && "$app_icon_path" != "$install_root"* ]]; then
+  remove_path_if_present "$app_icon_path"
+fi
 remove_path_if_present "$install_root/oload.log"
 rm -rf "$install_root"
 

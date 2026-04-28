@@ -32,9 +32,10 @@ export function VoiceLanguageSelect({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const listboxId = useId();
+  const selectedLanguage = value === "english" ? "united-kingdom" : value;
   const selectedIndex = useMemo(
-    () => Math.max(0, VOICE_TRANSCRIPTION_LANGUAGE_OPTIONS.indexOf(value)),
-    [value],
+    () => Math.max(0, VOICE_TRANSCRIPTION_LANGUAGE_OPTIONS.indexOf(selectedLanguage)),
+    [selectedLanguage],
   );
 
   useEffect(() => {
@@ -103,7 +104,7 @@ export function VoiceLanguageSelect({
         <div className={listClassName}>
           <div aria-label={ariaLabel} id={listboxId} role="listbox">
             {VOICE_TRANSCRIPTION_LANGUAGE_OPTIONS.map((language, index) => {
-              const isSelected = language === value;
+              const isSelected = language === selectedLanguage;
 
               return (
                 <button

@@ -1,5 +1,4 @@
 import { AuthGate } from "@/components/auth-gate";
-import { AppUpdateMonitor } from "@/components/app-update-monitor";
 import { WorkspaceShell } from "@/components/workspace-shell";
 import { getCurrentUser, getUserSessionStatus } from "@/lib/auth";
 import { getConfiguredDefaultVoiceTranscriptionLanguage } from "@/lib/default-voice-language";
@@ -33,7 +32,6 @@ export default async function Home() {
     return (
       <main className="relative h-[100dvh] overflow-y-auto px-3 py-3 sm:px-4 sm:py-4">
         <div className="app-page-atmosphere absolute inset-0 -z-10" />
-        <AppUpdateMonitor canManageUpdates={false} uiLanguagePreference={defaultUiLanguage} />
 
         <AuthGate
           defaultUiLanguage={defaultUiLanguage}
@@ -58,7 +56,6 @@ export default async function Home() {
   return (
     <main className="relative min-h-[100dvh] overflow-y-auto px-3 py-3 sm:px-4 sm:py-4">
       <div className="app-page-atmosphere absolute inset-0 -z-10" />
-      <AppUpdateMonitor canManageUpdates={currentUser.role === "admin"} uiLanguagePreference={currentUser.preferredVoiceTranscriptionLanguage ?? defaultUiLanguage} />
 
       <WorkspaceShell
         defaultUiLanguage={defaultUiLanguage}

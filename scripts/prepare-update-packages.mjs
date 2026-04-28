@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createPrivateKey, sign as signPayload } from "node:crypto";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -10,6 +10,8 @@ const updateOutputDir = path.join(rootDir, "dist", "updates");
 const channel = process.env.OLOAD_UPDATE_CHANNEL?.trim() || "stable";
 const notes = process.env.OLOAD_UPDATE_NOTES?.trim() || "";
 const baseUrl = process.env.OLOAD_UPDATE_BASE_URL?.trim().replace(/\/$/, "") || "";
+const manifestPrivateKey = process.env.OLOAD_UPDATE_MANIFEST_PRIVATE_KEY?.trim() || "";
+const manifestKeyId = process.env.OLOAD_UPDATE_MANIFEST_KEY_ID?.trim() || "";
 
 function runCommand(command, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -33,6 +35,39 @@ function runCommand(command, args, options = {}) {
 async function sha256(filePath) {
   const contents = await readFile(filePath);
   return createHash("sha256").update(contents).digest("hex");
+}
+
+function canonicalizeJson(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => canonicalizeJson(entry)).join(",")}]`;
+  }
+
+  if (value && typeof value === "object") {
+    const entries = Object.keys(value)
+      .filter((key) => value[key] !== undefined)
+      .sort((left, right) => left.localeCompare(right))
+      .map((key) => `${JSON.stringify(key)}:${canonicalizeJson(value[key])}`);
+    return `{${entries.join(",")}}`;
+  }
+
+  return JSON.stringify(value);
+}
+
+function buildManifestSignature(manifest) {
+  if (!manifestPrivateKey) {
+    return undefined;
+  }
+
+  const privateKey = createPrivateKey(manifestPrivateKey);
+  const payload = Buffer.from(canonicalizeJson(manifest), "utf8");
+  const signature = signPayload(null, payload, privateKey).toString("base64");
+
+  return {
+    algorithm: "ed25519",
+    keyId: manifestKeyId || undefined,
+    signature,
+    signedAt: new Date().toISOString(),
+  };
 }
 
 async function readAppVersion() {
@@ -148,9 +183,14 @@ async function main() {
     publishedAt: new Date().toISOString(),
   };
 
+  const signedManifest = {
+    ...manifest,
+    signature: buildManifestSignature(manifest),
+  };
+
   await writeFile(
     path.join(updateOutputDir, "manifest.json"),
-    `${JSON.stringify(manifest, null, 2)}\n`,
+    `${JSON.stringify(signedManifest, null, 2)}\n`,
     "utf8",
   );
 
