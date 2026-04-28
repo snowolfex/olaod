@@ -219,19 +219,6 @@ function buildKnowledgeScoreBreakdown(input: {
   };
 }
 
-function scoreKnowledgeEntry(input: {
-  title: string;
-  source: string;
-  tags: string[];
-  chunk: string;
-  tokens: string[];
-  normalizedQuery: string;
-}) {
-  const breakdown = buildKnowledgeScoreBreakdown(input);
-
-  return breakdown.lexicalScoreTotal;
-}
-
 function normalizeEmbeddingModelName(value: string | undefined) {
   return value?.trim() || DEFAULT_KNOWLEDGE_EMBED_MODEL;
 }
@@ -794,7 +781,11 @@ export async function debugAiKnowledgeSearch(
     .filter((entry) => entry.shouldInclude)
     .sort((left, right) => right.score - left.score || right.updatedAt.localeCompare(left.updatedAt));
 
-  return diversifyKnowledgeResults(scoredEntries.map(({ shouldInclude: _shouldInclude, ...entry }) => entry), limit);
+  return diversifyKnowledgeResults(scoredEntries.map((entry) => {
+    const nextEntry = { ...entry };
+    delete nextEntry.shouldInclude;
+    return nextEntry;
+  }), limit);
 }
 
 export async function getAiKnowledgeDebugSnapshot(

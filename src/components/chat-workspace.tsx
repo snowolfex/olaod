@@ -4,6 +4,7 @@ import {
   startTransition,
   useEffect,
   useEffectEvent,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -991,9 +992,12 @@ export function ChatWorkspace({
     kind: "local-running" as const,
   }));
   const talkToOptions = [...runningLocalTalkToOptions, ...hostedTalkToOptions];
-  const talkToOptionKeys = new Set(talkToOptions.map((option) => option.key));
-  const preferredTalkToOption = getTalkToFallbackOption(talkToOptions, currentUser?.preferredModel);
   const talkToOptionsSignature = talkToOptions.map((option) => option.key).join("|");
+  const talkToOptionKeys = useMemo(
+    () => new Set(talkToOptionsSignature ? talkToOptionsSignature.split("|") : []),
+    [talkToOptionsSignature],
+  );
+  const preferredTalkToOption = getTalkToFallbackOption(talkToOptions, currentUser?.preferredModel);
   const preferredTalkToProviderId = preferredTalkToOption?.providerId ?? "ollama";
   const preferredTalkToModel = preferredTalkToOption?.model ?? "";
 
@@ -1045,7 +1049,7 @@ export function ChatWorkspace({
       setProviderId("ollama");
       setSelectedModel("");
     }
-  }, [currentUser?.preferredModel, preferredTalkToModel, preferredTalkToProviderId, providerId, selectedModel, talkToOptionsSignature]);
+  }, [preferredTalkToOption, providerId, selectedModel, talkToOptionKeys]);
 
   useEffect(() => {
     if (activeConversationId || messages.length > 0) {

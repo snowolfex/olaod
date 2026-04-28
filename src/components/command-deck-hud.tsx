@@ -215,7 +215,6 @@ export function CommandDeckHud({
   ];
   const dragOffsetRef = useRef<IconPosition>({ x: 0, y: 0 });
   const movedDuringDragRef = useRef(false);
-  const activePageMeta = desktopWorkspacePages.find((page) => page.id === activeWorkspacePage) ?? desktopWorkspacePages[0];
 
   const applyTheme = (nextTheme: AppThemeId) => {
     document.documentElement.dataset.theme = nextTheme;
