@@ -100,16 +100,20 @@ export function HelpPanel({
   );
   const isPageSurface = surface === "page";
   const localizedHelpSections = useMemo(
-    () => helpSections.map((section) => ({
-      ...section,
-      title: literal(section.title),
-      summary: literal(section.summary),
-      body: section.body.map((paragraph) => literal(paragraph)),
-      detailedExplanation: section.detailedExplanation.map((paragraph) => literal(paragraph)),
-      plainLanguage: section.plainLanguage.map((paragraph) => literal(paragraph)),
-      comparison: section.comparison ? literal(section.comparison) : undefined,
-      keyPoints: section.keyPoints.map((point) => literal(point)),
-    })),
+    () => helpSections.map((section) => {
+      const detailedExplanation = section.detailedExplanation ?? section.body;
+
+      return {
+        ...section,
+        title: literal(section.title),
+        summary: literal(section.summary),
+        body: section.body.map((paragraph) => literal(paragraph)),
+        detailedExplanation: detailedExplanation.map((paragraph) => literal(paragraph)),
+        plainLanguage: section.plainLanguage.map((paragraph) => literal(paragraph)),
+        comparison: section.comparison ? literal(section.comparison) : undefined,
+        keyPoints: section.keyPoints.map((point) => literal(point)),
+      };
+    }),
     [literal],
   );
   const localizedGlossary = useMemo(

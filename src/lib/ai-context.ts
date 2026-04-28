@@ -782,7 +782,10 @@ export async function debugAiKnowledgeSearch(
     .sort((left, right) => right.score - left.score || right.updatedAt.localeCompare(left.updatedAt));
 
   return diversifyKnowledgeResults(
-    scoredEntries.map(({ shouldInclude: _shouldInclude, ...entry }) => entry),
+    scoredEntries.map(({ shouldInclude, ...entry }) => {
+      void shouldInclude;
+      return entry;
+    }),
     limit,
   );
 }

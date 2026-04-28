@@ -319,6 +319,11 @@ export const helpSections: HelpSection[] = [
       "On touch devices, pressing and holding a tagged control for roughly two seconds opens the same contextual help card. This avoids occupying the screen with persistent hint text while preserving discoverability.",
       "The contextual help card contains a direct link into the full help manual. That link is intended for deeper review, while the card summary is intended for quick operational orientation.",
     ],
+    detailedExplanation: [
+      "The help system is designed to fit the interaction model of the device instead of forcing one pattern everywhere. Desktop users typically have hover precision and can tolerate a nearby transient card, so the system surfaces help on hover without redirecting the user away from the current task. Touch users do not have hover, so the same information is gated behind a deliberate press-and-hold gesture to avoid constant accidental popups.",
+      "This matters operationally because the quick-help layer is supposed to reduce context switching, not create more of it. The popup gives just enough explanation to orient the operator around the current control, and then offers a path into the full manual when the problem needs deeper reading. That keeps routine usage fast while still giving the user a discoverable route into the richer handbook content you asked for.",
+      "The full Help page remains the durable reference surface. Quick-help explains the control in front of you. The Help page explains the workflow around that control, the surrounding terminology, and the deeper reasoning behind the product behavior. Used together, they create both a fast inline explanation path and a full-document path without forcing operators to leave their place every time they need a hint.",
+    ],
     plainLanguage: [
       "If you hover on desktop or long-press on mobile, the app can show a quick explanation right next to the control you are looking at.",
       "Use the full Help page when you want the complete explanation, terminology, and outside reading links in one place.",
