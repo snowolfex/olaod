@@ -1,5 +1,6 @@
 "use client";
 
+import { AdminSystemMonitor } from "@/components/admin-system-monitor";
 import { ModelOperationsPanel } from "@/components/model-operations-panel";
 import { UserAccessPanel } from "@/components/user-access-panel";
 import { translateUi, translateUiText } from "@/lib/ui-language";
@@ -204,6 +205,8 @@ export function AdminDeck({
               </div>
             </div>
           </div>
+
+          {isAdminSession ? <AdminSystemMonitor uiLanguagePreference={uiLanguagePreference} /> : null}
         </div>
       ) : null}
 
@@ -241,6 +244,10 @@ export function AdminDeck({
           </div>
         </div>
       </div>
+
+      {!isPageSurface && isAdminSession ? (
+        <AdminSystemMonitor uiLanguagePreference={uiLanguagePreference} variant="compact" />
+      ) : null}
 
       <div data-tour-id={`admin-panel-${activeTab}`} className={isPageSurface ? "mt-4 pr-1" : "min-h-0 flex-1 overflow-y-auto pr-1"}>
         {activeTab === "access" ? (

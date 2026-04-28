@@ -20,6 +20,7 @@ import { dedupeKnowledgeCitations } from "@/lib/knowledge-citations";
 import { getProviderApiKey, listProviderConfigSummaries } from "@/lib/ai-provider-store";
 import { requestOllamaChatStream, requestOllamaChatText } from "@/lib/ollama";
 import { getOllamaStatus } from "@/lib/ollama-status";
+import { recordModelTraffic } from "@/lib/system-monitor";
 
 export const DEFAULT_AI_PROVIDER_ID: AiProviderId = "ollama";
 
@@ -163,6 +164,74 @@ function formatKnowledgeSourcesFooter(knowledgeCitations: AiKnowledgeCitation[])
 function buildSystemPrompt(basePrompt: string | undefined, knowledgePrompt: string | null) {
   const parts = [basePrompt?.trim(), knowledgePrompt].filter(Boolean);
   return parts.length > 0 ? parts.join("\n\n") : undefined;
+}
+
+function estimateChatPayloadBytes(payload: AiChatRequest) {
+  return new TextEncoder().encode(JSON.stringify(payload)).length;
+}
+
+function withModelTrafficTelemetry(
+  response: Response,
+  meta: { providerId: string; model: string; upstreamBytes: number },
+) {
+  const headers = new Headers(response.headers);
+  const body = response.body;
+
+  if (!body) {
+    recordModelTraffic({ providerId: meta.providerId, model: meta.model }, meta.upstreamBytes);
+
+    return new Response(body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  }
+
+  const reader = body.getReader();
+  let upstreamRecorded = false;
+
+  const recordUpstream = () => {
+    if (upstreamRecorded || meta.upstreamBytes <= 0) {
+      return;
+    }
+
+    upstreamRecorded = true;
+    recordModelTraffic({ providerId: meta.providerId, model: meta.model }, meta.upstreamBytes);
+  };
+
+  return new Response(new ReadableStream<Uint8Array>({
+    async start(controller) {
+      recordUpstream();
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+
+          if (done) {
+            break;
+          }
+
+          if (value && value.length > 0) {
+            recordModelTraffic({ providerId: meta.providerId, model: meta.model }, value.length);
+            controller.enqueue(value);
+          }
+        }
+
+        controller.close();
+      } catch (error) {
+        controller.error(error);
+      } finally {
+        reader.releaseLock();
+      }
+    },
+    async cancel() {
+      await reader.cancel();
+    },
+  }), {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 function buildToolPlanningPrompt(enabledToolIds: AiToolId[]) {
@@ -920,16 +989,23 @@ async function buildEffectiveChatPayload(payload: AiChatRequest) {
 
 async function requestAiChatTextCompletion(payload: AiChatRequest, signal?: AbortSignal) {
   const providerId = payload.providerId ?? DEFAULT_AI_PROVIDER_ID;
+  const upstreamBytes = estimateChatPayloadBytes(payload);
 
   if (providerId === "ollama") {
-    return requestOllamaChatText(payload, signal);
+    const text = await requestOllamaChatText(payload, signal);
+    recordModelTraffic({ providerId, model: payload.model }, upstreamBytes + new TextEncoder().encode(text).length);
+    return text;
   }
 
   if (providerId === "anthropic") {
-    return requestAnthropicChatText(payload, signal);
+    const text = await requestAnthropicChatText(payload, signal);
+    recordModelTraffic({ providerId, model: payload.model }, upstreamBytes + new TextEncoder().encode(text).length);
+    return text;
   }
 
-  return requestOpenAiChatText(payload, signal);
+  const text = await requestOpenAiChatText(payload, signal);
+  recordModelTraffic({ providerId, model: payload.model }, upstreamBytes + new TextEncoder().encode(text).length);
+  return text;
 }
 
 async function buildToolReadyPayload(payload: AiChatRequest, signal?: AbortSignal) {
@@ -1142,23 +1218,28 @@ export async function requestAiChatTextResponse(payload: AiChatRequest, signal?:
   const { payload: effectivePayload, knowledgeCitations } = await buildEffectiveChatPayload(payload);
   const { payload: toolReadyPayload, toolCalls } = await buildToolReadyPayload(effectivePayload, signal);
   const providerId = toolReadyPayload.providerId ?? DEFAULT_AI_PROVIDER_ID;
+  const telemetryMeta = {
+    providerId,
+    model: toolReadyPayload.model,
+    upstreamBytes: estimateChatPayloadBytes(toolReadyPayload),
+  };
 
   switch (providerId) {
     case "ollama":
       return withResponseHeaders(
-        await requestOllamaChatTextResponse(toolReadyPayload, signal),
+        withModelTrafficTelemetry(await requestOllamaChatTextResponse(toolReadyPayload, signal), telemetryMeta),
         knowledgeCitations,
         toolCalls,
       );
     case "anthropic":
       return withResponseHeaders(
-        await requestAnthropicChatTextResponse(toolReadyPayload, signal),
+        withModelTrafficTelemetry(await requestAnthropicChatTextResponse(toolReadyPayload, signal), telemetryMeta),
         knowledgeCitations,
         toolCalls,
       );
     case "openai":
       return withResponseHeaders(
-        await requestOpenAiChatTextResponse(toolReadyPayload, signal),
+        withModelTrafficTelemetry(await requestOpenAiChatTextResponse(toolReadyPayload, signal), telemetryMeta),
         knowledgeCitations,
         toolCalls,
       );
