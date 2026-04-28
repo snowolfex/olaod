@@ -169,7 +169,7 @@ export function HelpPanel({
 
     try {
       const appTheme = parseAppTheme(document.documentElement.dataset.theme);
-      const { PDFArray, PDFDocument, PDFName, PDFString, StandardFonts, degrees, rgb } = await import("pdf-lib");
+      const { PDFArray, PDFDocument, PDFName, PDFString, StandardFonts, rgb } = await import("pdf-lib");
       const pdfDocument = await PDFDocument.create();
       const regularFont = await pdfDocument.embedFont(StandardFonts.Helvetica);
       const boldFont = await pdfDocument.embedFont(StandardFonts.HelveticaBold);
@@ -261,7 +261,7 @@ export function HelpPanel({
         return annotations;
       };
 
-      const addAnnotation = (targetPage: typeof page, annotation: any) => {
+      const addAnnotation = (targetPage: typeof page, annotation: Record<string, unknown>) => {
         const annotationRef = pdfDocument.context.register(pdfDocument.context.obj(annotation));
         ensureAnnotations(targetPage).push(annotationRef);
       };

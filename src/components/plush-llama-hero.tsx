@@ -1,7 +1,5 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-
 import { parseAppTheme, type AppThemeId } from "@/lib/theme";
 
 type PlushLlamaHeroProps = {
@@ -81,14 +79,11 @@ export function PlushLlamaHero({
   detailRightBody,
   compact = false,
 }: PlushLlamaHeroProps) {
-  const [theme, setTheme] = useState<AppThemeId>("light");
+  const theme: AppThemeId = typeof document === "undefined"
+    ? "light"
+    : parseAppTheme(document.documentElement.dataset.theme);
   const isExpandedLayout = !compact;
-
-  useEffect(() => {
-    setTheme(parseAppTheme(document.documentElement.dataset.theme));
-  }, []);
-
-  const palette = useMemo(() => paletteByTheme[theme], [theme]);
+  const palette = paletteByTheme[theme];
 
   return (
     <div className={`theme-surface-soft rounded-[24px] border ${palette.cardBorder} ${isExpandedLayout ? "px-5 py-5" : "px-4 py-4"} shadow-[0_18px_45px_rgba(77,56,38,0.12)]`}>

@@ -340,28 +340,45 @@ export function InteractionSurface({
 
   useEffect(() => {
     if (!activeWalkthroughStep) {
-      setWalkthroughTargetRect(null);
       return;
     }
 
-    if (activeWalkthroughStep.adminTab) {
-      setActiveAdminTab(canAccessAdminSubsections ? activeWalkthroughStep.adminTab : "access");
-    }
+    let cancelled = false;
+    let deferredStateSyncId: number | null = null;
 
-    if (activeWalkthroughStep.helpSectionId) {
-      setRequestedHelpSectionId(activeWalkthroughStep.helpSectionId);
-      setRequestedHelpSectionNonce((current) => current + 1);
+    const nextAdminTab = activeWalkthroughStep.adminTab
+      ? (canAccessAdminSubsections ? activeWalkthroughStep.adminTab : "access")
+      : null;
+    const nextHelpSectionId = activeWalkthroughStep.helpSectionId ?? null;
+    const nextMobileTab = isDesktopViewport ? null : activeWalkthroughStep.mobileTab;
+
+    if (nextAdminTab || nextHelpSectionId || nextMobileTab) {
+      deferredStateSyncId = window.setTimeout(() => {
+        if (cancelled) {
+          return;
+        }
+
+        if (nextAdminTab) {
+          setActiveAdminTab(nextAdminTab);
+        }
+
+        if (nextHelpSectionId) {
+          setRequestedHelpSectionId(nextHelpSectionId);
+          setRequestedHelpSectionNonce((current) => current + 1);
+        }
+
+        if (nextMobileTab) {
+          setActiveMobileTab(nextMobileTab);
+        }
+      }, 0);
     }
 
     if (isDesktopViewport) {
       if (activeDesktopPage !== activeWalkthroughStep.desktopPage) {
         void onDesktopPageChange(activeWalkthroughStep.desktopPage);
       }
-    } else {
-      setActiveMobileTab(activeWalkthroughStep.mobileTab);
     }
 
-    let cancelled = false;
     let retries = 0;
     let cleanupMeasure: (() => void) | null = null;
 
@@ -410,6 +427,9 @@ export function InteractionSurface({
 
     return () => {
       cancelled = true;
+      if (deferredStateSyncId !== null) {
+        window.clearTimeout(deferredStateSyncId);
+      }
       window.cancelAnimationFrame(frameId);
       cleanupMeasure?.();
     };
@@ -624,7 +644,7 @@ export function InteractionSurface({
         onNext={showNextWalkthroughStep}
         onPrevious={showPreviousWalkthroughStep}
         preferredPlacement={activeWalkthroughStep?.preferredPlacement}
-        targetRect={walkthroughTargetRect}
+        targetRect={activeWalkthroughStep ? walkthroughTargetRect : null}
         title={activeWalkthroughStep?.title ?? ""}
         totalSteps={walkthroughSteps.length}
       />
