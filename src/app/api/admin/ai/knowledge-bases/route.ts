@@ -7,6 +7,11 @@ import {
 
 export const dynamic = "force-dynamic";
 
+function toErrorResponse(error: unknown) {
+  const message = error instanceof Error ? error.message : "Unable to update knowledge bases.";
+  return Response.json({ error: message }, { status: 400 });
+}
+
 export async function GET(request: Request) {
   const authError = await requireAdminSession(request);
 
@@ -32,14 +37,18 @@ export async function POST(request: Request) {
     entryIds?: string[];
   };
 
-  const knowledgeBases = await saveAiKnowledgeBase({
-    id: payload.id,
-    name: payload.name ?? "",
-    description: payload.description,
-    entryIds: payload.entryIds,
-  });
+  try {
+    const knowledgeBases = await saveAiKnowledgeBase({
+      id: payload.id,
+      name: payload.name ?? "",
+      description: payload.description,
+      entryIds: payload.entryIds,
+    });
 
-  return Response.json({ knowledgeBases });
+    return Response.json({ knowledgeBases });
+  } catch (error) {
+    return toErrorResponse(error);
+  }
 }
 
 export async function DELETE(request: Request) {
@@ -50,7 +59,13 @@ export async function DELETE(request: Request) {
   }
 
   const payload = (await request.json()) as { id?: string };
-  const deleted = await deleteAiKnowledgeBase(payload.id ?? "");
+  let deleted = false;
+
+  try {
+    deleted = await deleteAiKnowledgeBase(payload.id ?? "");
+  } catch (error) {
+    return toErrorResponse(error);
+  }
 
   if (!deleted) {
     return Response.json({ error: "Knowledge base not found." }, { status: 404 });

@@ -6,6 +6,7 @@ export type HelpSection = {
   title: string;
   summary: string;
   body: string[];
+  detailedExplanation: string[];
   plainLanguage: string[];
   comparison?: string;
   keyPoints: string[];
@@ -48,6 +49,11 @@ export const helpSections: HelpSection[] = [
       "Inference means the model is producing an output from its existing weights. The model is not being fine-tuned, retrained, or permanently modified by ordinary chat usage in this workspace.",
       "Because the gateway normalizes local and hosted providers, the interface can preserve a stable operator workflow even when the actual execution target changes from a local Ollama model to a hosted provider endpoint.",
     ],
+    detailedExplanation: [
+      "In practice, the gateway acts like a composition layer. It decides which instruction sources belong in the request, which conversation state still matters, whether shared knowledge should be attached, and which provider-specific payload shape is required before the request leaves the server. That means the operator experience stays stable even when the actual model family or transport changes underneath it.",
+      "This distinction matters because people often confuse better answers with model improvement. If a reply gets better after you attach knowledge, refine instructions, or reopen the right saved thread, that is a context-quality change, not a training event. The next unrelated chat will only benefit if you intentionally preserve the useful parts through saved instructions, stored knowledge, or a thread you reopen later.",
+      "oload is therefore best understood as a controlled inference environment. It helps you shape the model's working context for this run, observe the route that was taken, and repeat that process reliably without pretending that ordinary operator traffic is rewriting the model itself.",
+    ],
     plainLanguage: [
       "The app is basically a controlled front desk for AI. It gathers what you typed, any saved chat context, and any extra shared knowledge, then sends that bundle to the selected model.",
       "Nothing you do in normal chat is teaching the model new permanent facts. You are giving it instructions and context for this run, not rewriting the model itself.",
@@ -69,6 +75,11 @@ export const helpSections: HelpSection[] = [
       "The active chat surface is the primary inference client. It collects the current draft, selected model, thread history, and standing instruction defaults, then initiates a streaming request through the server-side gateway.",
       "Saved conversations persist the state that materially affects later outputs, including message history and thread-level settings. Reopening a conversation restores that context so later responses remain grounded in the original working thread.",
       "Streaming delivery matters operationally because the response is not produced as a single final payload. Partial text can arrive, be interrupted, and still remain visible as a partial result for review.",
+    ],
+    detailedExplanation: [
+      "A chat request is not just a single text submission. By the time it leaves the client, it may already reflect current model selection, thread history, standing assistant instructions, retrieval toggles, and any lane-specific state that changes how the gateway composes the request. The visible message box is only the last operator-controlled layer in that stack.",
+      "Thread restoration is important because it preserves the assumptions the model has already been given. If you reopen a thread about a product requirement, a deployment incident, or a document rewrite, the follow-up reply can stay grounded in the same working frame instead of forcing you to restate everything from zero. That continuity is useful, but it also means stale context can keep affecting answers until you deliberately branch into a fresh chat.",
+      "Streaming changes review behavior as well. Operators can catch bad direction early, stop the run when the model is clearly drifting, and still preserve the partial output for audit or reuse. In other words, streaming is not just a cosmetic typing effect; it is part of how the interface supports earlier intervention and lower-cost correction.",
     ],
     plainLanguage: [
       "This is the part of the app where you actually talk to the model. When you send a message, the app bundles the message with the current chat history and sends it to the AI service.",
@@ -92,6 +103,11 @@ export const helpSections: HelpSection[] = [
       "Temperature is a sampling control. Lower values reduce output variance and usually produce tighter, more repeatable responses. Higher values increase variety and can make outputs feel more exploratory or stylistically loose.",
       "A system prompt or assistant-style instruction should describe operating constraints, tone, domain behavior, and refusal boundaries. It should not be treated as a place to dump task-specific scratch content that belongs in the actual user request.",
     ],
+    detailedExplanation: [
+      "Prompt quality in oload depends on separating long-lived guidance from short-lived work. Account defaults and assistant-style text should define durable behavior such as tone, structure, guardrails, or domain posture. The live user message should define the current objective, constraints, inputs, and desired output. When those responsibilities get mixed together, operators usually end up with bloated prompts that are harder to maintain and less predictable to debug.",
+      "Reply style controls should also be interpreted operationally, not emotionally. A lower setting narrows sampling and generally makes the output easier to reproduce across similar runs. A higher setting gives the model more freedom in phrasing and idea selection, which can be useful for ideation but can also widen variance in structure, emphasis, and factual confidence. That is why repeatable workflows often start lower and only increase when exploration is the actual goal.",
+      "When a result feels wrong, the clean troubleshooting order is usually: verify the instruction stack, verify whether stale conversation turns are still steering the answer, verify whether retrieval added misleading context, and only then blame the model. Most day-to-day quality issues come from composition and scope, not from the model suddenly ignoring a good prompt for no reason.",
+    ],
     plainLanguage: [
       "The model is listening to more than the one message you just typed. It is also listening to the saved chat history and to the default assistant style you set in Access.",
       "Reply style is basically a creativity dial. Lower keeps things more literal and consistent. Higher lets the model wander a bit more.",
@@ -113,6 +129,11 @@ export const helpSections: HelpSection[] = [
       "Pinned conversations are intended for active working sets. They remain at the top of the rail so operationally important threads are not displaced by routine activity.",
       "Archived conversations remain stored but are removed from the primary working rail. This is a lifecycle control, not a deletion event.",
       "Conversation titles should describe the task or outcome, not just the opening prompt. Clear titles improve retrieval and reduce operator ambiguity during later review.",
+    ],
+    detailedExplanation: [
+      "Conversation controls are really context-management controls. Pinning keeps active threads visible because those threads still carry working assumptions you expect to revisit. Archiving removes noise from the daily rail without throwing away the record. Deleting is the only option that actually destroys the thread as an available context source, so it should be treated as a stronger lifecycle decision than pin or archive.",
+      "Naming matters more than it seems because conversation lists become an operator memory layer over time. A thread titled after the opening prompt often stops being useful as soon as the work evolves, while a title based on the actual outcome or purpose remains intelligible weeks later. Strong titles reduce reopening mistakes and make it easier to decide whether a thread should be resumed, duplicated, archived, or retired.",
+      "There is also a quality tradeoff behind every reuse decision. Reopening the same thread preserves context and saves time, but it also keeps old assumptions alive. Starting a new thread drops that baggage but requires you to restate what matters. Good operators choose between continuity and cleanliness deliberately instead of treating thread reuse as a neutral convenience.",
     ],
     plainLanguage: [
       "Pinning is for chats you keep coming back to. Archiving is for chats you want to keep without leaving them in your day-to-day list.",
@@ -136,6 +157,11 @@ export const helpSections: HelpSection[] = [
       "Administrative role management includes explicit guardrails to prevent self-demotion and last-admin removal. Those controls are intended to preserve recoverable control of the local installation.",
       "Hosted-provider credentials are encrypted at rest when stored locally. Environment variables still take precedence so deployments can externalize secrets when required by policy.",
     ],
+    detailedExplanation: [
+      "Identity in oload is not just a decorative profile layer. It determines which defaults apply, which conversations belong to whom, which controls are visible, and which actions become part of the audit trail for a specific operator. That is why account state, role assignment, and session continuity belong in the same operational surface rather than being treated as unrelated settings.",
+      "The administrative guardrails exist because local installations can become unrecoverable through perfectly ordinary mistakes. If the last administrator removes their own access or demotes the only remaining admin account, the workspace can lose safe control of provider settings, users, and sensitive operational actions. Preventing those states is more important than offering unrestricted admin flexibility.",
+      "Credential handling sits in the same lane because identity and trust boundaries are connected. A provider key changes what the workspace is allowed to call upstream, so it has to be governed with the same seriousness as role changes and backup-sensitive actions. Environment-variable precedence also matters operationally because it lets deployments keep secrets outside local data files when policy requires that separation.",
+    ],
     plainLanguage: [
       "This section decides who you are in the app, what you are allowed to do, and which AI settings belong to your account by default.",
       "The app also protects you from easy-to-make admin mistakes like locking the last administrator out of the system.",
@@ -157,6 +183,11 @@ export const helpSections: HelpSection[] = [
       "A hosted provider is considered configured when a valid API credential is available either through encrypted local storage or through environment-based secret injection.",
       "Provider configuration affects model availability in the chat lane. An unconfigured provider is intentionally left unavailable so the operator does not attempt a route that cannot authenticate upstream.",
       "When troubleshooting hosted traffic, validate three things in order: credential presence, upstream reachability, and any custom base URL override.",
+    ],
+    detailedExplanation: [
+      "Provider configuration is the policy layer that decides whether the unified gateway may legally and technically route traffic to an outside service. A route is only usable when credentials exist, the upstream endpoint is reachable, and any custom base URL still points to a compatible API surface. If any one of those conditions fails, the route may look conceptually available but remain operationally dead.",
+      "The reason this appears in admin tooling rather than inside the chat form is that provider status affects more than one request. It changes the set of valid execution targets for the whole workspace, influences which model options should be shown, and determines whether certain troubleshooting paths even make sense. Exposing broken hosted routes as if they were selectable would create false confidence and harder-to-diagnose failures.",
+      "For debugging, order matters. Start with credential presence because no amount of network debugging will fix a missing or wrong key. Then confirm reachability, since a good key cannot help if the target cannot be contacted. Only after those two checks should you investigate custom URL overrides, proxy behavior, or provider-specific API mismatches.",
     ],
     plainLanguage: [
       "This is where the app learns whether it is allowed to talk to outside AI services. No key means no route.",
@@ -180,6 +211,11 @@ export const helpSections: HelpSection[] = [
       "Overlap checks identify near-duplicate notes before they degrade retrieval quality. Excess duplication tends to crowd the ranking layer and produce redundant grounding context.",
       "The retrieval debugger is a validation tool. It explains which indexed records matched a prompt and why they ranked the way they did.",
     ],
+    detailedExplanation: [
+      "Shared knowledge is the reusable grounding layer for retrieval-augmented generation. Instead of baking workspace facts into the model, oload stores those facts as separate indexed entries and retrieves the most relevant subset at request time. That approach is faster to update, easier to audit, and much safer operationally because you can change the knowledge layer without pretending you changed the model itself.",
+      "Quality depends heavily on curation. When multiple entries say nearly the same thing, the ranking layer can waste limited retrieval budget on overlap rather than diversity. The result is a context bundle that looks full but is actually repetitive, which often makes answers feel narrower or overconfident. That is why overlap detection and retrieval debugging are not optional extras; they are the tools that help operators keep the grounding set useful instead of noisy.",
+      "Scope filters add another important control point. A note may be globally valid, provider-specific, or only relevant to certain models. If the wrong scope is applied, the model can receive context that is technically true but operationally misplaced. The best retrieval workflow is therefore: maintain clean entries, minimize duplication, validate scope, and use the debugger whenever ranking behavior stops matching your expectations.",
+    ],
     plainLanguage: [
       "Shared knowledge is the app's reusable reference shelf. When enabled, the app grabs the most relevant notes and attaches them to the request before the model answers.",
       "That helps the answer stay grounded in your workspace facts without needing to retrain the model itself.",
@@ -201,6 +237,11 @@ export const helpSections: HelpSection[] = [
       "Downloaded means the model weights are present on disk. Ready means the model is active in runtime memory and can answer requests immediately. Those are separate states and should be treated separately in operational guidance.",
       "The local Ollama service is the control-plane dependency for download, runtime start, runtime stop, and deletion operations. If the service is unavailable, local model actions should be treated as blocked rather than partially available.",
       "Hosted providers appear in the same operations lane because the application routes chat through a unified gateway. Even so, hosted providers do not expose local runtime controls such as download or memory residency.",
+    ],
+    detailedExplanation: [
+      "The model lane combines inventory status and runtime status because operators need both to make correct decisions. A model can exist on disk and still be unavailable for fast replies if it is not loaded into memory. Conversely, a ready model implies a stronger operational state than merely downloaded because it can usually answer with lower startup delay. Treating those states as interchangeable leads to bad troubleshooting advice and wasted time.",
+      "The Ollama service is the local control plane underneath those actions. When it is offline, download, readiness, and deletion controls may all appear conceptually related to the model but are actually blocked by the same service dependency. That is why good operator guidance starts by validating service health before assuming the library itself is inconsistent.",
+      "The unified lane also helps compare local and hosted execution without implying that both are managed the same way. Hosted models share the same routing surface for chat, but they do not have local residency, local storage cleanup, or local warm-state controls. Putting both kinds of targets in one lane is useful for route selection, as long as the operator still understands which controls only apply to the local runtime.",
     ],
     plainLanguage: [
       "A downloaded model is stored on your machine. A ready model is one that is already warmed up and able to answer right away.",
@@ -224,6 +265,11 @@ export const helpSections: HelpSection[] = [
       "Manual refresh establishes the operator's current baseline for delta summaries. When list state continues changing after that point, stale-detail guidance indicates that a manual detail refresh may be required before making a judgment call.",
       "Ownership filters and quick pivots are there to reduce accidental broad actions. Always verify scope before issuing queue-wide cancellation or retry commands.",
     ],
+    detailedExplanation: [
+      "Jobs represent work in motion, not just model inventory facts. A queued pull, retry, cancel, or reorder decision belongs to the operational timeline of work execution, which is why the jobs lane separates sequencing and history from the simpler question of whether a model currently exists. If you use the library view to answer queue questions, you lose the state transitions and lineage that explain how the system got where it is now.",
+      "Refresh behavior is also more than a cosmetic reload. In an active queue, the meaning of badges and change indicators depends on when you last synchronized your view. Manual refresh establishes that checkpoint. Without it, an operator may compare today's moving state against an out-of-date mental baseline and misread what actually changed since the last decision point.",
+      "Scope controls protect against broad mistakes in fast-moving environments. Ownership filters, quick pivots, and pinned detail views exist so an operator can narrow attention before issuing actions with side effects. When retries, cancellations, or reorders are available, the safest habit is to confirm scope first and action second.",
+    ],
     plainLanguage: [
       "This is the work log for model downloads and similar long-running operations. It tells you what is waiting, what is running, what failed, and what finished.",
       "Use it when you need to manage the work queue itself, not when you just want to know whether a model exists.",
@@ -245,6 +291,11 @@ export const helpSections: HelpSection[] = [
       "Activity is not a duplicate jobs list. It is the cross-functional audit stream used to answer what changed, when it changed, and whether the event carried informational or warning-level significance.",
       "Warnings should be investigated first because they typically indicate a blocked control path, an upstream failure, or a sensitive action that requires operator validation.",
       "Activity records are most useful when correlated with the originating control surface. Treat the lane as an audit and traceability view rather than a primary operating console.",
+    ],
+    detailedExplanation: [
+      "The activity lane exists to answer traceability questions across the whole workspace, not just within one feature. It is where operators confirm that a sensitive action happened, verify the order of important events, and separate routine informational noise from entries that indicate failure, blockage, or elevated operational significance. That makes it broader than a jobs view and more structured than relying on memory or raw chat history.",
+      "Warning-level entries deserve priority because they often capture the moment where an operator path stopped behaving normally. A warning may indicate a failed upstream call, a blocked administrative action, or a result that needs confirmation before anyone assumes the system state is healthy. Reading those entries early shortens the path from symptom to root cause.",
+      "Activity becomes most valuable when correlated with the surface that generated the event. A model-action warning should be checked against Jobs or Models. A provider-related entry should be checked against Access. The lane is strongest as a flight recorder and audit stream, not as the place where you directly operate the affected subsystem.",
     ],
     plainLanguage: [
       "This is the app's memory of important events. It helps you answer who did what and whether anything failed or needs attention.",

@@ -1,6 +1,10 @@
 # Session Log
 
 ## 2026-04-28
+- Expanded the Help manual content model with a dedicated detailed-explanation layer for every operator section, added a direct in-UI jump button for that deeper explanation block, and rendered the same richer material into the exported PDF so the quick surface and downloadable manual stay aligned.
+- Fixed the Help PDF section-opening layout so section 1 now reserves room for its first technical-detail block instead of landing the section opener on one page and the actual content on the next, and lowered the section-divider rules under the PDF headings for cleaner spacing.
+- Hardened the admin AI knowledge-base mutation route so validation failures such as missing names or duplicate knowledge-base names return structured `400` responses instead of surfacing as generic `500` failures.
+- Added a repo release-note file at `docs/release-notes/2026-04-28-operator-platform-wave.md` plus lightweight PR and commit-message templates under `.github/` for the current multi-slice workflow.
 - Replaced the shipped llama-branded visual lane with the OL monogram across live auth/help surfaces, Help PDF illustrations, public brand boards, and the remaining public/design SVG palette boards; the old public URLs now serve OL-focused content instead of mascot artwork.
 - Removed the last archived mascot prompt pack and preview JPGs from `design/llama-references/free-3d/`, leaving only the OL-era SVG study boards and an archive README that now describes the folder generically instead of carrying old mascot wording.
 - Reworked the generated OL icon set into a blue tech panel treatment with a raised letterform, regenerated the browser/mobile assets in `public/`, refreshed the Windows installer ICO, and added a matching `installer/linux/oload.png` output so Linux bundles now ship a dedicated icon asset too.

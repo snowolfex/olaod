@@ -105,6 +105,7 @@ export function HelpPanel({
       title: literal(section.title),
       summary: literal(section.summary),
       body: section.body.map((paragraph) => literal(paragraph)),
+      detailedExplanation: section.detailedExplanation.map((paragraph) => literal(paragraph)),
       plainLanguage: section.plainLanguage.map((paragraph) => literal(paragraph)),
       comparison: section.comparison ? literal(section.comparison) : undefined,
       keyPoints: section.keyPoints.map((point) => literal(point)),
@@ -163,6 +164,16 @@ export function HelpPanel({
 
     sectionElement.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [requestedSectionId, requestedSectionNonce]);
+
+  const scrollToAnchor = useCallback((elementId: string) => {
+    const element = document.getElementById(elementId);
+
+    if (!element) {
+      return;
+    }
+
+    element.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
 
   const exportPdf = async () => {
     setIsExportingPdf(true);
@@ -262,7 +273,9 @@ export function HelpPanel({
       };
 
       const addAnnotation = (targetPage: typeof page, annotation: Record<string, unknown>) => {
-        const annotationRef = pdfDocument.context.register(pdfDocument.context.obj(annotation));
+        const annotationRef = pdfDocument.context.register(
+          pdfDocument.context.obj(annotation as unknown as Parameters<typeof pdfDocument.context.obj>[0]),
+        );
         ensureAnnotations(targetPage).push(annotationRef);
       };
 
@@ -391,7 +404,7 @@ export function HelpPanel({
         return visibleLines.length * (options?.lineHeight ?? baseLineHeight) + 4;
       };
 
-      const estimateSectionHeadingHeight = (minimumFollowingHeight = 54) => 26 + 10 + minimumFollowingHeight;
+      const estimateSectionHeadingHeight = (minimumFollowingHeight = 54) => 38 + 10 + minimumFollowingHeight;
 
       const drawDivider = (
         x: number,
@@ -789,7 +802,7 @@ export function HelpPanel({
         section: (typeof localizedHelpSections)[number],
         palette: (typeof contextPalette)[HelpContext],
       ) => {
-        const blockHeight = 44;
+        const blockHeight = 56;
         ensureSpace(blockHeight + 10);
         drawPill(contextLabel(section.context), margin, cursorY - 2, palette.accent, [1, 1, 1]);
         page.drawText(section.title, {
@@ -799,12 +812,12 @@ export function HelpPanel({
           font: boldFont,
           color: color(palette.ink),
         });
-        drawDivider(margin, cursorY - 36, contentWidth, palette.line, 1.5);
+        drawDivider(margin, cursorY - 48, contentWidth, palette.line, 1.5);
         cursorY -= blockHeight + 10;
       };
 
       const drawSectionHeading = (label: string, palette: (typeof contextPalette)[HelpContext], minimumFollowingHeight = 54) => {
-        const blockHeight = 26;
+        const blockHeight = 38;
         ensureSpace(estimateSectionHeadingHeight(minimumFollowingHeight));
         drawPanel(margin, cursorY, contentWidth, blockHeight, [1, 1, 1], palette.line);
         page.drawText(label, {
@@ -814,7 +827,7 @@ export function HelpPanel({
           font: boldFont,
           color: color(palette.ink),
         });
-        drawDivider(margin + 12, cursorY - 20, contentWidth - 24, palette.accent, 1.5);
+        drawDivider(margin + 12, cursorY - 32, contentWidth - 24, palette.accent, 1.5);
         cursorY -= blockHeight + 10;
       };
 
@@ -1041,11 +1054,19 @@ export function HelpPanel({
 
       for (const [sectionIndex, section] of localizedHelpSections.entries()) {
         const palette = contextPalette[section.context];
-        drawSectionOverview(section, sectionIndex + 1);
         const technicalDetailMinimumHeight = Math.max(
           72,
           estimateWrappedHeight(section.body[0] ?? "", { maxCharacters: 84 }) + 18,
         );
+
+        if (
+          sectionIndex === 0
+          && cursorY - (228 + 10 + estimateSectionHeadingHeight(technicalDetailMinimumHeight) + 12) < margin
+        ) {
+          addPage();
+        }
+
+        drawSectionOverview(section, sectionIndex + 1);
 
         if (cursorY - (estimateSectionHeadingHeight(technicalDetailMinimumHeight) + 12) < margin) {
           addPage();
@@ -1062,6 +1083,15 @@ export function HelpPanel({
         );
         for (const paragraph of section.body) {
           drawParagraph(paragraph, { fontSize: 10, color: [0.2, 0.2, 0.2] });
+        }
+
+        drawSectionHeading(
+          literal("Detailed explanation"),
+          palette,
+          Math.max(84, estimateWrappedHeight(section.detailedExplanation[0] ?? "", { maxCharacters: 84 }) + 18),
+        );
+        for (const paragraph of section.detailedExplanation) {
+          drawParagraph(paragraph, { fontSize: 10, color: [0.22, 0.22, 0.22] });
         }
 
         drawSectionHeading(
@@ -1540,14 +1570,23 @@ export function HelpPanel({
               data-tour-id={`help-section-card-${section.id}`}
               className="theme-surface-soft rounded-[28px] p-5"
             >
-              <div className="flex items-center gap-3">
-                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--accent)] text-sm font-semibold text-white">
-                  {index + 1}
-                </span>
-                <div>
-                  <h3 className="text-base font-semibold text-foreground">{section.title}</h3>
-                  <p className="mt-1 text-xs uppercase tracking-[0.16em] text-muted">{contextLabel(section.context)}</p>
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--accent)] text-sm font-semibold text-white">
+                    {index + 1}
+                  </span>
+                  <div>
+                    <h3 className="text-base font-semibold text-foreground">{section.title}</h3>
+                    <p className="mt-1 text-xs uppercase tracking-[0.16em] text-muted">{contextLabel(section.context)}</p>
+                  </div>
                 </div>
+                <button
+                  type="button"
+                  className="ui-button-secondary px-3 py-2 text-xs"
+                  onClick={() => scrollToAnchor(`help-section-detail-${section.id}`)}
+                >
+                  {literal("Detailed explanation")}
+                </button>
               </div>
               <div className="theme-surface-strong mt-4 rounded-[22px] px-4 py-4">
                 <p className="eyebrow text-muted">{t("technicalSummary")}</p>
@@ -1557,6 +1596,14 @@ export function HelpPanel({
                 <p className="eyebrow text-muted">{t("technicalDetail")}</p>
                 <div className="mt-3 space-y-3">
                   {section.body.map((paragraph) => (
+                    <p key={paragraph} className="text-sm leading-7 text-muted">{paragraph}</p>
+                  ))}
+                </div>
+              </div>
+              <div id={`help-section-detail-${section.id}`} className="theme-surface-strong mt-4 rounded-[22px] px-4 py-4 scroll-mt-28">
+                <p className="eyebrow text-muted">{literal("Detailed explanation")}</p>
+                <div className="mt-3 space-y-3">
+                  {section.detailedExplanation.map((paragraph) => (
                     <p key={paragraph} className="text-sm leading-7 text-muted">{paragraph}</p>
                   ))}
                 </div>

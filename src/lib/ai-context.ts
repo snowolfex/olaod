@@ -781,11 +781,10 @@ export async function debugAiKnowledgeSearch(
     .filter((entry) => entry.shouldInclude)
     .sort((left, right) => right.score - left.score || right.updatedAt.localeCompare(left.updatedAt));
 
-  return diversifyKnowledgeResults(scoredEntries.map((entry) => {
-    const nextEntry = { ...entry };
-    delete nextEntry.shouldInclude;
-    return nextEntry;
-  }), limit);
+  return diversifyKnowledgeResults(
+    scoredEntries.map(({ shouldInclude: _shouldInclude, ...entry }) => entry),
+    limit,
+  );
 }
 
 export async function getAiKnowledgeDebugSnapshot(
