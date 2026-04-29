@@ -1,6 +1,8 @@
 # Session Log
 
 ## 2026-04-28
+- Added a single repo-level dev stack runner at `scripts/start-dev-stack.mjs`, exposed it through `npm run dev:stack` and `npm run dev:stack:lan`, and repointed `.vscode/tasks.json` so the standard `dev server` tasks now start both the local broker and the Next.js dev server together instead of requiring a separate manual broker terminal.
+- Verified the combined startup from a down state by stopping the running app, killing the standalone broker process, launching `cmd /c npm run dev:stack`, and confirming from live terminal output plus a fresh `/api/auth/session` response that both broker `4010` and app `3000` came back through the new one-command path.
 - Added broker-backed local app-server control in Admin Access: the app now proxies admin-only `start`, `stop`, and `restart` requests through a small localhost broker outside the Next.js process, shows the live port/PID plus a fallback broker control URL in a new Access card, and verified the restart path live against the dev server on port `3000`.
 - Extended installer bundling and packaged launch scripts to carry the broker payload, write `OLOAD_CONTROL_BROKER_BASE_URL`, and boot the broker alongside the installed app so the Admin server controls can survive stopping the main app process.
 - Added an admin-facing live system monitor near the top of the Admin surface, backed by a new `src/app/api/admin/system/monitor/route.ts` snapshot API plus `src/lib/system-monitor.ts` in-memory telemetry, so operators can see current machine memory, active model footprint, and recent per-model gateway traffic with near-real-time sparkline graphs.

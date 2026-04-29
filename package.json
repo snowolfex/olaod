@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:stack": "node scripts/start-dev-stack.mjs",
+    "dev:stack:lan": "node scripts/start-dev-stack.mjs --lan",
     "dev:lan": "next dev --hostname 0.0.0.0 --port 3000",
     "broker:dev": "npm --prefix broker run dev",
     "broker:start": "npm --prefix broker run start",

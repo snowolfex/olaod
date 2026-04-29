@@ -7,7 +7,7 @@
 			"command": "cmd",
 			"args": [
 				"/c",
-				"npm run dev"
+				"npm run dev:stack"
 			],
 			"isBackground": true,
 			"problemMatcher": [],
@@ -19,7 +19,7 @@
 			"command": "cmd",
 			"args": [
 				"/c",
-				"npm run dev:lan"
+				"npm run dev:stack:lan"
 			],
 			"isBackground": true,
 			"problemMatcher": [],
