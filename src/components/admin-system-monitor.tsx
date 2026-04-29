@@ -148,6 +148,7 @@ export function AdminSystemMonitor({ uiLanguagePreference, variant = "default" }
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [isRebinding, setIsRebinding] = useState(false);
+  const [isRotatingInstallId, setIsRotatingInstallId] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -186,8 +187,23 @@ export function AdminSystemMonitor({ uiLanguagePreference, variant = "default" }
     };
   }, []);
 
-  const handleRebind = async () => {
-    setIsRebinding(true);
+  const refreshMonitorSnapshot = async () => {
+    const monitorResponse = await fetch("/api/admin/system/monitor", { cache: "no-store" });
+    if (!monitorResponse.ok) {
+      throw new Error((await monitorResponse.text()).trim() || "Unable to refresh install binding status.");
+    }
+
+    const payload = await monitorResponse.json() as { snapshot: AdminSystemMonitorSnapshot };
+    setSnapshot(payload.snapshot);
+    setErrorMessage(null);
+  };
+
+  const runBindingAction = async (
+    action: "rebind" | "rotate-install-id",
+    successMessage: string,
+    setBusy: (busy: boolean) => void,
+  ) => {
+    setBusy(true);
     setActionMessage(null);
 
     try {
@@ -196,29 +212,33 @@ export function AdminSystemMonitor({ uiLanguagePreference, variant = "default" }
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ action: "rebind" }),
+        body: JSON.stringify({ action }),
       });
 
       if (!response.ok) {
-        throw new Error((await response.text()).trim() || "Unable to repair the install binding.");
+        throw new Error((await response.text()).trim() || "Unable to change the install binding.");
       }
 
-      setActionMessage(literal("Install binding updated for this machine and location."));
-
-      const monitorResponse = await fetch("/api/admin/system/monitor", { cache: "no-store" });
-      if (!monitorResponse.ok) {
-        throw new Error((await monitorResponse.text()).trim() || "Unable to refresh install binding status.");
-      }
-
-      const payload = await monitorResponse.json() as { snapshot: AdminSystemMonitorSnapshot };
-      setSnapshot(payload.snapshot);
-      setErrorMessage(null);
+      setActionMessage(literal(successMessage));
+      await refreshMonitorSnapshot();
     } catch (error) {
-      setActionMessage(error instanceof Error ? error.message : literal("Unable to repair the install binding."));
+      setActionMessage(error instanceof Error ? error.message : literal("Unable to change the install binding."));
     } finally {
-      setIsRebinding(false);
+      setBusy(false);
     }
   };
+
+  const handleRebind = async () => runBindingAction(
+    "rebind",
+    "Install binding updated for this machine and location.",
+    setIsRebinding,
+  );
+
+  const handleRotateInstallId = async () => runBindingAction(
+    "rotate-install-id",
+    "A fresh install ID was generated for this machine-bound install.",
+    setIsRotatingInstallId,
+  );
 
   const memoryAvailableBytes = snapshot?.memory.freeBytes ?? 0;
   const memoryUsedBytes = snapshot?.memory.usedBytes ?? 0;
@@ -259,18 +279,32 @@ export function AdminSystemMonitor({ uiLanguagePreference, variant = "default" }
           <div className="text-right text-xs text-muted">
             <p>{literal("Install ID: {value}", { value: truncateValue(installBinding?.installId ?? null, 18) })}</p>
             <p className="mt-1">{literal("Checked: {value}", { value: installBinding ? new Date(installBinding.checkedAt).toLocaleTimeString() : literal("Pending") })}</p>
-            {installBinding?.canRebind ? (
-              <button
-                type="button"
-                onClick={handleRebind}
-                disabled={isRebinding}
-                className="mt-3 inline-flex items-center justify-center rounded-full border border-line px-3 py-1.5 text-xs font-semibold text-foreground transition hover:border-white/30 hover:bg-white/8 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isRebinding
-                  ? literal("Rebinding...")
-                  : literal(installBinding.status === "valid" ? "Rebind install" : "Repair binding")}
-              </button>
-            ) : null}
+            <div className="mt-3 flex flex-wrap justify-end gap-2">
+              {installBinding?.canRebind ? (
+                <button
+                  type="button"
+                  onClick={handleRebind}
+                  disabled={isRebinding || isRotatingInstallId}
+                  className="inline-flex items-center justify-center rounded-full border border-line px-3 py-1.5 text-xs font-semibold text-foreground transition hover:border-white/30 hover:bg-white/8 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isRebinding
+                    ? literal("Rebinding...")
+                    : literal(installBinding.status === "valid" ? "Rebind install" : "Repair binding")}
+                </button>
+              ) : null}
+              {installBinding?.canRotateInstallId ? (
+                <button
+                  type="button"
+                  onClick={handleRotateInstallId}
+                  disabled={isRotatingInstallId || isRebinding}
+                  className="inline-flex items-center justify-center rounded-full border border-line px-3 py-1.5 text-xs font-semibold text-foreground transition hover:border-white/30 hover:bg-white/8 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isRotatingInstallId
+                    ? literal("Minting install ID...")
+                    : literal("Mint new install ID")}
+                </button>
+              ) : null}
+            </div>
           </div>
         </div>
         <div className={`mt-3 grid gap-2 text-xs text-muted ${isCompact ? "xl:grid-cols-2" : "lg:grid-cols-3"}`}>

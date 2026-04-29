@@ -57,6 +57,7 @@ function setBindingEnvironment(values: {
   process.env.OLOAD_INSTALL_BINDING_STATUS = "valid";
   process.env.OLOAD_INSTALL_BINDING_MESSAGE = "Install binding matches this computer and location.";
   process.env.OLOAD_INSTALL_BINDING_CAN_REBIND = "true";
+  process.env.OLOAD_INSTALL_BINDING_CAN_ROTATE_ID = "true";
   process.env.OLOAD_INSTALL_BINDING_CHECKED_AT = values.checkedAt;
   process.env.OLOAD_INSTALL_ID = values.installId;
   process.env.OLOAD_INSTALL_BINDING_PATH = values.bindingPath;
@@ -66,7 +67,7 @@ function setBindingEnvironment(values: {
   process.env.OLOAD_INSTALL_BINDING_INSTALLED_AT = values.installedAt;
 }
 
-export async function rebindCurrentInstall() {
+async function writeCurrentInstallBinding(forceNewInstallId: boolean) {
   const installRoot = process.env.OLOAD_INSTALL_ROOT?.trim();
   const bindingPath = process.env.OLOAD_INSTALL_BINDING_PATH?.trim();
   const machineIdPath = process.env.OLOAD_MACHINE_ID_PATH?.trim();
@@ -89,7 +90,9 @@ export async function rebindCurrentInstall() {
     throw new Error("This install binding belongs to a different computer and cannot be rebound here.");
   }
 
-  const installId = existingBinding.InstallId?.trim() || process.env.OLOAD_INSTALL_ID?.trim() || randomUUID();
+  const installId = forceNewInstallId
+    ? randomUUID()
+    : existingBinding.InstallId?.trim() || process.env.OLOAD_INSTALL_ID?.trim() || randomUUID();
   const installedAt = existingBinding.InstalledAt?.trim()
     || process.env.OLOAD_INSTALL_BINDING_INSTALLED_AT?.trim()
     || new Date().toISOString();
@@ -116,4 +119,12 @@ export async function rebindCurrentInstall() {
   });
 
   return getInstallBindingStatus();
+}
+
+export async function rebindCurrentInstall() {
+  return writeCurrentInstallBinding(false);
+}
+
+export async function rotateCurrentInstallId() {
+  return writeCurrentInstallBinding(true);
 }

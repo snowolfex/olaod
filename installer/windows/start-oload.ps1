@@ -13,6 +13,7 @@ $embeddedNode = Join-Path $scriptRoot "runtime\node\node.exe"
 $embeddedOllama = Join-Path $scriptRoot "runtime\ollama\ollama.exe"
 $embeddedOllamaModels = Join-Path $scriptRoot "runtime\ollama-models"
 $installBindingPath = Join-Path $scriptRoot ".oload-install-binding"
+$blockedInstallNoticePath = Join-Path $scriptRoot "INSTALL-BLOCKED.txt"
 
 [Environment]::SetEnvironmentVariable("OLOAD_INSTALL_ROOT", $scriptRoot)
 
@@ -62,6 +63,7 @@ function Set-InstallBindingEnvironment([string]$Status, [string]$Message, $Bindi
   [Environment]::SetEnvironmentVariable("OLOAD_INSTALL_BINDING_STATUS", $Status)
   [Environment]::SetEnvironmentVariable("OLOAD_INSTALL_BINDING_MESSAGE", $Message)
   [Environment]::SetEnvironmentVariable("OLOAD_INSTALL_BINDING_CAN_REBIND", $(if ($Status -eq "valid" -or $Status -eq "moved" -or $Status -eq "missing") { "true" } else { "false" }))
+  [Environment]::SetEnvironmentVariable("OLOAD_INSTALL_BINDING_CAN_ROTATE_ID", $(if ($Status -eq "valid" -or $Status -eq "moved" -or $Status -eq "missing") { "true" } else { "false" }))
 
   if ($Binding) {
     if ($Binding.ContainsKey("InstallId")) {
@@ -78,6 +80,35 @@ function Set-InstallBindingEnvironment([string]$Status, [string]$Message, $Bindi
   [Environment]::SetEnvironmentVariable("OLOAD_INSTALL_BINDING_CHECKED_AT", (Get-Date).ToString("o"))
 }
 
+function Remove-BlockedInstallNotice() {
+  if (Test-Path $blockedInstallNoticePath) {
+    Remove-Item $blockedInstallNoticePath -Force -ErrorAction SilentlyContinue
+  }
+}
+
+function Write-BlockedInstallNotice([string]$Message, [string]$StoredInstallRoot, [string]$MachineIdPath) {
+  $lines = @(
+    "Oload start blocked",
+    "",
+    "Reason: copied install detected on a different computer.",
+    "Checked at: $((Get-Date).ToString('o'))",
+    "Current install root: $scriptRoot",
+    "Recorded install root: $(if ($StoredInstallRoot) { $StoredInstallRoot } else { 'unknown' })",
+    "Machine ID path: $(if ($MachineIdPath) { $MachineIdPath } else { 'unknown' })",
+    "",
+    $Message,
+    "",
+    "Next steps:",
+    "- Move this install back to the original computer.",
+    "- Or reinstall Oload on this computer to generate a machine-bound install here.",
+    "- If this machine is the intended owner and only the location changed, reinstall or repair from the original machine-bound copy first.",
+    ""
+  )
+
+  Set-Content -Path $blockedInstallNoticePath -Value ($lines -join "`r`n") -Encoding ASCII
+  return $blockedInstallNoticePath
+}
+
 function Test-InstallBinding() {
   $machineIdPath = if ($env:OLOAD_MACHINE_ID_PATH) { $env:OLOAD_MACHINE_ID_PATH } else { Get-DefaultMachineIdPath }
   $binding = Read-KeyValueFile $installBindingPath
@@ -88,6 +119,7 @@ function Test-InstallBinding() {
   }
 
   if ($binding.Count -eq 0) {
+    Remove-BlockedInstallNotice
     $message = "Install binding file was not found at $installBindingPath."
     Set-InstallBindingEnvironment "missing" $message $null
     Write-Warning $message
@@ -95,6 +127,7 @@ function Test-InstallBinding() {
   }
 
   if (-not $machineIdPath -or -not (Test-Path $machineIdPath)) {
+    Remove-BlockedInstallNotice
     $message = "Machine ID file was not found. Install binding status is incomplete."
     Set-InstallBindingEnvironment "missing" $message $binding
     Write-Warning $message
@@ -108,6 +141,7 @@ function Test-InstallBinding() {
   $normalizedStoredRoot = if ($storedInstallRoot) { Get-NormalizedInstallPath $storedInstallRoot } else { "" }
 
   if (-not $currentMachineId -or -not $storedMachineId) {
+    Remove-BlockedInstallNotice
     $message = "Install binding is missing a machine ID."
     Set-InstallBindingEnvironment "missing" $message $binding
     Write-Warning $message
@@ -119,17 +153,21 @@ function Test-InstallBinding() {
   if ($currentMachineId -ne $storedMachineId) {
     $message = "Install binding mismatch: this copy was created for a different computer."
     Set-InstallBindingEnvironment "copied" $message $binding
+    $noticePath = Write-BlockedInstallNotice $message $storedInstallRoot $machineIdPath
+    [Environment]::SetEnvironmentVariable("OLOAD_INSTALL_BLOCKED_NOTICE_PATH", $noticePath)
     Write-Warning $message
     return "copied"
   }
 
   if (-not $normalizedStoredRoot -or $normalizedStoredRoot -ne $normalizedCurrentRoot) {
+    Remove-BlockedInstallNotice
     $message = "Install binding mismatch: this install appears to have moved from $storedInstallRoot to $scriptRoot."
     Set-InstallBindingEnvironment "moved" $message $binding
     Write-Warning $message
     return "moved"
   }
 
+  Remove-BlockedInstallNotice
   Set-InstallBindingEnvironment "valid" "Install binding matches this computer and location." $binding
   return "valid"
 }
@@ -227,7 +265,8 @@ if (Test-Path $envFile) {
 
 $installBindingStatus = Test-InstallBinding
 if ($installBindingStatus -eq "copied") {
-  throw "This installed copy belongs to a different computer and cannot be started here. Move back to the original machine or reinstall Oload on this computer."
+  $noticePath = if ($env:OLOAD_INSTALL_BLOCKED_NOTICE_PATH) { $env:OLOAD_INSTALL_BLOCKED_NOTICE_PATH } else { $blockedInstallNoticePath }
+  throw "This installed copy belongs to a different computer and cannot be started here. See ${noticePath} for recovery guidance."
 }
 
 Start-EmbeddedOllamaIfNeeded

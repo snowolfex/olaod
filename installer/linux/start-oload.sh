@@ -15,6 +15,7 @@ embedded_node="$script_dir/runtime/node/bin/node"
 embedded_ollama="$script_dir/runtime/ollama/bin/ollama"
 embedded_ollama_models="$script_dir/runtime/ollama-models"
 install_binding_path="$script_dir/.oload-install-binding"
+blocked_install_notice_path="$script_dir/INSTALL-BLOCKED.txt"
 
 export OLOAD_INSTALL_ROOT="$script_dir"
 
@@ -55,8 +56,10 @@ set_install_binding_env() {
   export OLOAD_INSTALL_BINDING_MESSAGE="$message"
   if [[ "$status" == 'valid' || "$status" == 'moved' || "$status" == 'missing' ]]; then
     export OLOAD_INSTALL_BINDING_CAN_REBIND='true'
+    export OLOAD_INSTALL_BINDING_CAN_ROTATE_ID='true'
   else
     export OLOAD_INSTALL_BINDING_CAN_REBIND='false'
+    export OLOAD_INSTALL_BINDING_CAN_ROTATE_ID='false'
   fi
   if [[ -n "$install_id_value" ]]; then
     export OLOAD_INSTALL_ID="$install_id_value"
@@ -70,6 +73,35 @@ set_install_binding_env() {
   export OLOAD_INSTALL_BINDING_CHECKED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 
+remove_blocked_install_notice() {
+  rm -f "$blocked_install_notice_path" 2>/dev/null || true
+}
+
+write_blocked_install_notice() {
+  local message="$1"
+  local stored_install_root="$2"
+  local machine_id_path="$3"
+
+  cat >"$blocked_install_notice_path" <<EOF
+Oload start blocked
+
+Reason: copied install detected on a different computer.
+Checked at: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+Current install root: $script_dir
+Recorded install root: ${stored_install_root:-unknown}
+Machine ID path: ${machine_id_path:-unknown}
+
+$message
+
+Next steps:
+- Move this install back to the original computer.
+- Or reinstall Oload on this computer to generate a machine-bound install here.
+- If this machine is the intended owner and only the location changed, reinstall or repair from the original machine-bound copy first.
+EOF
+
+  export OLOAD_INSTALL_BLOCKED_NOTICE_PATH="$blocked_install_notice_path"
+}
+
 validate_install_binding() {
   local machine_id_path current_machine_id stored_machine_id stored_install_root install_id_value installed_at_value message
 
@@ -78,6 +110,7 @@ validate_install_binding() {
   export OLOAD_INSTALL_BINDING_PATH="$install_binding_path"
 
   if [[ ! -f "$install_binding_path" ]]; then
+    remove_blocked_install_notice
     message="Install binding file was not found at $install_binding_path."
     set_install_binding_env "missing" "$message"
     printf 'Warning: %s\n' "$message" >&2
@@ -91,6 +124,7 @@ validate_install_binding() {
   installed_at_value="$(read_key_value_file_value "$install_binding_path" 'InstalledAt')"
 
   if [[ ! -f "$machine_id_path" ]]; then
+    remove_blocked_install_notice
     message="Machine ID file was not found. Install binding status is incomplete."
     set_install_binding_env "missing" "$message" "$install_id_value" "$stored_install_root" "$installed_at_value"
     printf 'Warning: %s\n' "$message" >&2
@@ -100,6 +134,7 @@ validate_install_binding() {
 
   current_machine_id="$(tr -d '\r\n' <"$machine_id_path")"
   if [[ -z "$current_machine_id" || -z "$stored_machine_id" ]]; then
+    remove_blocked_install_notice
     message="Install binding is missing a machine ID."
     set_install_binding_env "missing" "$message" "$install_id_value" "$stored_install_root" "$installed_at_value"
     printf 'Warning: %s\n' "$message" >&2
@@ -112,12 +147,14 @@ validate_install_binding() {
   if [[ "$current_machine_id" != "$stored_machine_id" ]]; then
     message='Install binding mismatch: this copy was created for a different computer.'
     set_install_binding_env "copied" "$message" "$install_id_value" "$stored_install_root" "$installed_at_value"
+    write_blocked_install_notice "$message" "$stored_install_root" "$machine_id_path"
     printf 'Warning: %s\n' "$message" >&2
     printf '%s\n' 'copied'
     return
   fi
 
   if [[ -z "$stored_install_root" || "$stored_install_root" != "$script_dir" ]]; then
+    remove_blocked_install_notice
     message="Install binding mismatch: this install appears to have moved from ${stored_install_root:-unknown} to $script_dir."
     set_install_binding_env "moved" "$message" "$install_id_value" "$stored_install_root" "$installed_at_value"
     printf 'Warning: %s\n' "$message" >&2
@@ -125,6 +162,7 @@ validate_install_binding() {
     return
   fi
 
+  remove_blocked_install_notice
   set_install_binding_env "valid" 'Install binding matches this computer and location.' "$install_id_value" "$stored_install_root" "$installed_at_value"
   printf '%s\n' 'valid'
 }
@@ -140,7 +178,7 @@ fi
 
 install_binding_status="$(validate_install_binding)"
 if [[ "$install_binding_status" == 'copied' ]]; then
-  printf '%s\n' 'This installed copy belongs to a different computer and cannot be started here. Move back to the original machine or reinstall Oload on this computer.' >&2
+  printf '%s\n' "This installed copy belongs to a different computer and cannot be started here. See ${blocked_install_notice_path} for recovery guidance." >&2
   exit 1
 fi
 
