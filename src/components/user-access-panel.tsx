@@ -4,6 +4,7 @@ import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { AppUpdateMonitor } from "@/components/app-update-monitor";
+import { AppServerControl } from "@/components/app-server-control";
 import { VoiceLanguageSelect } from "@/components/voice-language-select";
 import { getHelpHint } from "@/lib/help-manual";
 import { readQuickHelpEnabled, writeQuickHelpEnabled } from "@/lib/help-preferences";
@@ -2371,6 +2372,12 @@ export function UserAccessPanel({ availableModels = [], compact = false, onReque
             displayMode="inline"
             uiLanguagePreference={activeUiLanguage}
           />
+        </div>
+      ) : null}
+
+      {isAdminSession ? (
+        <div className="mt-4">
+          <AppServerControl uiLanguagePreference={activeUiLanguage} />
         </div>
       ) : null}
 

@@ -1,6 +1,8 @@
 # Session Log
 
 ## 2026-04-28
+- Added broker-backed local app-server control in Admin Access: the app now proxies admin-only `start`, `stop`, and `restart` requests through a small localhost broker outside the Next.js process, shows the live port/PID plus a fallback broker control URL in a new Access card, and verified the restart path live against the dev server on port `3000`.
+- Extended installer bundling and packaged launch scripts to carry the broker payload, write `OLOAD_CONTROL_BROKER_BASE_URL`, and boot the broker alongside the installed app so the Admin server controls can survive stopping the main app process.
 - Added an admin-facing live system monitor near the top of the Admin surface, backed by a new `src/app/api/admin/system/monitor/route.ts` snapshot API plus `src/lib/system-monitor.ts` in-memory telemetry, so operators can see current machine memory, active model footprint, and recent per-model gateway traffic with near-real-time sparkline graphs.
 - Wired app-routed model traffic attribution into the shared AI gateway in `src/lib/ai-service.ts`, validated the telemetry end-to-end with a real `/api/ai/chat` request against `deepseek-r1:1.5b`, confirmed the monitor API returned non-zero attributed traffic plus active runtime memory for that model, and mounted the monitor on both the standalone page-mode Admin shell and the embedded Admin Ops view actually used in the live app.
 - Expanded the Help manual content model with a dedicated detailed-explanation layer for every operator section, added a direct in-UI jump button for that deeper explanation block, and rendered the same richer material into the exported PDF so the quick surface and downloadable manual stay aligned.

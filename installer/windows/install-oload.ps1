@@ -707,6 +707,8 @@ function Start-OllamaIfNeeded([string]$OllamaPath, [string]$BaseUrl) {
 function Copy-AppPayload([string]$BundleRoot, [string]$TargetRoot) {
   $sourceAppDir = Join-Path $BundleRoot "app"
   $targetAppDir = Join-Path $TargetRoot "app"
+  $sourceBrokerDir = Join-Path $BundleRoot "broker"
+  $targetBrokerDir = Join-Path $TargetRoot "broker"
 
   if (-not (Test-Path (Join-Path $sourceAppDir "server.js"))) {
     throw "This installer bundle does not contain a standalone app payload. Run npm run bundle:installers first."
@@ -714,7 +716,11 @@ function Copy-AppPayload([string]$BundleRoot, [string]$TargetRoot) {
 
   New-Item -ItemType Directory -Path $TargetRoot -Force | Out-Null
   Remove-Item $targetAppDir -Recurse -Force -ErrorAction SilentlyContinue
+  Remove-Item $targetBrokerDir -Recurse -Force -ErrorAction SilentlyContinue
   Copy-Item -Path $sourceAppDir -Destination $targetAppDir -Recurse -Force
+  if (Test-Path $sourceBrokerDir) {
+    Copy-Item -Path $sourceBrokerDir -Destination $targetBrokerDir -Recurse -Force
+  }
   Copy-Item -Path (Join-Path $BundleRoot "start-oload.ps1") -Destination (Join-Path $TargetRoot "start-oload.ps1") -Force
   Copy-Item -Path (Join-Path $BundleRoot "uninstall-oload.ps1") -Destination (Join-Path $TargetRoot "uninstall-oload.ps1") -Force
   Copy-Item -Path (Join-Path $BundleRoot "README.md") -Destination (Join-Path $TargetRoot "README.md") -Force
@@ -756,6 +762,7 @@ function Write-InstallManifest([string]$TargetRoot, [hashtable]$Values) {
     "",
     "App footprint:",
     "- App payload directory: $($Values.AppPayloadRoot)",
+    "- Broker directory: $($Values.BrokerRoot)",
     "- Runtime root: $($Values.RuntimeRoot)",
     "- Start launcher (PowerShell): $($Values.StartScriptPath)",
     "- Start launcher (CMD): $($Values.StartCommandPath)",
@@ -820,6 +827,7 @@ function Write-UninstallNotes([string]$TargetRoot, [hashtable]$Values) {
     "",
     "Managed Oload paths:",
     "- App payload directory: $($Values.AppPayloadRoot)",
+    "- Broker directory: $($Values.BrokerRoot)",
     "- Runtime root: $($Values.RuntimeRoot)",
     "- Runtime env file: $($Values.RuntimeEnvPath)",
     "- Install state file: $($Values.InstallStatePath)",
@@ -890,6 +898,7 @@ $installManifestPath = Join-Path $resolvedInstallRoot "INSTALL-MANIFEST.txt"
 $runtimeEnvPath = Join-Path $resolvedInstallRoot ".env.runtime"
 $uninstallNotesPath = Join-Path $resolvedInstallRoot "UNINSTALL-NOTES.txt"
 $appPayloadRoot = Join-Path $resolvedInstallRoot "app"
+$brokerRoot = Join-Path $resolvedInstallRoot "broker"
 $startScriptPath = Join-Path $resolvedInstallRoot "start-oload.ps1"
 $startCommandPath = Join-Path $resolvedInstallRoot "start-oload.cmd"
 $uninstallScriptPath = Join-Path $resolvedInstallRoot "uninstall-oload.ps1"
@@ -929,6 +938,7 @@ Write-InstallState $resolvedInstallRoot @{
   OllamaVersion = $ollamaSelection.Version
   RuntimeRoot = $runtimeRoot
   AppPayloadRoot = $appPayloadRoot
+  BrokerRoot = $brokerRoot
   StartScriptPath = $startScriptPath
   StartCommandPath = $startCommandPath
   UninstallScriptPath = $uninstallScriptPath
@@ -959,6 +969,7 @@ Write-InstallManifest $resolvedInstallRoot @{
   ManagedOllamaModelsRoot = if ($managedOllamaModelsRoot) { $managedOllamaModelsRoot } else { "not managed by Oload" }
   RuntimeRoot = $runtimeRoot
   AppPayloadRoot = $appPayloadRoot
+  BrokerRoot = $brokerRoot
   StartScriptPath = $startScriptPath
   StartCommandPath = $startCommandPath
   UninstallScriptPath = $uninstallScriptPath
@@ -982,6 +993,7 @@ Write-UninstallNotes $resolvedInstallRoot @{
   NodePath = $nodeSelection.Path
   RuntimeRoot = $runtimeRoot
   AppPayloadRoot = $appPayloadRoot
+  BrokerRoot = $brokerRoot
   RuntimeEnvPath = $runtimeEnvPath
   InstallStatePath = $installStatePath
   InstallManifestPath = $installManifestPath
@@ -1003,6 +1015,7 @@ Write-RuntimeEnv $resolvedInstallRoot @{
   OLOAD_UPDATE_MANIFEST_URL = $updateManifestUrl
   OLOAD_UPDATE_CHANNEL = $updateChannel
   OLOAD_UPDATE_MANIFEST_PUBLIC_KEY = $UpdateManifestPublicKey
+  OLOAD_CONTROL_BROKER_BASE_URL = "http://127.0.0.1:4010"
   OLOAD_ADMIN_PASSWORD = $adminPassword
   OLOAD_SESSION_SECRET = $sessionSecret
 }

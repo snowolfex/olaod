@@ -643,6 +643,8 @@ copy_app_payload() {
   local target_root="$1"
   local source_app_dir="$script_dir/app"
   local target_app_dir="$target_root/app"
+  local source_broker_dir="$script_dir/broker"
+  local target_broker_dir="$target_root/broker"
 
   if [[ ! -f "$source_app_dir/server.js" ]]; then
     printf '%s\n' 'This installer bundle does not contain a standalone app payload. Run npm run bundle:installers first.' >&2
@@ -651,8 +653,13 @@ copy_app_payload() {
 
   mkdir -p "$target_root"
   rm -rf "$target_app_dir"
+  rm -rf "$target_broker_dir"
   mkdir -p "$target_app_dir"
   cp -R "$source_app_dir/." "$target_app_dir/"
+  if [[ -d "$source_broker_dir" ]]; then
+    mkdir -p "$target_broker_dir"
+    cp -R "$source_broker_dir/." "$target_broker_dir/"
+  fi
   cp "$script_dir/start-oload.sh" "$target_root/start-oload.sh"
   cp "$script_dir/uninstall-oload.sh" "$target_root/uninstall-oload.sh"
   cp "$script_dir/EULA.txt" "$target_root/EULA.txt"
@@ -719,6 +726,7 @@ OLOAD_DEFAULT_LANGUAGE=$default_language
 OLOAD_UPDATE_MANIFEST_URL=$update_manifest_url
 OLOAD_UPDATE_CHANNEL=$update_channel
 OLOAD_UPDATE_MANIFEST_PUBLIC_KEY=$update_manifest_public_key
+OLOAD_CONTROL_BROKER_BASE_URL=http://127.0.0.1:4010
 OLOAD_ADMIN_PASSWORD=$admin_password
 OLOAD_SESSION_SECRET=$session_secret
 EOF
@@ -750,6 +758,7 @@ ManagedOllamaModelsRoot=${managed_ollama_models_root:-}
 OllamaVersion=$ollama_version
 RuntimeRoot=$runtime_root
 AppPayloadRoot=$target_root/app
+BrokerRoot=$target_root/broker
 StartScriptPath=$target_root/start-oload.sh
 UninstallScriptPath=$target_root/uninstall-oload.sh
 RuntimeEnvPath=$target_root/.env.runtime
@@ -776,6 +785,7 @@ Platform: Linux
 
 App footprint:
 - App payload directory: $target_root/app
+- Broker directory: $target_root/broker
 - Runtime root: $runtime_root
 - Start launcher: $target_root/start-oload.sh
 - Uninstall launcher: $target_root/uninstall-oload.sh
@@ -838,6 +848,7 @@ Ollama:
 
 Managed Oload paths:
 - App payload directory: $target_root/app
+- Broker directory: $target_root/broker
 - Runtime root: $runtime_root
 - Runtime env file: $target_root/.env.runtime
 - Install state file: $target_root/.oload-install-state

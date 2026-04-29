@@ -6,6 +6,7 @@ const buildStandaloneDir = path.join(rootDir, ".next", "standalone");
 const buildStaticDir = path.join(rootDir, ".next", "static");
 const publicDir = path.join(rootDir, "public");
 const installerDir = path.join(rootDir, "installer");
+const brokerDir = path.join(rootDir, "broker");
 const outputDir = path.join(rootDir, "dist", "installers");
 
 const cleanDataFiles = {
@@ -80,6 +81,9 @@ async function copyInstallerFiles(targetOs) {
   await cp(path.join(installerDir, "README.md"), path.join(bundleDir, "README.md"), {
     force: true,
   });
+  if (await pathExists(brokerDir)) {
+    await cp(brokerDir, path.join(bundleDir, "broker"), { recursive: true, force: true });
+  }
   await copyAppPayload(bundleDir);
 }
 

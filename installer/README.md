@@ -15,6 +15,7 @@ Run `npm run bundle:updates` to build live-patch packages plus a manifest under 
 Each bundle contains:
 
 - a production-ready Next standalone payload in `app/`
+- a local broker payload in `broker/` that now stays outside the app process so Admin can stop, restart, and later re-start the server on port `3000`
 - a clean first-run `data/` set with no local users or chat history
 - an OS-specific installer that checks for Node and Ollama, verifies common existing locations first, prompts for runtime settings plus dependency choices, and starts Oload
 - an OS-specific start script you can use later after installation
@@ -33,6 +34,7 @@ Live update configuration:
 - set `OLOAD_UPDATE_MANIFEST_PUBLIC_KEY` to the Ed25519 public key that verifies the hosted manifest signature
 - the installer now prompts for all three values and writes them into `.env.runtime`
 - on load, Oload now auto-checks the manifest at launch, caches the signed result, and shows admins an inline green/red update status card in Access with `Check now` and `Install update` controls
+- installed launchers now also boot the local broker before the app when that payload is present, so the Access page can expose `Start app`, `Restart app`, and `Stop app` controls without losing the ability to bring the server back later
 
 Technical:
 

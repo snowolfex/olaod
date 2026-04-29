@@ -5,6 +5,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 $scriptRoot = Split-Path -Parent $MyInvocation.PSCommandPath
+$brokerDir = Join-Path $scriptRoot "broker"
+$brokerScript = Join-Path $brokerDir "src\server.mjs"
 $envFile = Join-Path $scriptRoot ".env.runtime"
 $appDir = Join-Path $scriptRoot "app"
 $embeddedNode = Join-Path $scriptRoot "runtime\node\node.exe"
@@ -25,6 +27,15 @@ function Test-LocalOllamaBaseUrl([string]$BaseUrl) {
 function Test-OllamaApi([string]$BaseUrl) {
   try {
     Invoke-WebRequest -Uri "$BaseUrl/api/tags" -UseBasicParsing -TimeoutSec 2 | Out-Null
+    return $true
+  } catch {
+    return $false
+  }
+}
+
+function Test-BrokerApi([string]$BaseUrl) {
+  try {
+    Invoke-WebRequest -Uri "$BaseUrl/health" -UseBasicParsing -TimeoutSec 2 | Out-Null
     return $true
   } catch {
     return $false
@@ -59,6 +70,29 @@ function Start-EmbeddedOllamaIfNeeded() {
   }
 }
 
+function Start-LocalBrokerIfNeeded([string]$NodePath) {
+  if (-not (Test-Path $brokerScript)) {
+    return
+  }
+
+  $brokerBaseUrl = if ($env:OLOAD_CONTROL_BROKER_BASE_URL) { $env:OLOAD_CONTROL_BROKER_BASE_URL } else { "http://127.0.0.1:4010" }
+  if (Test-BrokerApi $brokerBaseUrl) {
+    return
+  }
+
+  $previousBrokerBaseUrl = [Environment]::GetEnvironmentVariable("BROKER_BASE_URL")
+  $previousControlBaseUrl = [Environment]::GetEnvironmentVariable("OLOAD_CONTROL_BROKER_BASE_URL")
+
+  try {
+    [Environment]::SetEnvironmentVariable("BROKER_BASE_URL", $brokerBaseUrl)
+    [Environment]::SetEnvironmentVariable("OLOAD_CONTROL_BROKER_BASE_URL", $brokerBaseUrl)
+    Start-Process -FilePath $NodePath -ArgumentList $brokerScript -WorkingDirectory $brokerDir -WindowStyle Hidden | Out-Null
+  } finally {
+    [Environment]::SetEnvironmentVariable("BROKER_BASE_URL", $previousBrokerBaseUrl)
+    [Environment]::SetEnvironmentVariable("OLOAD_CONTROL_BROKER_BASE_URL", $previousControlBaseUrl)
+  }
+}
+
 if (Test-Path $envFile) {
   Get-Content $envFile | ForEach-Object {
     if ([string]::IsNullOrWhiteSpace($_) -or $_.StartsWith("#")) {
@@ -84,6 +118,8 @@ $nodePath = if (Test-Path $embeddedNode) {
 
   $command.Source
 }
+
+Start-LocalBrokerIfNeeded $nodePath
 
 if ($Detached) {
   Start-Process -FilePath $nodePath -ArgumentList "server.js" -WorkingDirectory $appDir -WindowStyle Hidden | Out-Null

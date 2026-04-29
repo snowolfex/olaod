@@ -9,6 +9,8 @@ fi
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 env_file="$script_dir/.env.runtime"
 app_dir="$script_dir/app"
+broker_dir="$script_dir/broker"
+broker_script="$broker_dir/src/server.mjs"
 embedded_node="$script_dir/runtime/node/bin/node"
 embedded_ollama="$script_dir/runtime/ollama/bin/ollama"
 embedded_ollama_models="$script_dir/runtime/ollama-models"
@@ -39,6 +41,10 @@ test_ollama_api() {
   curl -fsS "$1/api/tags" >/dev/null 2>&1
 }
 
+test_broker_api() {
+  curl -fsS "$1/health" >/dev/null 2>&1
+}
+
 start_embedded_ollama_if_needed() {
   local base_url host port
 
@@ -65,6 +71,21 @@ start_embedded_ollama_if_needed() {
   OLLAMA_HOST="$host:$port" OLLAMA_MODELS="$embedded_ollama_models" nohup "$embedded_ollama" serve >"$script_dir/ollama.log" 2>&1 &
 }
 
+start_local_broker_if_needed() {
+  local broker_base_url
+
+  if [[ ! -f "$broker_script" ]]; then
+    return
+  fi
+
+  broker_base_url="${OLOAD_CONTROL_BROKER_BASE_URL:-http://127.0.0.1:4010}"
+  if test_broker_api "$broker_base_url"; then
+    return
+  fi
+
+  BROKER_BASE_URL="$broker_base_url" OLOAD_CONTROL_BROKER_BASE_URL="$broker_base_url" nohup "$node_path" "$broker_script" >"$script_dir/broker.log" 2>&1 &
+}
+
 start_embedded_ollama_if_needed
 
 if [[ -x "$embedded_node" ]]; then
@@ -77,6 +98,8 @@ if [[ -z "${node_path:-}" ]]; then
   printf '%s\n' 'Node.js runtime not found. Re-run install-oload.sh.' >&2
   exit 1
 fi
+
+start_local_broker_if_needed
 
 if [[ "$detach" -eq 1 ]]; then
   cd "$app_dir"
