@@ -727,8 +727,61 @@ OLOAD_UPDATE_MANIFEST_URL=$update_manifest_url
 OLOAD_UPDATE_CHANNEL=$update_channel
 OLOAD_UPDATE_MANIFEST_PUBLIC_KEY=$update_manifest_public_key
 OLOAD_CONTROL_BROKER_BASE_URL=http://127.0.0.1:4010
+OLOAD_MACHINE_ID=$machine_id
+OLOAD_MACHINE_ID_PATH=$machine_id_path
+OLOAD_MACHINE_STATE_ROOT=$machine_state_root
+OLOAD_INSTALL_ID=$install_id
+OLOAD_INSTALL_BINDING_PATH=$target_root/.oload-install-binding
 OLOAD_ADMIN_PASSWORD=$admin_password
 OLOAD_SESSION_SECRET=$session_secret
+EOF
+}
+
+normalize_install_root() {
+  local target_root="$1"
+
+  mkdir -p "$target_root"
+  (
+    cd "$target_root"
+    pwd -P
+  )
+}
+
+get_machine_state_root() {
+  if [[ -n "${XDG_STATE_HOME:-}" ]]; then
+    printf '%s\n' "$XDG_STATE_HOME/oload"
+    return
+  fi
+
+  printf '%s\n' "$HOME/.local/state/oload"
+}
+
+get_or_create_machine_id() {
+  local state_root="$1"
+
+  mkdir -p "$state_root"
+  machine_id_path="$state_root/machine-id"
+  if [[ -f "$machine_id_path" ]]; then
+    machine_id="$(tr -d '\r\n' <"$machine_id_path")"
+    if [[ -n "$machine_id" ]]; then
+      return
+    fi
+  fi
+
+  machine_id="$(openssl rand -hex 16 | tr -d '\n')"
+  printf '%s\n' "$machine_id" >"$machine_id_path"
+}
+
+write_install_binding() {
+  local target_root="$1"
+
+  cat >"$target_root/.oload-install-binding" <<EOF
+InstallId=$install_id
+MachineId=$machine_id
+InstallRoot=$target_root
+InstalledAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+Hostname=$hostname
+Platform=linux
 EOF
 }
 
@@ -738,6 +791,10 @@ write_install_state() {
   cat >"$target_root/.oload-install-state" <<EOF
 InstallRoot=$target_root
 InstalledAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+InstallId=$install_id
+MachineId=$machine_id
+MachineIdPath=$machine_id_path
+MachineStateRoot=$machine_state_root
 DefaultLanguage=$default_language
 NodeChoice=$node_choice
 NodeAction=$node_action
@@ -763,6 +820,7 @@ StartScriptPath=$target_root/start-oload.sh
 UninstallScriptPath=$target_root/uninstall-oload.sh
 RuntimeEnvPath=$target_root/.env.runtime
 InstallStatePath=$target_root/.oload-install-state
+InstallBindingPath=$target_root/.oload-install-binding
 InstallManifestPath=$target_root/INSTALL-MANIFEST.txt
 UninstallNotesPath=$target_root/UNINSTALL-NOTES.txt
 ReadmePath=$target_root/README.md
@@ -791,6 +849,7 @@ App footprint:
 - Uninstall launcher: $target_root/uninstall-oload.sh
 - Runtime env file: $target_root/.env.runtime
 - Install state file: $target_root/.oload-install-state
+- Install binding file: $target_root/.oload-install-binding
 - Install manifest file: $target_root/INSTALL-MANIFEST.txt
 - Uninstall notes file: $target_root/UNINSTALL-NOTES.txt
 - README: $target_root/README.md
@@ -798,6 +857,12 @@ App footprint:
 - Source notice copy: $target_root/SOURCE-AVAILABLE-NOTICE.txt
 - App icon: ${desktop_icon_path_value:-$target_root/oload.png}
 - Desktop launcher: ${desktop_entry_path_value:-not created}
+
+Install identity:
+- Machine state root: $machine_state_root
+- Machine ID path: $machine_id_path
+- Machine ID: $machine_id
+- Install ID: $install_id
 
 Dependency decisions:
 - Node.js mode: ${node_choice:-unknown}
@@ -852,10 +917,17 @@ Managed Oload paths:
 - Runtime root: $runtime_root
 - Runtime env file: $target_root/.env.runtime
 - Install state file: $target_root/.oload-install-state
+- Install binding file: $target_root/.oload-install-binding
 - Install manifest file: $target_root/INSTALL-MANIFEST.txt
 - Uninstall notes file: $target_root/UNINSTALL-NOTES.txt
 - App icon: ${desktop_icon_path_value:-$target_root/oload.png}
 - Desktop launcher: ${desktop_entry_path_value:-not created}
+
+Install identity:
+- Machine state root: $machine_state_root
+- Machine ID path: $machine_id_path
+- Machine ID: $machine_id
+- Install ID: $install_id
 
 Default language: ${default_language:-united-states}
 
@@ -966,6 +1038,7 @@ recommended_node_version="$(normalize_semver "${recommended_node_info%%|*}")"
 recommended_ollama_info="$(resolve_ollama_download)"
 recommended_ollama_version="${recommended_ollama_info%%|*}"
 install_root="$(prompt_value 'Install location' "$default_install_root")"
+install_root="$(normalize_install_root "$install_root")"
 port="$(prompt_value 'Port' '3000')"
 if prompt_yes_no 'Expose Oload on your local network' 'no'; then
   hostname='0.0.0.0'
@@ -998,6 +1071,12 @@ if [[ -z "$session_secret" ]]; then
   session_secret="$(openssl rand -base64 32 | tr -d '\n')"
 fi
 
+machine_state_root="$(get_machine_state_root)"
+machine_id=''
+machine_id_path=''
+get_or_create_machine_id "$machine_state_root"
+install_id="$(openssl rand -hex 16 | tr -d '\n')"
+
 runtime_root="$install_root/runtime"
 node_choice=''
 node_action=''
@@ -1028,6 +1107,7 @@ fi
 ensure_ollama_running "$ollama_path" "$ollama_base_url" "$runtime_root/ollama-models"
 copy_app_payload "$install_root"
 create_desktop_launcher "$install_root"
+write_install_binding "$install_root"
 write_install_state "$install_root"
 write_install_manifest "$install_root"
 write_uninstall_notes "$install_root"

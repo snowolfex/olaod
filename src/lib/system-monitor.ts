@@ -2,6 +2,7 @@ import "server-only";
 
 import { freemem, totalmem } from "node:os";
 
+import { getInstallBindingStatus } from "@/lib/install-binding";
 import { getOllamaStatus } from "@/lib/ollama-status";
 import type { OllamaStatus } from "@/lib/ollama";
 import type {
@@ -150,7 +151,10 @@ export async function getAdminSystemMonitorSnapshot(): Promise<AdminSystemMonito
   recordMemorySnapshot(nowMs);
   trimMonitorHistory(nowMs);
 
-  const status = await getOllamaStatus();
+  const [status, installBinding] = await Promise.all([
+    getOllamaStatus(),
+    getInstallBindingStatus(),
+  ]);
   const totalBytes = totalmem();
   const freeBytes = freemem();
   const usedBytes = Math.max(0, totalBytes - freeBytes);
@@ -210,6 +214,7 @@ export async function getAdminSystemMonitorSnapshot(): Promise<AdminSystemMonito
   return {
     capturedAt: new Date(nowMs).toISOString(),
     runningModelCount: status.runningCount,
+    installBinding,
     memory: {
       totalBytes,
       freeBytes,

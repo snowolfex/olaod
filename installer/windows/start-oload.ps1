@@ -12,8 +12,125 @@ $appDir = Join-Path $scriptRoot "app"
 $embeddedNode = Join-Path $scriptRoot "runtime\node\node.exe"
 $embeddedOllama = Join-Path $scriptRoot "runtime\ollama\ollama.exe"
 $embeddedOllamaModels = Join-Path $scriptRoot "runtime\ollama-models"
+$installBindingPath = Join-Path $scriptRoot ".oload-install-binding"
 
 [Environment]::SetEnvironmentVariable("OLOAD_INSTALL_ROOT", $scriptRoot)
+
+function Get-NormalizedInstallPath([string]$Path) {
+  $fullPath = [System.IO.Path]::GetFullPath($Path)
+  if ($fullPath.Length -gt 3) {
+    $fullPath = $fullPath.TrimEnd("\\", "/")
+  }
+
+  return $fullPath
+}
+
+function Read-KeyValueFile([string]$Path) {
+  $result = @{}
+
+  if (-not (Test-Path $Path)) {
+    return $result
+  }
+
+  Get-Content $Path | ForEach-Object {
+    if ([string]::IsNullOrWhiteSpace($_) -or $_.StartsWith("#")) {
+      return
+    }
+
+    $pair = $_ -split "=", 2
+    if ($pair.Length -eq 2) {
+      $result[$pair[0]] = $pair[1]
+    }
+  }
+
+  return $result
+}
+
+function Get-DefaultMachineIdPath() {
+  if ($env:LOCALAPPDATA) {
+    return Join-Path $env:LOCALAPPDATA "OloadData\machine-id"
+  }
+
+  if ($env:USERPROFILE) {
+    return Join-Path $env:USERPROFILE "AppData\Local\OloadData\machine-id"
+  }
+
+  return $null
+}
+
+function Set-InstallBindingEnvironment([string]$Status, [string]$Message, $Binding) {
+  [Environment]::SetEnvironmentVariable("OLOAD_INSTALL_BINDING_STATUS", $Status)
+  [Environment]::SetEnvironmentVariable("OLOAD_INSTALL_BINDING_MESSAGE", $Message)
+
+  if ($Binding) {
+    if ($Binding.ContainsKey("InstallId")) {
+      [Environment]::SetEnvironmentVariable("OLOAD_INSTALL_ID", $Binding["InstallId"])
+    }
+    if ($Binding.ContainsKey("InstallRoot")) {
+      [Environment]::SetEnvironmentVariable("OLOAD_INSTALL_BINDING_RECORDED_ROOT", $Binding["InstallRoot"])
+    }
+    if ($Binding.ContainsKey("InstalledAt")) {
+      [Environment]::SetEnvironmentVariable("OLOAD_INSTALL_BINDING_INSTALLED_AT", $Binding["InstalledAt"])
+    }
+  }
+
+  [Environment]::SetEnvironmentVariable("OLOAD_INSTALL_BINDING_CHECKED_AT", (Get-Date).ToString("o"))
+}
+
+function Test-InstallBinding() {
+  $machineIdPath = if ($env:OLOAD_MACHINE_ID_PATH) { $env:OLOAD_MACHINE_ID_PATH } else { Get-DefaultMachineIdPath }
+  $binding = Read-KeyValueFile $installBindingPath
+
+  [Environment]::SetEnvironmentVariable("OLOAD_INSTALL_BINDING_PATH", $installBindingPath)
+  if ($machineIdPath) {
+    [Environment]::SetEnvironmentVariable("OLOAD_MACHINE_ID_PATH", $machineIdPath)
+  }
+
+  if ($binding.Count -eq 0) {
+    $message = "Install binding file was not found at $installBindingPath."
+    Set-InstallBindingEnvironment "missing" $message $null
+    Write-Warning $message
+    return
+  }
+
+  if (-not $machineIdPath -or -not (Test-Path $machineIdPath)) {
+    $message = "Machine ID file was not found. Install binding status is incomplete."
+    Set-InstallBindingEnvironment "missing" $message $binding
+    Write-Warning $message
+    return
+  }
+
+  $currentMachineId = (Get-Content -Path $machineIdPath -Raw -ErrorAction SilentlyContinue).Trim()
+  $storedMachineId = if ($binding.ContainsKey("MachineId")) { $binding["MachineId"] } else { "" }
+  $storedInstallRoot = if ($binding.ContainsKey("InstallRoot")) { $binding["InstallRoot"] } else { "" }
+  $normalizedCurrentRoot = Get-NormalizedInstallPath $scriptRoot
+  $normalizedStoredRoot = if ($storedInstallRoot) { Get-NormalizedInstallPath $storedInstallRoot } else { "" }
+
+  if (-not $currentMachineId -or -not $storedMachineId) {
+    $message = "Install binding is missing a machine ID."
+    Set-InstallBindingEnvironment "missing" $message $binding
+    Write-Warning $message
+    return
+  }
+
+  [Environment]::SetEnvironmentVariable("OLOAD_MACHINE_ID", $currentMachineId)
+
+  if ($currentMachineId -ne $storedMachineId) {
+    $message = "Install binding mismatch: this copy was created for a different computer."
+    Set-InstallBindingEnvironment "copied" $message $binding
+    Write-Warning $message
+    return
+  }
+
+  if (-not $normalizedStoredRoot -or $normalizedStoredRoot -ne $normalizedCurrentRoot) {
+    $message = "Install binding mismatch: this install appears to have moved from $storedInstallRoot to $scriptRoot."
+    Set-InstallBindingEnvironment "moved" $message $binding
+    Write-Warning $message
+    return
+  }
+
+  Set-InstallBindingEnvironment "valid" "Install binding matches this computer and location." $binding
+}
 
 function Test-LocalOllamaBaseUrl([string]$BaseUrl) {
   try {
@@ -105,6 +222,8 @@ if (Test-Path $envFile) {
     }
   }
 }
+
+Test-InstallBinding
 
 Start-EmbeddedOllamaIfNeeded
 

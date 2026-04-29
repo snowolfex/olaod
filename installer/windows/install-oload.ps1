@@ -744,6 +744,57 @@ function Write-RuntimeEnv([string]$TargetRoot, [hashtable]$Values) {
   Set-Content -Path (Join-Path $TargetRoot ".env.runtime") -Value ($lines -join "`r`n") -Encoding ASCII
 }
 
+function Get-NormalizedInstallPath([string]$Path) {
+  $fullPath = [System.IO.Path]::GetFullPath($Path)
+  if ($fullPath.Length -gt 3) {
+    $fullPath = $fullPath.TrimEnd("\\", "/")
+  }
+
+  return $fullPath
+}
+
+function Get-OloadMachineStateRoot() {
+  if ($env:LOCALAPPDATA) {
+    return Join-Path $env:LOCALAPPDATA "OloadData"
+  }
+
+  if ($env:USERPROFILE) {
+    return Join-Path $env:USERPROFILE "AppData\Local\OloadData"
+  }
+
+  throw "LOCALAPPDATA or USERPROFILE is required to create the Oload machine state path."
+}
+
+function Get-OrCreateMachineId([string]$StateRoot) {
+  New-Item -ItemType Directory -Path $StateRoot -Force | Out-Null
+  $machineIdPath = Join-Path $StateRoot "machine-id"
+
+  if (Test-Path $machineIdPath) {
+    $existingValue = (Get-Content -Path $machineIdPath -Raw -ErrorAction SilentlyContinue).Trim()
+    if ($existingValue) {
+      return @{
+        MachineId = $existingValue
+        MachineIdPath = $machineIdPath
+      }
+    }
+  }
+
+  $machineId = [guid]::NewGuid().ToString()
+  Set-Content -Path $machineIdPath -Value $machineId -Encoding ASCII
+  return @{
+    MachineId = $machineId
+    MachineIdPath = $machineIdPath
+  }
+}
+
+function Write-InstallBinding([string]$TargetRoot, [hashtable]$Values) {
+  $lines = foreach ($key in $Values.Keys) {
+    "$key=$($Values[$key])"
+  }
+
+  Set-Content -Path (Join-Path $TargetRoot ".oload-install-binding") -Value ($lines -join "`r`n") -Encoding ASCII
+}
+
 function Write-InstallState([string]$TargetRoot, [hashtable]$Values) {
   $lines = foreach ($key in $Values.Keys) {
     "$key=$($Values[$key])"
@@ -770,11 +821,18 @@ function Write-InstallManifest([string]$TargetRoot, [hashtable]$Values) {
     "- Uninstall launcher (CMD): $($Values.UninstallCommandPath)",
     "- Runtime env file: $($Values.RuntimeEnvPath)",
     "- Install state file: $($Values.InstallStatePath)",
+    "- Install binding file: $($Values.InstallBindingPath)",
     "- Install manifest file: $($Values.InstallManifestPath)",
     "- Uninstall notes file: $($Values.UninstallNotesPath)",
     "- README: $($Values.ReadmePath)",
     "- EULA copy: $($Values.EulaPath)",
     "- Source notice copy: $($Values.SourceNoticePath)",
+    "",
+    "Install identity:",
+    "- Machine state root: $($Values.MachineStateRoot)",
+    "- Machine ID path: $($Values.MachineIdPath)",
+    "- Machine ID: $($Values.MachineId)",
+    "- Install ID: $($Values.InstallId)",
     "",
     "Dependency decisions:",
     "- Node.js mode: $($Values.NodeChoice)",
@@ -831,8 +889,15 @@ function Write-UninstallNotes([string]$TargetRoot, [hashtable]$Values) {
     "- Runtime root: $($Values.RuntimeRoot)",
     "- Runtime env file: $($Values.RuntimeEnvPath)",
     "- Install state file: $($Values.InstallStatePath)",
+    "- Install binding file: $($Values.InstallBindingPath)",
     "- Install manifest file: $($Values.InstallManifestPath)",
     "- Uninstall notes file: $($Values.UninstallNotesPath)",
+    "",
+    "Install identity:",
+    "- Machine state root: $($Values.MachineStateRoot)",
+    "- Machine ID path: $($Values.MachineIdPath)",
+    "- Machine ID: $($Values.MachineId)",
+    "- Install ID: $($Values.InstallId)",
     "",
     "Default language: $($Values.DefaultLanguage)",
     "",
@@ -892,8 +957,16 @@ if (-not $sessionSecret) {
   $sessionSecret = [Convert]::ToBase64String($bytes)
 }
 
+New-Item -ItemType Directory -Path $resolvedInstallRoot -Force | Out-Null
+$resolvedInstallRoot = Get-NormalizedInstallPath $resolvedInstallRoot
+
+$machineStateRoot = Get-OloadMachineStateRoot
+$machineIdentity = Get-OrCreateMachineId $machineStateRoot
+$installId = [guid]::NewGuid().ToString()
+
 $runtimeRoot = Join-Path $resolvedInstallRoot "runtime"
 $installStatePath = Join-Path $resolvedInstallRoot ".oload-install-state"
+$installBindingPath = Join-Path $resolvedInstallRoot ".oload-install-binding"
 $installManifestPath = Join-Path $resolvedInstallRoot "INSTALL-MANIFEST.txt"
 $runtimeEnvPath = Join-Path $resolvedInstallRoot ".env.runtime"
 $uninstallNotesPath = Join-Path $resolvedInstallRoot "UNINSTALL-NOTES.txt"
@@ -915,9 +988,21 @@ $managedOllamaRoot = if ($ollamaSelection.InstalledByOload) { Join-Path $runtime
 $managedOllamaModelsRoot = if ($ollamaSelection.InstalledByOload) { Join-Path $runtimeRoot "ollama-models" } else { "" }
 Start-OllamaIfNeeded $ollamaSelection.Path $ollamaBaseUrl
 Copy-AppPayload $bundleRoot $resolvedInstallRoot
+Write-InstallBinding $resolvedInstallRoot @{
+  InstallId = $installId
+  MachineId = $machineIdentity.MachineId
+  InstallRoot = $resolvedInstallRoot
+  InstalledAt = $installedAt
+  Hostname = $hostname
+  Platform = "windows"
+}
 Write-InstallState $resolvedInstallRoot @{
   InstallRoot = $resolvedInstallRoot
   InstalledAt = $installedAt
+  InstallId = $installId
+  MachineId = $machineIdentity.MachineId
+  MachineIdPath = $machineIdentity.MachineIdPath
+  MachineStateRoot = $machineStateRoot
   DefaultLanguage = $defaultLanguage
   NodeChoice = $nodeSelection.Choice
   NodeAction = $nodeSelection.Action
@@ -945,6 +1030,7 @@ Write-InstallState $resolvedInstallRoot @{
   UninstallCommandPath = $uninstallCommandPath
   RuntimeEnvPath = $runtimeEnvPath
   InstallStatePath = $installStatePath
+  InstallBindingPath = $installBindingPath
   InstallManifestPath = $installManifestPath
   UninstallNotesPath = $uninstallNotesPath
   ReadmePath = $readmePath
@@ -954,6 +1040,10 @@ Write-InstallState $resolvedInstallRoot @{
 Write-InstallManifest $resolvedInstallRoot @{
   InstallRoot = $resolvedInstallRoot
   InstalledAt = $installedAt
+  InstallId = $installId
+  MachineId = $machineIdentity.MachineId
+  MachineIdPath = $machineIdentity.MachineIdPath
+  MachineStateRoot = $machineStateRoot
   NodeChoice = $nodeSelection.Choice
   NodeDetectedPath = if ($nodeSelection.DetectedPath) { $nodeSelection.DetectedPath } else { "not found" }
   NodeExistedBeforeInstall = $nodeSelection.ExistedBeforeInstall
@@ -976,6 +1066,7 @@ Write-InstallManifest $resolvedInstallRoot @{
   UninstallCommandPath = $uninstallCommandPath
   RuntimeEnvPath = $runtimeEnvPath
   InstallStatePath = $installStatePath
+  InstallBindingPath = $installBindingPath
   InstallManifestPath = $installManifestPath
   UninstallNotesPath = $uninstallNotesPath
   ReadmePath = $readmePath
@@ -985,6 +1076,10 @@ Write-InstallManifest $resolvedInstallRoot @{
 Write-UninstallNotes $resolvedInstallRoot @{
   InstallRoot = $resolvedInstallRoot
   InstalledAt = $installedAt
+  InstallId = $installId
+  MachineId = $machineIdentity.MachineId
+  MachineIdPath = $machineIdentity.MachineIdPath
+  MachineStateRoot = $machineStateRoot
   DefaultLanguage = $defaultLanguage
   NodeChoice = $nodeSelection.Choice
   NodeDetectedPath = if ($nodeSelection.DetectedPath) { $nodeSelection.DetectedPath } else { "not found" }
@@ -996,6 +1091,7 @@ Write-UninstallNotes $resolvedInstallRoot @{
   BrokerRoot = $brokerRoot
   RuntimeEnvPath = $runtimeEnvPath
   InstallStatePath = $installStatePath
+  InstallBindingPath = $installBindingPath
   InstallManifestPath = $installManifestPath
   UninstallNotesPath = $uninstallNotesPath
   OllamaChoice = $ollamaSelection.Choice
@@ -1016,6 +1112,11 @@ Write-RuntimeEnv $resolvedInstallRoot @{
   OLOAD_UPDATE_CHANNEL = $updateChannel
   OLOAD_UPDATE_MANIFEST_PUBLIC_KEY = $UpdateManifestPublicKey
   OLOAD_CONTROL_BROKER_BASE_URL = "http://127.0.0.1:4010"
+  OLOAD_MACHINE_ID = $machineIdentity.MachineId
+  OLOAD_MACHINE_ID_PATH = $machineIdentity.MachineIdPath
+  OLOAD_MACHINE_STATE_ROOT = $machineStateRoot
+  OLOAD_INSTALL_ID = $installId
+  OLOAD_INSTALL_BINDING_PATH = $installBindingPath
   OLOAD_ADMIN_PASSWORD = $adminPassword
   OLOAD_SESSION_SECRET = $sessionSecret
 }

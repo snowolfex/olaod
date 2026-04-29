@@ -27,9 +27,22 @@ export type SystemMonitorModelSnapshot = {
   lastSeenAt: string | null;
 };
 
+export type InstallBindingMonitorSnapshot = {
+  checkedAt: string;
+  status: "valid" | "moved" | "copied" | "missing" | "not-configured";
+  message: string;
+  installId: string | null;
+  bindingPath: string | null;
+  machineIdPath: string | null;
+  currentInstallRoot: string | null;
+  recordedInstallRoot: string | null;
+  installedAt: string | null;
+};
+
 export type AdminSystemMonitorSnapshot = {
   capturedAt: string;
   runningModelCount: number;
+  installBinding: InstallBindingMonitorSnapshot;
   memory: SystemMonitorMemorySnapshot;
   traffic: SystemMonitorTrafficSnapshot;
   models: SystemMonitorModelSnapshot[];

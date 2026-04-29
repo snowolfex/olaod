@@ -71,6 +71,44 @@ function formatTimeAgo(value: string | null) {
   return `${minutes}m ago`;
 }
 
+function formatInstallBindingLabel(status: AdminSystemMonitorSnapshot["installBinding"]["status"]) {
+  switch (status) {
+    case "valid":
+      return "Valid";
+    case "moved":
+      return "Moved";
+    case "copied":
+      return "Copied";
+    case "missing":
+      return "Missing";
+    default:
+      return "Not configured";
+  }
+}
+
+function getInstallBindingAccent(status: AdminSystemMonitorSnapshot["installBinding"]["status"]) {
+  switch (status) {
+    case "valid":
+      return "text-emerald-300";
+    case "moved":
+      return "text-amber-300";
+    case "copied":
+      return "text-[var(--danger)]";
+    case "missing":
+      return "text-amber-300";
+    default:
+      return "text-muted";
+  }
+}
+
+function truncateValue(value: string | null, maxLength = 44) {
+  if (!value) {
+    return "Unknown";
+  }
+
+  return value.length > maxLength ? `${value.slice(0, maxLength - 3)}...` : value;
+}
+
 function buildSparklinePath(points: SystemMonitorSeriesPoint[], maxValue: number) {
   if (points.length === 0) {
     return "";
@@ -149,6 +187,7 @@ export function AdminSystemMonitor({ uiLanguagePreference, variant = "default" }
   const totalTraffic = snapshot?.traffic.currentBytesPerSecond ?? 0;
   const activeModels = snapshot?.models ?? [];
   const topModel = activeModels[0] ?? null;
+  const installBinding = snapshot?.installBinding ?? null;
   const isCompact = variant === "compact";
 
   return (
@@ -167,6 +206,27 @@ export function AdminSystemMonitor({ uiLanguagePreference, variant = "default" }
           <p className="eyebrow text-muted">{literal("Refresh cadence")}</p>
           <p className="mt-1 text-sm font-semibold text-foreground">{literal("About every 2 seconds")}</p>
           <p className="mt-1 text-xs text-muted">{snapshot ? new Date(snapshot.capturedAt).toLocaleTimeString() : literal("Waiting for first sample")}</p>
+        </div>
+      </div>
+
+      <div className="theme-surface-soft mt-4 rounded-[22px] px-4 py-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="eyebrow text-muted">{literal("Install identity")}</p>
+            <p className={`mt-2 text-lg font-semibold ${getInstallBindingAccent(installBinding?.status ?? "not-configured")}`}>
+              {literal(formatInstallBindingLabel(installBinding?.status ?? "not-configured"))}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-muted">{literal(installBinding?.message ?? "Waiting for install binding status.")}</p>
+          </div>
+          <div className="text-right text-xs text-muted">
+            <p>{literal("Install ID: {value}", { value: truncateValue(installBinding?.installId ?? null, 18) })}</p>
+            <p className="mt-1">{literal("Checked: {value}", { value: installBinding ? new Date(installBinding.checkedAt).toLocaleTimeString() : literal("Pending") })}</p>
+          </div>
+        </div>
+        <div className={`mt-3 grid gap-2 text-xs text-muted ${isCompact ? "xl:grid-cols-2" : "lg:grid-cols-3"}`}>
+          <p>{literal("Current location: {value}", { value: truncateValue(installBinding?.currentInstallRoot ?? null) })}</p>
+          <p>{literal("Recorded location: {value}", { value: truncateValue(installBinding?.recordedInstallRoot ?? null) })}</p>
+          <p>{literal("Machine ID file: {value}", { value: truncateValue(installBinding?.machineIdPath ?? null) })}</p>
         </div>
       </div>
 

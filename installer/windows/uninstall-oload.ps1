@@ -138,6 +138,7 @@ $managedOllamaModelsRoot = $state["ManagedOllamaModelsRoot"]
 $managedRuntimeRoot = $state["RuntimeRoot"]
 $runtimeEnvPath = $state["RuntimeEnvPath"]
 $installStatePath = $state["InstallStatePath"]
+$installBindingPath = $state["InstallBindingPath"]
 $installManifestPath = $state["InstallManifestPath"]
 $uninstallNotesPath = $state["UninstallNotesPath"]
 
@@ -189,6 +190,7 @@ if ($removeOllama -and (Read-YesNoPrompt "Removing Ollama can also remove all lo
 Remove-PathIfPresent $(if ($managedRuntimeRoot) { $managedRuntimeRoot } else { $runtimeRoot })
 Remove-PathIfPresent $(if ($runtimeEnvPath) { $runtimeEnvPath } else { Join-Path $resolvedInstallRoot ".env.runtime" })
 Remove-PathIfPresent $(if ($installStatePath) { $installStatePath } else { Join-Path $resolvedInstallRoot ".oload-install-state" })
+Remove-PathIfPresent $(if ($installBindingPath) { $installBindingPath } else { Join-Path $resolvedInstallRoot ".oload-install-binding" })
 Remove-PathIfPresent $(if ($installManifestPath) { $installManifestPath } else { Join-Path $resolvedInstallRoot "INSTALL-MANIFEST.txt" })
 Remove-PathIfPresent $(if ($uninstallNotesPath) { $uninstallNotesPath } else { Join-Path $resolvedInstallRoot "UNINSTALL-NOTES.txt" })
 Remove-PathIfPresent (Join-Path $resolvedInstallRoot "oload.log")

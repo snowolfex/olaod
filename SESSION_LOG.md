@@ -1,6 +1,8 @@
 # Session Log
 
 ## 2026-04-28
+- Added per-machine install identity for packaged installs: installers now create or reuse a machine ID outside the install root, write a per-install binding file inside the install root, preserve the machine ID across uninstall, and validate at launcher startup so Oload can report `valid`, `moved`, `copied`, or `missing` install-binding states.
+- Exposed the install-binding status through the admin system monitor so operators can see whether the current packaged install still matches the original machine and install location.
 - Added a single repo-level dev stack runner at `scripts/start-dev-stack.mjs`, exposed it through `npm run dev:stack` and `npm run dev:stack:lan`, and repointed `.vscode/tasks.json` so the standard `dev server` tasks now start both the local broker and the Next.js dev server together instead of requiring a separate manual broker terminal.
 - Verified the combined startup from a down state by stopping the running app, killing the standalone broker process, launching `cmd /c npm run dev:stack`, and confirming from live terminal output plus a fresh `/api/auth/session` response that both broker `4010` and app `3000` came back through the new one-command path.
 - Added broker-backed local app-server control in Admin Access: the app now proxies admin-only `start`, `stop`, and `restart` requests through a small localhost broker outside the Next.js process, shows the live port/PID plus a fallback broker control URL in a new Access card, and verified the restart path live against the dev server on port `3000`.
