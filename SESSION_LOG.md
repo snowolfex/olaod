@@ -1,6 +1,7 @@
 # Session Log
 
 ## 2026-04-28
+- Tightened install-binding behavior for packaged installs: launchers now refuse to start a copied install on the wrong machine, while moved or missing bindings still boot in a repairable state. Added an admin-only rebind action so an operator can intentionally rewrite the binding for the current machine and current location without reinstalling.
 - Added per-machine install identity for packaged installs: installers now create or reuse a machine ID outside the install root, write a per-install binding file inside the install root, preserve the machine ID across uninstall, and validate at launcher startup so Oload can report `valid`, `moved`, `copied`, or `missing` install-binding states.
 - Exposed the install-binding status through the admin system monitor so operators can see whether the current packaged install still matches the original machine and install location.
 - Added a single repo-level dev stack runner at `scripts/start-dev-stack.mjs`, exposed it through `npm run dev:stack` and `npm run dev:stack:lan`, and repointed `.vscode/tasks.json` so the standard `dev server` tasks now start both the local broker and the Next.js dev server together instead of requiring a separate manual broker terminal.

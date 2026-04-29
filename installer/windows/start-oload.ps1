@@ -61,6 +61,7 @@ function Get-DefaultMachineIdPath() {
 function Set-InstallBindingEnvironment([string]$Status, [string]$Message, $Binding) {
   [Environment]::SetEnvironmentVariable("OLOAD_INSTALL_BINDING_STATUS", $Status)
   [Environment]::SetEnvironmentVariable("OLOAD_INSTALL_BINDING_MESSAGE", $Message)
+  [Environment]::SetEnvironmentVariable("OLOAD_INSTALL_BINDING_CAN_REBIND", $(if ($Status -eq "valid" -or $Status -eq "moved" -or $Status -eq "missing") { "true" } else { "false" }))
 
   if ($Binding) {
     if ($Binding.ContainsKey("InstallId")) {
@@ -90,14 +91,14 @@ function Test-InstallBinding() {
     $message = "Install binding file was not found at $installBindingPath."
     Set-InstallBindingEnvironment "missing" $message $null
     Write-Warning $message
-    return
+    return "missing"
   }
 
   if (-not $machineIdPath -or -not (Test-Path $machineIdPath)) {
     $message = "Machine ID file was not found. Install binding status is incomplete."
     Set-InstallBindingEnvironment "missing" $message $binding
     Write-Warning $message
-    return
+    return "missing"
   }
 
   $currentMachineId = (Get-Content -Path $machineIdPath -Raw -ErrorAction SilentlyContinue).Trim()
@@ -110,7 +111,7 @@ function Test-InstallBinding() {
     $message = "Install binding is missing a machine ID."
     Set-InstallBindingEnvironment "missing" $message $binding
     Write-Warning $message
-    return
+    return "missing"
   }
 
   [Environment]::SetEnvironmentVariable("OLOAD_MACHINE_ID", $currentMachineId)
@@ -119,17 +120,18 @@ function Test-InstallBinding() {
     $message = "Install binding mismatch: this copy was created for a different computer."
     Set-InstallBindingEnvironment "copied" $message $binding
     Write-Warning $message
-    return
+    return "copied"
   }
 
   if (-not $normalizedStoredRoot -or $normalizedStoredRoot -ne $normalizedCurrentRoot) {
     $message = "Install binding mismatch: this install appears to have moved from $storedInstallRoot to $scriptRoot."
     Set-InstallBindingEnvironment "moved" $message $binding
     Write-Warning $message
-    return
+    return "moved"
   }
 
   Set-InstallBindingEnvironment "valid" "Install binding matches this computer and location." $binding
+  return "valid"
 }
 
 function Test-LocalOllamaBaseUrl([string]$BaseUrl) {
@@ -223,7 +225,10 @@ if (Test-Path $envFile) {
   }
 }
 
-Test-InstallBinding
+$installBindingStatus = Test-InstallBinding
+if ($installBindingStatus -eq "copied") {
+  throw "This installed copy belongs to a different computer and cannot be started here. Move back to the original machine or reinstall Oload on this computer."
+}
 
 Start-EmbeddedOllamaIfNeeded
 
@@ -243,7 +248,7 @@ Start-LocalBrokerIfNeeded $nodePath
 if ($Detached) {
   Start-Process -FilePath $nodePath -ArgumentList "server.js" -WorkingDirectory $appDir -WindowStyle Hidden | Out-Null
   $displayHost = if ($env:HOSTNAME -eq "0.0.0.0") { "localhost" } else { $env:HOSTNAME }
-  Write-Host "Oload started at http://$displayHost:$($env:PORT)"
+  Write-Host "Oload started at http://${displayHost}:$($env:PORT)"
   return
 }
 

@@ -31,6 +31,7 @@ export type InstallBindingMonitorSnapshot = {
   checkedAt: string;
   status: "valid" | "moved" | "copied" | "missing" | "not-configured";
   message: string;
+  canRebind: boolean;
   installId: string | null;
   bindingPath: string | null;
   machineIdPath: string | null;

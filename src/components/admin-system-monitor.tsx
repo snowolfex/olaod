@@ -146,11 +146,13 @@ export function AdminSystemMonitor({ uiLanguagePreference, variant = "default" }
     translateUiText(uiLanguagePreference, text, variables);
   const [snapshot, setSnapshot] = useState<AdminSystemMonitorSnapshot | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [isRebinding, setIsRebinding] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
-    const refreshSnapshot = async () => {
+    const runRefresh = async () => {
       try {
         const response = await fetch("/api/admin/system/monitor", { cache: "no-store" });
 
@@ -171,9 +173,11 @@ export function AdminSystemMonitor({ uiLanguagePreference, variant = "default" }
       }
     };
 
-    void refreshSnapshot();
+    void runRefresh();
     const intervalId = window.setInterval(() => {
-      void refreshSnapshot();
+      if (!cancelled) {
+        void runRefresh();
+      }
     }, monitorPollIntervalMs);
 
     return () => {
@@ -181,6 +185,40 @@ export function AdminSystemMonitor({ uiLanguagePreference, variant = "default" }
       window.clearInterval(intervalId);
     };
   }, []);
+
+  const handleRebind = async () => {
+    setIsRebinding(true);
+    setActionMessage(null);
+
+    try {
+      const response = await fetch("/api/admin/system/install-binding", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ action: "rebind" }),
+      });
+
+      if (!response.ok) {
+        throw new Error((await response.text()).trim() || "Unable to repair the install binding.");
+      }
+
+      setActionMessage(literal("Install binding updated for this machine and location."));
+
+      const monitorResponse = await fetch("/api/admin/system/monitor", { cache: "no-store" });
+      if (!monitorResponse.ok) {
+        throw new Error((await monitorResponse.text()).trim() || "Unable to refresh install binding status.");
+      }
+
+      const payload = await monitorResponse.json() as { snapshot: AdminSystemMonitorSnapshot };
+      setSnapshot(payload.snapshot);
+      setErrorMessage(null);
+    } catch (error) {
+      setActionMessage(error instanceof Error ? error.message : literal("Unable to repair the install binding."));
+    } finally {
+      setIsRebinding(false);
+    }
+  };
 
   const memoryAvailableBytes = snapshot?.memory.freeBytes ?? 0;
   const memoryUsedBytes = snapshot?.memory.usedBytes ?? 0;
@@ -221,6 +259,18 @@ export function AdminSystemMonitor({ uiLanguagePreference, variant = "default" }
           <div className="text-right text-xs text-muted">
             <p>{literal("Install ID: {value}", { value: truncateValue(installBinding?.installId ?? null, 18) })}</p>
             <p className="mt-1">{literal("Checked: {value}", { value: installBinding ? new Date(installBinding.checkedAt).toLocaleTimeString() : literal("Pending") })}</p>
+            {installBinding?.canRebind ? (
+              <button
+                type="button"
+                onClick={handleRebind}
+                disabled={isRebinding}
+                className="mt-3 inline-flex items-center justify-center rounded-full border border-line px-3 py-1.5 text-xs font-semibold text-foreground transition hover:border-white/30 hover:bg-white/8 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isRebinding
+                  ? literal("Rebinding...")
+                  : literal(installBinding.status === "valid" ? "Rebind install" : "Repair binding")}
+              </button>
+            ) : null}
           </div>
         </div>
         <div className={`mt-3 grid gap-2 text-xs text-muted ${isCompact ? "xl:grid-cols-2" : "lg:grid-cols-3"}`}>
@@ -228,6 +278,9 @@ export function AdminSystemMonitor({ uiLanguagePreference, variant = "default" }
           <p>{literal("Recorded location: {value}", { value: truncateValue(installBinding?.recordedInstallRoot ?? null) })}</p>
           <p>{literal("Machine ID file: {value}", { value: truncateValue(installBinding?.machineIdPath ?? null) })}</p>
         </div>
+        {actionMessage ? (
+          <p className="mt-3 text-xs text-muted">{actionMessage}</p>
+        ) : null}
       </div>
 
       <div className={`mt-4 grid gap-3 ${isCompact ? "xl:grid-cols-3" : "lg:grid-cols-3"}`}>

@@ -53,6 +53,11 @@ set_install_binding_env() {
 
   export OLOAD_INSTALL_BINDING_STATUS="$status"
   export OLOAD_INSTALL_BINDING_MESSAGE="$message"
+  if [[ "$status" == 'valid' || "$status" == 'moved' || "$status" == 'missing' ]]; then
+    export OLOAD_INSTALL_BINDING_CAN_REBIND='true'
+  else
+    export OLOAD_INSTALL_BINDING_CAN_REBIND='false'
+  fi
   if [[ -n "$install_id_value" ]]; then
     export OLOAD_INSTALL_ID="$install_id_value"
   fi
@@ -76,6 +81,7 @@ validate_install_binding() {
     message="Install binding file was not found at $install_binding_path."
     set_install_binding_env "missing" "$message"
     printf 'Warning: %s\n' "$message" >&2
+    printf '%s\n' 'missing'
     return
   fi
 
@@ -88,6 +94,7 @@ validate_install_binding() {
     message="Machine ID file was not found. Install binding status is incomplete."
     set_install_binding_env "missing" "$message" "$install_id_value" "$stored_install_root" "$installed_at_value"
     printf 'Warning: %s\n' "$message" >&2
+    printf '%s\n' 'missing'
     return
   fi
 
@@ -96,6 +103,7 @@ validate_install_binding() {
     message="Install binding is missing a machine ID."
     set_install_binding_env "missing" "$message" "$install_id_value" "$stored_install_root" "$installed_at_value"
     printf 'Warning: %s\n' "$message" >&2
+    printf '%s\n' 'missing'
     return
   fi
 
@@ -105,6 +113,7 @@ validate_install_binding() {
     message='Install binding mismatch: this copy was created for a different computer.'
     set_install_binding_env "copied" "$message" "$install_id_value" "$stored_install_root" "$installed_at_value"
     printf 'Warning: %s\n' "$message" >&2
+    printf '%s\n' 'copied'
     return
   fi
 
@@ -112,10 +121,12 @@ validate_install_binding() {
     message="Install binding mismatch: this install appears to have moved from ${stored_install_root:-unknown} to $script_dir."
     set_install_binding_env "moved" "$message" "$install_id_value" "$stored_install_root" "$installed_at_value"
     printf 'Warning: %s\n' "$message" >&2
+    printf '%s\n' 'moved'
     return
   fi
 
   set_install_binding_env "valid" 'Install binding matches this computer and location.' "$install_id_value" "$stored_install_root" "$installed_at_value"
+  printf '%s\n' 'valid'
 }
 
 if [[ -f "$env_file" ]]; then
@@ -127,7 +138,11 @@ if [[ -f "$env_file" ]]; then
   done <"$env_file"
 fi
 
-validate_install_binding
+install_binding_status="$(validate_install_binding)"
+if [[ "$install_binding_status" == 'copied' ]]; then
+  printf '%s\n' 'This installed copy belongs to a different computer and cannot be started here. Move back to the original machine or reinstall Oload on this computer.' >&2
+  exit 1
+fi
 
 is_local_ollama_url() {
   case "$1" in
