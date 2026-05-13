@@ -1,8 +1,23 @@
 # oload
 
-Premium mobile-first control plane for Ollama. The app is structured as a Next.js frontend plus a server-side gateway layer so browser clients never talk directly to the Ollama host.
+Web-based control plane for Ollama. The app is structured as a Next.js frontend plus a server-side gateway layer so browser clients never talk directly to the Ollama host.
 
-GitHub repo description: Mobile-first Next.js control plane for Ollama with a server-side chat and model gateway, local auth, job operations, and workspace backup tooling.
+GitHub repo description: Web-based Next.js control plane for Ollama with a server-side chat and model gateway, local auth, job operations, workspace backup tooling, packaged installers, and signed updates.
+
+## Administrator manual
+
+- Full install, setup, update, uninstall, and GitHub self-service reference: `docs/administrator-manual.md`
+- Packaging-specific install and uninstall details: `installer/README.md`
+- Release artifacts and update bundles: https://github.com/snowolfex/olaod/releases
+
+Repository quick facts for operators:
+
+- Windows native installer package: `dist/native/OloadSetup.exe`
+- Linux native installer package: `dist/native/OloadInstaller-linux-x64.run`
+- Installer bundles: `dist/installers/windows/install-oload.ps1` and `dist/installers/linux/install-oload.sh`
+- Packaged installs write `INSTALL-MANIFEST.txt`, `UNINSTALL-NOTES.txt`, `.oload-install-state`, `.oload-install-binding`, and `.env.runtime`
+- The first local user created in a clean installed build becomes the admin account
+- Uninstall warns before touching shared Node.js or Ollama, and Ollama model removal requires separate confirmation
 
 ## Highlights
 

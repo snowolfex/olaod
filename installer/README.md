@@ -8,6 +8,23 @@ Layman's terms:
 
 - This is the packaging layer that turns the app into something people can install, launch, and later update on their own machines.
 
+## Administrator manual and self-service links
+
+- Full install, setup, update, and uninstall manual: `docs/administrator-manual.md`
+- GitHub release artifacts: https://github.com/snowolfex/olaod/releases
+- Windows installer implementation: `installer/windows/install-oload.ps1`
+- Linux installer implementation: `installer/linux/install-oload.sh`
+- Windows uninstall implementation: `installer/windows/uninstall-oload.ps1`
+- Linux uninstall implementation: `installer/linux/uninstall-oload.sh`
+
+Operator quick reference:
+
+- Default install roots are `%LOCALAPPDATA%\Oload` on Windows and `~/.local/share/oload` on Linux
+- Both installers ask for port, Ollama target, update manifest settings, default language, optional bootstrap admin password, and optional session secret
+- Packaged installs write `INSTALL-MANIFEST.txt`, `UNINSTALL-NOTES.txt`, `.oload-install-state`, `.oload-install-binding`, and `.env.runtime`
+- The first user created after a clean install becomes the admin account
+- Uninstall uses recorded install state before removing runtimes and always asks again before removing Ollama models
+
 Run `npm run bundle:installers` from the repository root to generate fresh standalone installer bundles under `dist/installers`.
 Run `npm run package:installers` to generate the standalone bundles plus native-style installer outputs under `dist/native`.
 Run `npm run bundle:updates` to build live-patch packages plus a manifest under `dist/updates`.
